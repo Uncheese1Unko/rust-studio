@@ -39,7 +39,14 @@ fn add_track_and_clip() {
 #[test]
 fn move_and_gain_and_remove_clip() {
     let (mut p, _, clip_id) = project_with_clip();
-    apply(&mut p, &Command::MoveClip { clip_id, new_start_ms: 2_500 }).unwrap();
+    apply(
+        &mut p,
+        &Command::MoveClip {
+            clip_id,
+            new_start_ms: 2_500,
+        },
+    )
+    .unwrap();
     apply(&mut p, &Command::SetClipGain { clip_id, gain: 0.5 }).unwrap();
     let (_, clip) = p.clip(clip_id).unwrap();
     assert_eq!(clip.start_ms, 2_500);
@@ -64,9 +71,18 @@ fn failed_command_leaves_state_unchanged() {
             source: "x".into(),
         },
     );
-    assert_eq!(err, Err(CommandError::InvalidRange("start_ms must be >= 0")));
+    assert_eq!(
+        err,
+        Err(CommandError::InvalidRange("start_ms must be >= 0"))
+    );
 
-    let err = apply(&mut p, &Command::MoveClip { clip_id: 9999, new_start_ms: 0 });
+    let err = apply(
+        &mut p,
+        &Command::MoveClip {
+            clip_id: 9999,
+            new_start_ms: 0,
+        },
+    );
     assert_eq!(err, Err(CommandError::ClipNotFound(9999)));
 
     let err = apply(&mut p, &Command::RemoveTrack { track_id: 4242 });

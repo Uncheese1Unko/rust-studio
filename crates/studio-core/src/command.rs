@@ -11,8 +11,13 @@ use crate::model::{Clip, Project, Track, TrackKind};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Command {
-    AddTrack { name: String, kind: TrackKind },
-    RemoveTrack { track_id: u64 },
+    AddTrack {
+        name: String,
+        kind: TrackKind,
+    },
+    RemoveTrack {
+        track_id: u64,
+    },
     AddClip {
         track_id: u64,
         name: String,
@@ -20,9 +25,17 @@ pub enum Command {
         duration_ms: i64,
         source: String,
     },
-    MoveClip { clip_id: u64, new_start_ms: i64 },
-    RemoveClip { clip_id: u64 },
-    SetClipGain { clip_id: u64, gain: f32 },
+    MoveClip {
+        clip_id: u64,
+        new_start_ms: i64,
+    },
+    RemoveClip {
+        clip_id: u64,
+    },
+    SetClipGain {
+        clip_id: u64,
+        gain: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,14 +97,18 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 return Err(CommandError::TrackNotFound(*track_id));
             }
             let id = project.alloc_id();
-            project.track_mut(*track_id).expect("checked above").clips.push(Clip {
-                id,
-                name: name.clone(),
-                start_ms: *start_ms,
-                duration_ms: *duration_ms,
-                source: source.clone(),
-                gain: 1.0,
-            });
+            project
+                .track_mut(*track_id)
+                .expect("checked above")
+                .clips
+                .push(Clip {
+                    id,
+                    name: name.clone(),
+                    start_ms: *start_ms,
+                    duration_ms: *duration_ms,
+                    source: source.clone(),
+                    gain: 1.0,
+                });
             Ok(Some(id))
         }
         Command::MoveClip {

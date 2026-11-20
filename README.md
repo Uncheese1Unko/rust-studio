@@ -44,7 +44,11 @@ docs/test-reports/   試験レポートと証拠
 ## ビルド・テスト
 
 ```sh
+./scripts/verify.sh   # ローカル検証一括（fmt --check / clippy -D warnings / test）
 cargo test            # コアのテスト
 cargo run -p video-editor
 cargo run -p daw
 ```
+
+CI（GitHub Actions）でも同じ検証を push / PR のたびに回す
+（`.github/workflows/ci.yml`）。
