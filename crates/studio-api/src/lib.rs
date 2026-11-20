@@ -143,24 +143,38 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+/// 1接続分の処理。接続単位の I/O エラーはここで閉じ、サーバー全体は
+/// 止めない（乱暴に切断するクライアントが観測経路を道連れにしないため）。
+fn handle_connection(stream: &mut TcpStream, state: &ApiState) -> std::io::Result<()> {
+    match read_request(stream)? {
+        Some(request) => {
+            let response = handle_request(state, &request);
+            let text = format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response.status,
+                reason_phrase(response.status),
+                response.body.len(),
+                response.body
+            );
+            stream.write_all(text.as_bytes())
+        }
+        None => Ok(()),
+    }
+}
+
 /// TCP リスナーで HTTP リクエストを受け続ける（接続は逐次処理）。
+/// 受け付けや接続単位の失敗は記録して次に進み、ループは止めない。
 pub fn serve(listener: TcpListener, state: ApiState) -> std::io::Result<()> {
     for stream in listener.incoming() {
-        let mut stream = stream?;
-        match read_request(&mut stream) {
-            Ok(Some(request)) => {
-                let response = handle_request(&state, &request);
-                let text = format!(
-                    "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    response.status,
-                    reason_phrase(response.status),
-                    response.body.len(),
-                    response.body
-                );
-                stream.write_all(text.as_bytes())?;
+        match stream {
+            Ok(mut stream) => {
+                if let Err(e) = handle_connection(&mut stream, &state) {
+                    eprintln!("studio-api: connection error: {e}");
+                }
             }
-            Ok(None) => {}
-            Err(_) => {}
+            Err(e) => {
+                eprintln!("studio-api: accept error: {e}");
+            }
         }
     }
     Ok(())

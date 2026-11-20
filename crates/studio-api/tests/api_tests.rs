@@ -114,6 +114,50 @@ fn unknown_path_is_404_and_wrong_method_is_405() {
 }
 
 #[test]
+fn server_survives_abruptly_closed_connections() {
+    use std::io::Write;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = ApiState::new(Project::new("robustness test"));
+    std::thread::spawn(move || studio_api::serve(listener, state));
+
+    // 応答を読まずに切る接続を繰り返す（レビューで再現された
+    // 「乱暴な切断でサーバーが死ぬ」不具合の回帰テスト）
+    for _ in 0..10 {
+        let body = r#"{"type":"add_track","name":"T","kind":"audio"}"#;
+        if let Ok(mut stream) = std::net::TcpStream::connect(addr) {
+            let _ = write!(
+                stream,
+                "POST /commands HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            // 応答を読まずにすぐ閉じる
+            drop(stream);
+        }
+        // 何も送らずに閉じる接続も混ぜる
+        if let Ok(stream) = std::net::TcpStream::connect(addr) {
+            drop(stream);
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // サーバーがまだ生きていて、通常のリクエストに応えること
+    let mut stream = std::net::TcpStream::connect(addr)
+        .expect("server must still accept connections after abrupt disconnects");
+    write!(
+        stream,
+        "GET /project HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n"
+    )
+    .unwrap();
+    use std::io::Read;
+    let mut text = String::new();
+    stream.read_to_string(&mut text).unwrap();
+    assert!(text.starts_with("HTTP/1.1 200"), "response: {text}");
+}
+
+#[test]
 fn server_round_trip_over_a_real_socket() {
     use std::io::{Read, Write};
 
