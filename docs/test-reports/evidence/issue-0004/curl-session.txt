@@ -1,0 +1,50 @@
+$ curl -s -X POST localhost:17890/commands -d <add_track V1 video>
+{"created_id":1,"ok":true}
+$ curl -s -X POST localhost:17890/commands -d <add_clip op on track 1>
+{"created_id":2,"ok":true}
+$ curl -s localhost:17890/project
+{
+  "name": "untitled",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 2,
+          "name": "op",
+          "start_ms": 0,
+          "duration_ms": 1500,
+          "source": "media/op.mp4",
+          "gain": 1.0
+        }
+      ]
+    }
+  ],
+  "next_id": 3
+}
+$ curl -s -w " [%{http_code}]" -X POST localhost:17890/commands -d <add_clip to missing track 999>
+{"error":"track 999 not found","ok":false} [400]
+$ curl -s localhost:17890/project (state after the failed command: unchanged)
+{
+  "name": "untitled",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 2,
+          "name": "op",
+          "start_ms": 0,
+          "duration_ms": 1500,
+          "source": "media/op.mp4",
+          "gain": 1.0
+        }
+      ]
+    }
+  ],
+  "next_id": 3
+}
