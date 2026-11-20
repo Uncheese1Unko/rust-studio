@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rust-studio ハーネス設計 — AI駆動開発の仕組みと段取り</title>
+<style>
+  :root {
+    --bg: #14151a; --panel: #1d1f26; --panel2: #23252e; --line: #34363e;
+    --text: #eceae4; --muted: #a9a499; --accent: #e0a81c; --accent2: #5eb2f2;
+    --green: #3fb96f; --red: #e05d4f; --violet: #b58cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    line-height: 1.75; font-size: 15.5px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 22px 80px; }
+  h1 { font-size: 30px; line-height: 1.35; margin: 0 0 6px; letter-spacing: .02em; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  .meta { color: var(--muted); font-size: 13px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+  h2 { font-size: 21px; margin: 44px 0 12px; padding-left: 12px; border-left: 4px solid var(--accent); }
+  h3 { font-size: 16.5px; margin: 24px 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  .panel.blue { border-color: #2c4a66; }
+  .panel.warn { border-color: #6b5a1e; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14.5px; }
+  th, td { border: 1px solid var(--line); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); font-weight: 600; }
+  code { background: #2a2c34; border-radius: 5px; padding: 1px 6px; font-size: 13.5px;
+         font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-right: 6px; }
+  .tag.done { color: var(--green); border-color: var(--green); }
+  .tag.todo { color: var(--accent); border-color: var(--accent); }
+  .tag.stop { color: var(--red); border-color: var(--red); }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .fig { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 14px 0; overflow-x: auto; }
+  .fig svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .figcap { color: var(--muted); font-size: 13px; text-align: center; margin-top: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .big { font-size: 17px; }
+  strong.key { color: var(--accent); }
+  .foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); margin-top: 48px; padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>rust-studio ハーネス設計</h1>
+<p class="sub big">AI駆動開発の「仕組み」と「段取り」— 動画編集ソフトと DAW を、AI が自律的に作り、人間が設計判断を握るための土台</p>
+<p class="meta">対象リポジトリ： rust-studio（Rust + nannou、モノレポ）／ 方式の出典： ohta-rh 氏の x-modoki-v2・insta-modoki（判断ポリシーのみ本プロジェクト用に変更、ADR-0006）／ 作成： 2026-11-21</p>
+
+<h2>1. 全体像 — 人間・AI・リポジトリの役割分担</h2>
+<p>このハーネスの考え方は単純です。<strong class="key">判断とルールはリポジトリに固定し、AI はその中で自律的に回り、人間は設計判断にだけ立つ</strong>。AI のコンテキストは圧縮されても、リポジトリに書いたことは正確に残るからです。</p>
+
+<div class="fig">
+<svg width="880" height="300" viewBox="0 0 880 300" role="img" aria-label="全体像の図">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a9a499"></path>
+    </marker>
+  </defs>
+  <!-- 人間 -->
+  <rect x="30" y="90" width="180" height="110" rx="12" fill="#23252e" stroke="#e0a81c" stroke-width="1.6"></rect>
+  <text x="120" y="128" fill="#eceae4" font-size="17" text-anchor="middle" font-weight="bold">人間（Ryo）</text>
+  <text x="120" y="154" fill="#a9a499" font-size="12.5" text-anchor="middle">設計判断・実機確認</text>
+  <text x="120" y="174" fill="#a9a499" font-size="12.5" text-anchor="middle">参照・方針の提示</text>
+  <!-- AI -->
+  <rect x="350" y="90" width="180" height="110" rx="12" fill="#23252e" stroke="#5eb2f2" stroke-width="1.6"></rect>
+  <text x="440" y="128" fill="#eceae4" font-size="17" text-anchor="middle" font-weight="bold">AI（実装ループ）</text>
+  <text x="440" y="154" fill="#a9a499" font-size="12.5" text-anchor="middle">起票・実装・検証・記録</text>
+  <text x="440" y="174" fill="#a9a499" font-size="12.5" text-anchor="middle">1 PBI を着手から close まで</text>
+  <!-- リポジトリ -->
+  <rect x="670" y="90" width="180" height="110" rx="12" fill="#23252e" stroke="#3fb96f" stroke-width="1.6"></rect>
+  <text x="760" y="128" fill="#eceae4" font-size="17" text-anchor="middle" font-weight="bold">リポジトリ</text>
+  <text x="760" y="154" fill="#a9a499" font-size="12.5" text-anchor="middle">ルール・ADR・イシュー</text>
+  <text x="760" y="174" fill="#a9a499" font-size="12.5" text-anchor="middle">＝ ハーネス（正の置き場）</text>
+  <!-- 矢印 -->
+  <line x1="212" y1="125" x2="346" y2="125" stroke="#a9a499" stroke-width="1.6" marker-end="url(#ar)"></line>
+  <text x="279" y="112" fill="#a9a499" font-size="12" text-anchor="middle">指示・判断</text>
+  <line x1="346" y1="168" x2="212" y2="168" stroke="#a9a499" stroke-width="1.6" marker-end="url(#ar)"></line>
+  <text x="279" y="190" fill="#e05d4f" font-size="12" text-anchor="middle">needs-decision で渡す</text>
+  <line x1="532" y1="125" x2="666" y2="125" stroke="#a9a499" stroke-width="1.6" marker-end="url(#ar)"></line>
+  <text x="599" y="112" fill="#a9a499" font-size="12" text-anchor="middle">読み・書き</text>
+  <line x1="666" y1="168" x2="532" y2="168" stroke="#a9a499" stroke-width="1.6" marker-end="url(#ar)"></line>
+  <text x="599" y="190" fill="#a9a499" font-size="12" text-anchor="middle">ルールが縛る</text>
+  <!-- 下の注記 -->
+  <rect x="190" y="238" width="500" height="40" rx="10" fill="#1d1f26" stroke="#34363e"></rect>
+  <text x="440" y="263" fill="#a9a499" font-size="13" text-anchor="middle">会話の中だけにあるルールは存在しないものとする（ハーネスを現行に保つ）</text>
+</svg>
+<p class="figcap">図1：三者の関係。AI は止まるべき所（設計判断）でだけ人間に渡し、それ以外はリポジトリのルールに従って回り続ける</p>
+</div>
+
+<h2>2. ハーネスの構成要素</h2>
+<table>
+  <tr><th style="width:26%">置き場所</th><th>役割</th></tr>
+  <tr><td><code>CLAUDE.md</code></td><td>入口。要点だけを書き、本体はルールへ参照する（薄く保つ）</td></tr>
+  <tr><td><code>.claude/rules/</code>（8本）</td><td>起票作法／デリバリーループ／TDD／コードレビュー／完了の定義／バグ対応／アーキテクチャ／文書。ハーネスの本体</td></tr>
+  <tr><td><code>.claude/agents/code-reviewer.md</code></td><td>独立レビュアーの定義。実装者とは別の新規エージェントが、イシュー番号と diff 範囲だけで審査する</td></tr>
+  <tr><td><code>docs/adr/</code></td><td>判断の記録（ADR）。採用済みは編集せず supersede。決定者（人間／エージェント）を明記</td></tr>
+  <tr><td><code>.github/ISSUE_TEMPLATE/</code></td><td>EPIC／PBI のテンプレート。完了の定義チェックリスト入り</td></tr>
+  <tr><td><code>docs/test-reports/</code></td><td>試験レポートと証拠（スクリーンショット等）。close の必須条件</td></tr>
+  <tr><td><code>docs/log.md</code></td><td>ドキュメントの更新履歴</td></tr>
+</table>
+
+<h2>3. 段取り（1）— イシューの切り方</h2>
+<p>作業は <strong>EPIC → PBI</strong> の階層で管理します。EPIC は「成果」、PBI は独立に届けられる振る舞いの縦スライス。レイヤー（バックエンド部分など）では割りません。</p>
+
+<div class="fig">
+<svg width="880" height="252" viewBox="0 0 880 252" role="img" aria-label="イシュー階層の図">
+  <rect x="30" y="86" width="200" height="72" rx="10" fill="#23252e" stroke="#b58cff" stroke-width="1.6"></rect>
+  <text x="130" y="116" fill="#eceae4" font-size="15" text-anchor="middle" font-weight="bold">EPIC #1</text>
+  <text x="130" y="138" fill="#a9a499" font-size="12" text-anchor="middle">共通基盤（成果単位）</text>
+  <line x1="230" y1="100" x2="330" y2="52" stroke="#a9a499" stroke-width="1.4"></line>
+  <line x1="230" y1="122" x2="330" y2="122" stroke="#a9a499" stroke-width="1.4"></line>
+  <line x1="230" y1="144" x2="330" y2="192" stroke="#a9a499" stroke-width="1.4"></line>
+  <rect x="330" y="22" width="250" height="58" rx="10" fill="#1d1f26" stroke="#34363e"></rect>
+  <text x="455" y="47" fill="#eceae4" font-size="13.5" text-anchor="middle">PBI #2 （調査）nannou ビルド検証</text>
+  <text x="455" y="67" fill="#a9a499" font-size="11.5" text-anchor="middle">未検証の前提は調査 PBI にする</text>
+  <rect x="330" y="93" width="250" height="58" rx="10" fill="#1d1f26" stroke="#34363e"></rect>
+  <text x="455" y="118" fill="#eceae4" font-size="13.5" text-anchor="middle">PBI #5 MCP サーバー</text>
+  <text x="455" y="138" fill="#a9a499" font-size="11.5" text-anchor="middle">blocked by が書いてある</text>
+  <rect x="330" y="164" width="250" height="58" rx="10" fill="#1d1f26" stroke="#34363e"></rect>
+  <text x="455" y="189" fill="#eceae4" font-size="13.5" text-anchor="middle">PBI #17 （調査）ピッチ方式の選定</text>
+  <text x="455" y="209" fill="#a9a499" font-size="11.5" text-anchor="middle">受け入れ条件＋確認方法つき</text>
+  <rect x="620" y="60" width="230" height="122" rx="10" fill="#1d1f26" stroke="#e0a81c" stroke-width="1.4"></rect>
+  <text x="735" y="86" fill="#eceae4" font-size="13.5" text-anchor="middle" font-weight="bold">起票の鉄則</text>
+  <text x="735" y="110" fill="#a9a499" font-size="12" text-anchor="middle">根本原因を証拠つきで1文</text>
+  <text x="735" y="130" fill="#a9a499" font-size="12" text-anchor="middle">スコープ内／外・触るファイル</text>
+  <text x="735" y="150" fill="#a9a499" font-size="12" text-anchor="middle">未決事項ゼロで起票する</text>
+  <text x="735" y="170" fill="#a9a499" font-size="12" text-anchor="middle">末尾に「完了の定義」</text>
+</svg>
+<p class="figcap">図2：イシュー階層と起票の鉄則。実装者がイシューだけで着手できることが「手戻りゼロ」の条件</p>
+</div>
+
+<h2>4. 段取り（2）— デリバリーループ</h2>
+<p>1イテレーション＝1 PBI を、着手から close まで運びます。EPIC の一覧の順に取り、<code>blocked by</code> が閉じるまで先に進みません。</p>
+
+<div class="fig">
+<svg width="880" height="330" viewBox="0 0 880 330" role="img" aria-label="デリバリーループの図">
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a9a499"></path>
+    </marker>
+  </defs>
+  <!-- 1行目 -->
+  <g font-size="13.5">
+    <rect x="20" y="30" width="185" height="56" rx="10" fill="#23252e" stroke="#5eb2f2"></rect>
+    <text x="112" y="55" fill="#eceae4" text-anchor="middle">1. 選ぶ・読む</text>
+    <text x="112" y="74" fill="#a9a499" font-size="11.5" text-anchor="middle">EPIC の順に1件、ADR を読む</text>
+    <rect x="245" y="30" width="185" height="56" rx="10" fill="#23252e" stroke="#5eb2f2"></rect>
+    <text x="337" y="55" fill="#eceae4" text-anchor="middle">2. TDD で実装</text>
+    <text x="337" y="74" fill="#a9a499" font-size="11.5" text-anchor="middle">落ちるテスト → 実装、red を記録</text>
+    <rect x="470" y="30" width="185" height="56" rx="10" fill="#23252e" stroke="#5eb2f2"></rect>
+    <text x="562" y="55" fill="#eceae4" text-anchor="middle">3. 検証</text>
+    <text x="562" y="74" fill="#a9a499" font-size="11.5" text-anchor="middle">受け入れ条件を1つずつ、証拠つき</text>
+    <rect x="695" y="30" width="165" height="56" rx="10" fill="#23252e" stroke="#5eb2f2"></rect>
+    <text x="777" y="55" fill="#eceae4" text-anchor="middle">4. 独立レビュー</text>
+    <text x="777" y="74" fill="#a9a499" font-size="11.5" text-anchor="middle">APPROVE まで回す</text>
+    <line x1="205" y1="58" x2="241" y2="58" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+    <line x1="430" y1="58" x2="466" y2="58" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+    <line x1="655" y1="58" x2="691" y2="58" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+    <!-- 2行目 -->
+    <rect x="695" y="130" width="165" height="56" rx="10" fill="#23252e" stroke="#3fb96f"></rect>
+    <text x="777" y="155" fill="#eceae4" text-anchor="middle">5. push・CI 緑</text>
+    <text x="777" y="174" fill="#a9a499" font-size="11.5" text-anchor="middle">Refs #N、最後まで見る</text>
+    <rect x="470" y="130" width="185" height="56" rx="10" fill="#23252e" stroke="#3fb96f"></rect>
+    <text x="562" y="155" fill="#eceae4" text-anchor="middle">6. 試験レポート</text>
+    <text x="562" y="174" fill="#a9a499" font-size="11.5" text-anchor="middle">結果と証拠を docs に残す</text>
+    <rect x="245" y="130" width="185" height="56" rx="10" fill="#23252e" stroke="#3fb96f"></rect>
+    <text x="337" y="155" fill="#eceae4" text-anchor="middle">7. close</text>
+    <text x="337" y="174" fill="#a9a499" font-size="11.5" text-anchor="middle">完了の定義を全て満たしたら</text>
+    <rect x="20" y="130" width="185" height="56" rx="10" fill="#1d1f26" stroke="#34363e"></rect>
+    <text x="112" y="155" fill="#eceae4" text-anchor="middle">8. 次の PBI へ</text>
+    <text x="112" y="174" fill="#a9a499" font-size="11.5" text-anchor="middle">全件 close で EPIC 完了</text>
+    <line x1="777" y1="86" x2="777" y2="126" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+    <line x1="691" y1="158" x2="659" y2="158" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+    <line x1="466" y1="158" x2="434" y2="158" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+    <line x1="241" y1="158" x2="209" y2="158" stroke="#a9a499" stroke-width="1.5" marker-end="url(#ar2)"></line>
+  </g>
+  <!-- 止まる条件 -->
+  <rect x="20" y="222" width="840" height="86" rx="10" fill="#1d1f26" stroke="#e05d4f" stroke-width="1.3"></rect>
+  <text x="40" y="250" fill="#e05d4f" font-size="14" font-weight="bold">止まる条件（ループが人間に渡す所）</text>
+  <text x="40" y="276" fill="#eceae4" font-size="13">設計判断 … needs-decision ラベル＋選択肢と推奨を提示して停止。決まったら ADR に記録して再開</text>
+  <text x="40" y="297" fill="#eceae4" font-size="13">人間にしかできないこと（実機確認・参照の提供・アカウント等）… needs-human で理由を書いて、その PBI を飛ばして続行</text>
+</svg>
+<p class="figcap">図3：デリバリーループ。バグ・レビュー差し戻し・赤い CI は停止理由にならない。止まるのは判断と人間の担当分だけ</p>
+</div>
+
+<h2>5. 品質ゲート — 「完了」の定義</h2>
+<div class="grid2">
+  <div class="panel">
+    <h3>常時 TDD</h3>
+    <p>落ちるテストが要求していない本番コードは書かない。落ちた記録（red）を試験レポートに残す。記録がなければ TDD とは認めない。</p>
+  </div>
+  <div class="panel">
+    <h3>独立コードレビュー</h3>
+    <p>実装者と別の新規エージェントに、イシュー番号と diff 範囲だけを渡す。自分の要約や推論は渡さない。APPROVE が出るまで新しいレビュアーで回す。</p>
+  </div>
+  <div class="panel">
+    <h3>証拠つき試験レポート</h3>
+    <p>受け入れ条件ごとの結果と証拠（スクリーンショット、状態ダンプ、音声）を <code>docs/test-reports/</code> に残してから close する。</p>
+  </div>
+  <div class="panel">
+    <h3>バグは直し切る</h3>
+    <p>見つけた時点で再現→根本原因→落ちるテスト→修正まで。severity で先送りしない、<code>blocked</code> にしない。設計判断が絡む場合だけ人間に渡す。</p>
+  </div>
+</div>
+
+<h2>6. 判断ポリシー — ohta 方式から変えた1点</h2>
+<div class="panel warn">
+  <p>ohta 方式の原則は「ユーザーに聞かない。判断はエージェントが決めて ADR に書く」。<strong>本プロジェクトではこれを採用しません</strong>（ADR-0006）。理由は、プロジェクトの目的が「人間の設計判断を理由つきで蓄積し、改善していくこと」にあるためです。</p>
+  <table>
+    <tr><th style="width:34%">判断の種類</th><th>扱い</th></tr>
+    <tr><td>設計判断（アーキテクチャ、技術選定、プロダクトの振る舞い）</td><td>AI は決めない。<code>needs-decision</code> で止まり、人間が決める</td></tr>
+    <tr><td>実装レベルの小判断（命名の細部など）</td><td>AI が決めてよい。ADR に記録し（決定者：エージェント）、最終報告で明示する</td></tr>
+  </table>
+</div>
+
+<h2>7. AIネイティブ設計との接続</h2>
+<p>ハーネスが回す対象（アプリ側）も、AI が触れる形に設計されています。状態変更は共通コア <code>studio-core</code> の<strong class="key">コマンド層経由のみ</strong>（単一の変更経路）。GUI・HTTP API・MCP サーバーはすべて同じコマンドを実行し、状態は JSON で全量ダンプできるため、画面で起きたことが API でも観測できます（computer use テストの前提、ADR-0004／0005）。</p>
+
+<h2>8. 現在のステータス（2026-11-21 時点）</h2>
+<table>
+  <tr><th style="width:40%">項目</th><th style="width:14%">状態</th><th>内容</th></tr>
+  <tr><td>ハーネス（ルール／エージェント／テンプレート）</td><td><span class="tag done">済</span></td><td>CLAUDE.md、rules 8本、code-reviewer 定義、EPIC/PBI テンプレート</td></tr>
+  <tr><td>ADR</td><td><span class="tag done">済</span></td><td>0001〜0007（記録方針、Rust+nannou、モノレポ、AIネイティブ、computer use、ハーネス採用、ピッチシフト）</td></tr>
+  <tr><td>共通コア studio-core</td><td><span class="tag done">済</span></td><td>モデル＋コマンド層を実装、テスト4件パス</td></tr>
+  <tr><td>イシュー</td><td><span class="tag done">済</span></td><td>EPIC 3本・PBI 19件を起票し sub-issue でリンク。全件 OPEN（着手はこれから）</td></tr>
+  <tr><td>CI ワークフロー</td><td><span class="tag todo">未</span></td><td>ファイルは用意済みだが、gh 認証の workflow スコープ不足で未投入（PBI #6）</td></tr>
+  <tr><td>アプリ2本の GUI（nannou）</td><td><span class="tag todo">未</span></td><td>スケルトンのみ。前提検証は調査 PBI #2 から</td></tr>
+  <tr><td>MCP サーバー／HTTP API</td><td><span class="tag todo">未</span></td><td>設計と PBI（#4／#5）まで。実装はこれから</td></tr>
+  <tr><td>DAW のデザイン</td><td><span class="tag stop">待ち</span></td><td>参照 YouTube 動画の提供待ち（PBI #20、needs-human）</td></tr>
+</table>
+<p class="muted">次の一手は EPIC #1 の先頭、PBI #2「nannou のビルドと最小ウィンドウ表示の検証」。GUI 全部の前提を証拠つきで固めてから進みます。</p>
+
+<p class="foot">この資料は rust-studio の <code>docs/harness/</code> に置かれています。ルールの正は <code>.claude/rules/</code> と <code>docs/adr/</code> であり、本資料はその要約です。</p>
+
+</div>
+</body>
+</html>
