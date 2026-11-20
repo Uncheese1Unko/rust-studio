@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 studio-core = { path = "../../crates/studio-core" }
+nannou = "0.19"
