@@ -1,0 +1,10 @@
+# .github/workflows/ci.yml を含むコミットの push 結果（2026-11-21、Yoko の VM）
+# コマンド: git push origin main
+
+To https://github.com/Uncheese1Unko/rust-studio.git
+ ! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)
+error: failed to push some refs to 'https://github.com/Uncheese1Unko/rust-studio.git'
+
+# → gh の OAuth トークンに workflow スコープがないため、エージェントからは
+#   ワークフローファイルを追加できない（人間の対応が必要）。
+# ワークフローファイルの内容は Issue #6 のコメントに全文を残した。

@@ -10,3 +10,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #3 プロジェクトの保存・読込（JSON 永続化） | [issue-0003-json-persistence.md](issue-0003-json-persistence.md) |
 | 2026-11-21 | #4 HTTP/JSON API（コマンド実行と状態ダンプ） | [issue-0004-http-json-api.md](issue-0004-http-json-api.md) |
 | 2026-11-21 | #5 MCP サーバー | [issue-0005-mcp-server.md](issue-0005-mcp-server.md) |
+| 2026-11-21 | #6 CI の整備（途中経過・needs-human 引き継ぎ） | [issue-0006-ci.md](issue-0006-ci.md) |

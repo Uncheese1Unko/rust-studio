@@ -1,0 +1,14 @@
+# ./scripts/verify.sh の実行結果（2026-11-21、Yoko の VM、抜粋）
+# 終了コード: 0
+
+== cargo fmt --check ==
+（差分なし）
+== cargo clippy --workspace --all-targets -- -D warnings ==
+（警告なし）
+== cargo test --workspace ==
+test result: ok. 8 passed (studio-api)
+test result: ok. 4 passed (studio-core command)
+test result: ok. 4 passed (studio-core persistence)
+test result: ok. 8 passed (studio-mcp)
+合計 24 passed / 0 failed / 0 ignored
+verify: OK
