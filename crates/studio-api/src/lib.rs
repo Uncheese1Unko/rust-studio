@@ -90,16 +90,41 @@ fn reason_phrase(status: u16) -> &'static str {
     }
 }
 
+/// 1リクエスト全体の読み取り期限。これを超える接続は諦めて次へ進む
+/// （何も送らない接続が逐次処理のサーバーを固まらせないため）。
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// 期限までの残り時間を読み取りタイムアウトに設定して1回読む。
+fn read_with_deadline(
+    stream: &mut TcpStream,
+    chunk: &mut [u8],
+    started: std::time::Instant,
+) -> std::io::Result<usize> {
+    let remaining = REQUEST_TIMEOUT.checked_sub(started.elapsed());
+    match remaining {
+        Some(remaining) if !remaining.is_zero() => {
+            stream.set_read_timeout(Some(remaining))?;
+            stream.read(chunk)
+        }
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "request deadline exceeded",
+        )),
+    }
+}
+
 /// 1接続分の生 HTTP を読み、[`Request`] に変換する。
 /// 対応するのは `Content-Length` を持つ単純なリクエストのみ。
+/// 読み取り全体は [`REQUEST_TIMEOUT`] で打ち切る。
 fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Request>> {
+    let started = std::time::Instant::now();
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     let header_end = loop {
         if let Some(pos) = find_subsequence(&buf, b"\r\n\r\n") {
             break pos + 4;
         }
-        let n = stream.read(&mut chunk)?;
+        let n = read_with_deadline(stream, &mut chunk, started)?;
         if n == 0 {
             return Ok(None);
         }
@@ -114,7 +139,14 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Request>> {
     let request_line = lines.next().unwrap_or("");
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
-    let path = parts.next().unwrap_or("").to_string();
+    // クエリ文字列はルーティングに使わないので落とす
+    let path = parts
+        .next()
+        .unwrap_or("")
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .to_string();
     let mut content_length = 0usize;
     for line in lines {
         if let Some((name, value)) = line.split_once(':') {
@@ -126,7 +158,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Request>> {
 
     let mut body = buf[header_end..].to_vec();
     while body.len() < content_length {
-        let n = stream.read(&mut chunk)?;
+        let n = read_with_deadline(stream, &mut chunk, started)?;
         if n == 0 {
             break;
         }

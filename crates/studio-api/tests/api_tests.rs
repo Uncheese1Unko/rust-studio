@@ -158,6 +158,37 @@ fn server_survives_abruptly_closed_connections() {
 }
 
 #[test]
+fn server_does_not_wedge_on_an_idle_connection() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = ApiState::new(Project::new("idle test"));
+    std::thread::spawn(move || studio_api::serve(listener, state));
+
+    // 何も送らない接続を保持し続ける（レビューで再現された
+    // 「アイドル接続でサーバーが固まる」不具合の回帰テスト）
+    let _idle = std::net::TcpStream::connect(addr).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // 後続のリクエストが、サーバー側のリクエスト期限内に処理されること
+    let mut stream = std::net::TcpStream::connect(addr).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(25)))
+        .unwrap();
+    write!(
+        stream,
+        "GET /project HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n"
+    )
+    .unwrap();
+    let mut text = String::new();
+    stream
+        .read_to_string(&mut text)
+        .expect("server must answer once the idle connection hits its deadline");
+    assert!(text.starts_with("HTTP/1.1 200"), "response: {text}");
+}
+
+#[test]
 fn server_round_trip_over_a_real_socket() {
     use std::io::{Read, Write};
 
