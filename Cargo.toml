@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/studio-core",
+    "apps/video-editor",
+    "apps/daw",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
