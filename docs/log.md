@@ -1,6 +1,7 @@
 # ドキュメントの更新履歴
 
 ## 2026-11-21
+* **Addition**: 試験レポート issue-0003（JSON 永続化）を追加した。
 * **Addition**: 試験レポート issue-0002（nannou ビルドと最小ウィンドウ表示の検証）を追加した。
 * **Addition**: `docs/harness/index.html`（ハーネス設計の HTML＋SVG 要約資料）を追加した。
 * **Addition**: PBI を4件追加した。サンプラー楽器化（EPIC #12）、DAW の UI デザイン（参照動画待ち、needs-human）、人物切り抜きの方式調査と実装（EPIC #7）。
