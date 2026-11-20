@@ -3,6 +3,7 @@
 ## 2026-11-21
 * **Addition**: 試験レポート issue-0004（HTTP/JSON API）を追加した。
 * **Addition**: `crates/studio-mcp`（MCP サーバー、PBI #5）を追加した。stdio の JSON-RPC でコマンド群を tool として公開する。
+* **Addition**: 試験レポート issue-0005（MCP サーバー）を追加した。
 * **Addition**: ADR-0008（HTTP API は std のみの薄いラッパーとして実装する）を追加した。
 * **Addition**: 試験レポート issue-0003（JSON 永続化）を追加した。
 * **Addition**: 試験レポート issue-0002（nannou ビルドと最小ウィンドウ表示の検証）を追加した。
