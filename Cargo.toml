@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/studio-core",
     "crates/studio-api",
+    "crates/studio-mcp",
     "apps/video-editor",
     "apps/daw",
 ]

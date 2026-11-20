@@ -1,0 +1,17 @@
+# studio-mcp 実セッション記録（Issue #5）
+# 入力（stdin へ改行区切り JSON-RPC）:
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"manual-check","version":"0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add_track","arguments":{"name":"V1","kind":"video"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"add_clip","arguments":{"track_id":1,"name":"op","start_ms":0,"duration_ms":1500,"source":"media/op.mp4"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"add_clip","arguments":{"track_id":999,"name":"bad","start_ms":0,"duration_ms":100,"source":"x.mp4"}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"get_project","arguments":{}}}
+
+# 出力（stdout）:
+{"id":1,"jsonrpc":"2.0","result":{"capabilities":{"tools":{}},"protocolVersion":"2024-11-05","serverInfo":{"name":"studio-mcp","version":"0.1.0"}}}
+{"id":2,"jsonrpc":"2.0","result":{"tools":[{"description":"トラックを追加する","inputSchema":{"properties":{"kind":{"enum":["video","audio"],"type":"string"},"name":{"type":"string"}},"required":["name","kind"],"type":"object"},"name":"add_track"},{"description":"トラックを削除する","inputSchema":{"properties":{"track_id":{"description":"トラック ID","type":"integer"}},"required":["track_id"],"type":"object"},"name":"remove_track"},{"description":"クリップをトラックに追加する","inputSchema":{"properties":{"duration_ms":{"minimum":0,"type":"integer"},"name":{"type":"string"},"source":{"type":"string"},"start_ms":{"minimum":0,"type":"integer"},"track_id":{"description":"トラック ID","type":"integer"}},"required":["track_id","name","start_ms","duration_ms","source"],"type":"object"},"name":"add_clip"},{"description":"クリップの開始位置を移動する","inputSchema":{"properties":{"clip_id":{"description":"クリップ ID","type":"integer"},"new_start_ms":{"minimum":0,"type":"integer"}},"required":["clip_id","new_start_ms"],"type":"object"},"name":"move_clip"},{"description":"クリップを削除する","inputSchema":{"properties":{"clip_id":{"description":"クリップ ID","type":"integer"}},"required":["clip_id"],"type":"object"},"name":"remove_clip"},{"description":"クリップのゲインを設定する（0.0〜4.0）","inputSchema":{"properties":{"clip_id":{"description":"クリップ ID","type":"integer"},"gain":{"type":"number"}},"required":["clip_id","gain"],"type":"object"},"name":"set_clip_gain"},{"description":"プロジェクトの状態ダンプ（JSON）を返す","inputSchema":{"properties":{},"type":"object"},"name":"get_project"}]}}
+{"id":3,"jsonrpc":"2.0","result":{"content":[{"text":"{\"created_id\":1,\"ok\":true}","type":"text"}],"isError":false}}
+{"id":4,"jsonrpc":"2.0","result":{"content":[{"text":"{\"created_id\":2,\"ok\":true}","type":"text"}],"isError":false}}
+{"id":5,"jsonrpc":"2.0","result":{"content":[{"text":"track 999 not found","type":"text"}],"isError":true}}
+{"id":6,"jsonrpc":"2.0","result":{"content":[{"text":"{\n  \"name\": \"untitled\",\n  \"tracks\": [\n    {\n      \"id\": 1,\n      \"name\": \"V1\",\n      \"kind\": \"video\",\n      \"clips\": [\n        {\n          \"id\": 2,\n          \"name\": \"op\",\n          \"start_ms\": 0,\n          \"duration_ms\": 1500,\n          \"source\": \"media/op.mp4\",\n          \"gain\": 1.0\n        }\n      ]\n    }\n  ],\n  \"next_id\": 3\n}","type":"text"}],"isError":false}}
