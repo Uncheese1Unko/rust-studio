@@ -50,5 +50,8 @@ cargo run -p video-editor
 cargo run -p daw
 ```
 
-CI（GitHub Actions）でも同じ検証を push / PR のたびに回す
-（`.github/workflows/ci.yml`）。
+CI（GitHub Actions）でも同じ検証を push / PR のたびに回す想定
+（`.github/workflows/ci.yml`）。ただしワークフローファイルはまだ
+リポジトリに入っていない（追加には workflow スコープのある認証が
+必要で、PBI #6 で対応中）。それまでは `./scripts/verify.sh` が
+検証の正とする。
