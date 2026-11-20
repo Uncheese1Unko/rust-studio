@@ -69,16 +69,68 @@ impl Project {
     }
 
     pub fn clip(&self, clip_id: u64) -> Option<(&Track, &Clip)> {
-        self.tracks.iter().find_map(|t| {
-            t.clips
-                .iter()
-                .find(|c| c.id == clip_id)
-                .map(|c| (t, c))
-        })
+        self.tracks
+            .iter()
+            .find_map(|t| t.clips.iter().find(|c| c.id == clip_id).map(|c| (t, c)))
     }
 
     /// 状態の全量ダンプ（JSON）。API と computer use テストの観測経路（ADR-0005）。
     pub fn dump_json(&self) -> String {
         serde_json::to_string_pretty(self).expect("Project is always serializable")
+    }
+
+    /// プロジェクトを JSON ファイルに保存する（Issue #3）。
+    pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), PersistenceError> {
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// JSON ファイルからプロジェクトを読み込む（Issue #3）。
+    ///
+    /// 読み込んだ結果は新しい `Project` として返る。失敗した場合は
+    /// `Err` を返すだけで、呼び出し側が保持している既存の状態には
+    /// 一切触れない。
+    pub fn load_from_path(path: &std::path::Path) -> Result<Project, PersistenceError> {
+        let text = std::fs::read_to_string(path)?;
+        let project = serde_json::from_str(&text)?;
+        Ok(project)
+    }
+}
+
+/// プロジェクトの保存・読込で起こるエラー（Issue #3）。
+#[derive(Debug)]
+pub enum PersistenceError {
+    Io(std::io::Error),
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for PersistenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PersistenceError::Io(e) => write!(f, "failed to access project file: {e}"),
+            PersistenceError::Json(e) => write!(f, "failed to parse project JSON: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for PersistenceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PersistenceError::Io(e) => Some(e),
+            PersistenceError::Json(e) => Some(e),
+        }
+    }
+}
+
+impl From<std::io::Error> for PersistenceError {
+    fn from(e: std::io::Error) -> Self {
+        PersistenceError::Io(e)
+    }
+}
+
+impl From<serde_json::Error> for PersistenceError {
+    fn from(e: serde_json::Error) -> Self {
+        PersistenceError::Json(e)
     }
 }

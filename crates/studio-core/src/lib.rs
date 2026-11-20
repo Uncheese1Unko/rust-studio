@@ -8,4 +8,4 @@ pub mod command;
 pub mod model;
 
 pub use command::{apply, Command, CommandError};
-pub use model::{Clip, Project, Track, TrackKind};
+pub use model::{Clip, PersistenceError, Project, Track, TrackKind};
