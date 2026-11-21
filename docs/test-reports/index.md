@@ -15,3 +15,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #6 CI の整備（完了版） | [issue-0006-ci.md](issue-0006-ci.md) |
 | 2026-11-21 | #8 タイムライン UI（トラック／クリップ表示と再生ヘッド） | [issue-0008-timeline-ui.md](issue-0008-timeline-ui.md) |
 | 2026-11-21 | #9 クリップの配置・移動・トリミング（コマンド経由） | [issue-0009-clip-editing.md](issue-0009-clip-editing.md) |
+| 2026-11-21 | #10 プレビュー再生（映像の最小経路） | [issue-0010-preview-playback.md](issue-0010-preview-playback.md) |
