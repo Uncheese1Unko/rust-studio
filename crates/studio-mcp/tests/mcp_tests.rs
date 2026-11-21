@@ -270,6 +270,49 @@ fn trim_clip_tool_applies_via_tools_call() {
 }
 
 #[test]
+fn set_clip_pitch_tool_applies_via_tools_call() {
+    // Issue #18 レビュー指摘: tools/list の登録だけでなく、tools/call
+    // 経由でダンプに反映されることまで保証する。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        20,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        21,
+        "add_clip",
+        json!({"track_id": 1, "name": "voice", "start_ms": 0,
+               "duration_ms": 1000, "source": "voice.wav"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        22,
+        "set_clip_pitch",
+        json!({"clip_id": 2, "semitones": 7.0}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let (_, clip) = project.clip(2).unwrap();
+    assert_eq!(clip.pitch_semitones, 7.0);
+    // 範囲外はエラーになり、状態は変わらない
+    let res = call_tool(
+        &server,
+        23,
+        "set_clip_pitch",
+        json!({"clip_id": 2, "semitones": 99.0}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    let dump_after = project_dump_via_tool(&server);
+    assert_eq!(dump, dump_after, "rejected call must not change state");
+}
+
+#[test]
 fn project_file_backing_persists_across_server_instances() {
     // Issue #11: --project-file モードでは、コマンドの結果がファイルに
     // 保存され、別のサーバーインスタンス（= GUI と同じファイルを読む側）
