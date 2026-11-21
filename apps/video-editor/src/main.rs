@@ -8,6 +8,7 @@
 //! 起動時のデモプロジェクトはコマンド経由で構築し、状態ダンプと
 //! 要素識別子の一覧を標準出力に出す（ADR-0005 の観測経路）。
 
+mod edit;
 mod timeline;
 
 use nannou::prelude::*;
@@ -17,6 +18,12 @@ struct Model {
     _window: WindowId,
     project: Project,
     playhead_ms: i64,
+    // Issue #9: ポインタ編集の状態。
+    drag: Option<edit::Drag>,
+    last_drag_cmd: Option<Command>,
+    last_rejection: Option<String>,
+    prev_left_down: bool,
+    clicks: edit::ClickTracker,
 }
 
 fn main() {
@@ -82,13 +89,75 @@ fn model(app: &App) -> Model {
         _window: window,
         project,
         playhead_ms: 0,
+        drag: None,
+        last_drag_cmd: None,
+        last_rejection: None,
+        prev_left_down: false,
+        clicks: edit::ClickTracker::new(),
     }
 }
 
-fn update(_app: &App, model: &mut Model, update: Update) {
+fn update(app: &App, model: &mut Model, update: Update) {
+    handle_pointer(app, model);
+
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(&model.project);
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end_ms);
+}
+
+/// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #9）。
+/// 押下でドラッグ開始（またはダブルクリックで配置）、ドラッグ中は候補
+/// コマンドが変わるたびに適用し、解放時に状態ダンプを出す。
+/// 範囲外の候補はコマンド層が弾き、状態は最後の正常値に留まる。
+fn handle_pointer(app: &App, model: &mut Model) {
+    let win = app.window_rect();
+    // nannou の中心原点座標を、レイアウトの左上原点ピクセルへ変換する。
+    let lx = app.mouse.x + win.w() / 2.0;
+    let ly = win.h() / 2.0 - app.mouse.y;
+    let left_down = app.mouse.buttons.left().is_down();
+    let pointer_ms = edit::x_to_ms(lx, win.w());
+
+    if left_down && !model.prev_left_down {
+        let target = edit::hit_test(&model.project, win.w(), lx, ly);
+        if let Some(drag) = edit::Drag::begin(&model.project, &target, pointer_ms) {
+            model.drag = Some(drag);
+            model.last_drag_cmd = None;
+            model.last_rejection = None;
+        } else if let edit::HitTarget::Empty { track_index } = target {
+            let now_ms = (app.time * 1_000.0) as u64;
+            if model.clicks.register(now_ms, lx, ly) {
+                if let Some(cmd) = edit::place_clip_command(&model.project, track_index, pointer_ms)
+                {
+                    match apply(&mut model.project, &cmd) {
+                        Ok(_) => println!("placed: {}", model.project.dump_json()),
+                        Err(e) => println!("command rejected: {e}"),
+                    }
+                }
+            }
+        }
+    }
+
+    if left_down {
+        if let Some(drag) = &model.drag {
+            let cmd = drag.command_for(pointer_ms);
+            if model.last_drag_cmd.as_ref() != Some(&cmd) {
+                match apply(&mut model.project, &cmd) {
+                    Ok(_) => model.last_drag_cmd = Some(cmd),
+                    Err(e) => model.last_rejection = Some(e.to_string()),
+                }
+            }
+        }
+    }
+
+    if !left_down && model.prev_left_down && model.drag.take().is_some() {
+        println!("after drag: {}", model.project.dump_json());
+        if let Some(rejection) = model.last_rejection.take() {
+            println!("command rejected during drag: {rejection}");
+        }
+        model.last_drag_cmd = None;
+    }
+
+    model.prev_left_down = left_down;
 }
 
 /// 左上原点ピクセル（x, y, w, h）を nannou の中心原点の矩形中心に変換する。
