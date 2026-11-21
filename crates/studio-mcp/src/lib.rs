@@ -199,7 +199,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド11種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド12種＋状態ダンプ取得。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -222,6 +222,18 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {"track_id": id_prop("トラック ID")},
                 "required": ["track_id"],
+            },
+        },
+        {
+            "name": "rename_track",
+            "description": "トラックの名前を変更する（空白のみの名前はエラー）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "name": {"type": "string"},
+                },
+                "required": ["track_id", "name"],
             },
         },
         {

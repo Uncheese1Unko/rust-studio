@@ -368,3 +368,72 @@ fn set_clip_pitch_applies_and_validates() {
     let project: Project = serde_json::from_str(legacy).unwrap();
     assert_eq!(project.tracks[0].clips[0].pitch_semitones, 0.0);
 }
+
+#[test]
+fn rename_track_changes_only_the_name() {
+    // Issue #55: 名前だけが変わり、他の状態（クリップ・音量・パン・
+    // トラック数）は変わらないこと。ダンプにも新しい名前が現れる。
+    let (mut p, track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetTrackVolume {
+            track_id,
+            volume: 0.5,
+        },
+    )
+    .unwrap();
+    let result = apply(
+        &mut p,
+        &Command::RenameTrack {
+            track_id,
+            name: "メイン映像".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result, None);
+    let track = p.track(track_id).unwrap();
+    assert_eq!(track.name, "メイン映像");
+    assert_eq!(track.volume, 0.5);
+    assert_eq!(track.clips.len(), 1);
+    assert_eq!(track.clips[0].id, clip_id);
+    assert!(p.dump_json().contains("メイン映像"));
+}
+
+#[test]
+fn rename_track_unknown_id_keeps_state() {
+    // Issue #55: 存在しない track_id はエラーで、状態は一切変わらない。
+    let (mut p, _, _) = project_with_clip();
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::RenameTrack {
+            track_id: 9999,
+            name: "x".into(),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::TrackNotFound(9999));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn rename_track_rejects_blank_name() {
+    // Issue #55: 空文字・空白のみの名前は InvalidRange で、状態不変。
+    let (mut p, track_id, _) = project_with_clip();
+    let before = p.dump_json();
+    for bad in ["", " ", "  \t\n "] {
+        let err = apply(
+            &mut p,
+            &Command::RenameTrack {
+                track_id,
+                name: bad.into(),
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CommandError::InvalidRange(_)),
+            "bad={bad:?}: {err}"
+        );
+        assert_eq!(p.dump_json(), before);
+    }
+}

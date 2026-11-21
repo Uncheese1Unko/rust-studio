@@ -18,6 +18,12 @@ pub enum Command {
     RemoveTrack {
         track_id: u64,
     },
+    /// 既存トラックの名前を変更する（Issue #55）。
+    /// 空白のみの名前は受け付けない。
+    RenameTrack {
+        track_id: u64,
+        name: String,
+    },
     AddClip {
         track_id: u64,
         name: String,
@@ -104,6 +110,18 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .position(|t| t.id == *track_id)
                 .ok_or(CommandError::TrackNotFound(*track_id))?;
             project.tracks.remove(pos);
+            Ok(None)
+        }
+        Command::RenameTrack { track_id, name } => {
+            if name.trim().is_empty() {
+                return Err(CommandError::InvalidRange("name must not be blank"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == *track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.name = name.clone();
             Ok(None)
         }
         Command::AddClip {

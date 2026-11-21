@@ -54,6 +54,7 @@ fn tools_list_exposes_all_commands() {
         "set_track_pan",
         "set_clip_cutout",
         "set_clip_pitch",
+        "rename_track",
         "get_project",
     ] {
         assert!(
@@ -450,4 +451,38 @@ fn project_file_save_failure_is_reported_in_result() {
     let text = res["result"]["content"][0]["text"].as_str().unwrap();
     let payload: serde_json::Value = serde_json::from_str(text).unwrap();
     assert_eq!(payload["persisted"], false);
+}
+
+#[test]
+fn rename_track_tool_applies_via_tools_call() {
+    // Issue #55: tools/list の登録だけでなく、tools/call 経由で
+    // ダンプに新しい名前が反映されることまで保証する。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        40,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        41,
+        "rename_track",
+        json!({"track_id": 1, "name": "メイン映像"}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].name, "メイン映像");
+    // 空白名はエラーになり、状態は変わらない
+    let res = call_tool(
+        &server,
+        42,
+        "rename_track",
+        json!({"track_id": 1, "name": "  "}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    let dump_after = project_dump_via_tool(&server);
+    assert_eq!(dump, dump_after, "rejected call must not change state");
 }

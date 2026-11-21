@@ -224,3 +224,46 @@ fn server_round_trip_over_a_real_socket() {
     assert!(text.starts_with("HTTP/1.1 200"), "response: {text}");
     assert!(text.contains("\"A1\""), "response: {text}");
 }
+
+#[test]
+fn rename_track_command_applies_via_api() {
+    // Issue #55: HTTP API は Command を汎用的にデシリアライズするため、
+    // rename_track も追加対応なしで実行できることを確認する。
+    let state = state();
+    let res = handle_request(
+        &state,
+        &req(
+            "POST",
+            "/commands",
+            r#"{"type":"add_track","name":"V1","kind":"video"}"#,
+        ),
+    );
+    assert_eq!(res.status, 200);
+    let value: serde_json::Value = serde_json::from_str(&res.body).unwrap();
+    let track_id = value["created_id"].as_u64().unwrap();
+
+    let res = handle_request(
+        &state,
+        &req(
+            "POST",
+            "/commands",
+            &format!(r#"{{"type":"rename_track","track_id":{track_id},"name":"メイン映像"}}"#),
+        ),
+    );
+    assert_eq!(res.status, 200, "{}", res.body);
+    let dump = get_dump(&state);
+    let value: serde_json::Value = serde_json::from_str(&dump).unwrap();
+    assert_eq!(value["tracks"][0]["name"], "メイン映像");
+
+    // 空白名は 400 で、状態は変わらない
+    let res = handle_request(
+        &state,
+        &req(
+            "POST",
+            "/commands",
+            &format!(r#"{{"type":"rename_track","track_id":{track_id},"name":" "}}"#),
+        ),
+    );
+    assert_eq!(res.status, 400);
+    assert_eq!(get_dump(&state), dump);
+}
