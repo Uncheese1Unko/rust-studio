@@ -116,29 +116,90 @@ struct Model {
     /// 操作中のミキサースライダー（トラック ID とパラメータ）。
     mixer_active: Option<(u64, mixer::Param)>,
     last_mixer_cmd: Option<Command>,
+    // Issue #16: プロジェクトファイル共有モードの状態（#11 と同じ方式）。
+    project_file: Option<std::path::PathBuf>,
+    file_stamp: u64,
+    last_watch_check: f32,
 }
 
-fn model(app: &App) -> Model {
-    let (tone220, tone440, dropped) = prepare_demo_media();
-    let project = demo_project(&tone220, &tone440);
-    println!("daw (issue #14: timeline UI)");
-    println!("{}", project.dump_json());
-    println!("elements: {}", timeline::element_ids(&project).join(", "));
-    // 波形の事前計算（デコードは audio エンジン経由）
+/// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
+/// #11 と同じ方式）の入口。環境変数 `STUDIO_PROJECT_FILE` があればその
+/// ファイルのプロジェクトを、なければデモプロジェクトを返す。
+fn initial_project(tone220: &str, tone440: &str) -> (Project, Option<std::path::PathBuf>, u64) {
+    let path = std::env::var_os("STUDIO_PROJECT_FILE").map(std::path::PathBuf::from);
+    if let Some(path) = path {
+        match Project::load_from_path(&path) {
+            Ok(project) => {
+                let stamp = std::fs::read(&path).map(|bytes| fnv1a(&bytes)).unwrap_or(0);
+                println!("project file mode: {}", path.display());
+                return (project, Some(path), stamp);
+            }
+            Err(e) => {
+                println!(
+                    "warning: cannot load project file {}: {e}; using demo project",
+                    path.display()
+                );
+            }
+        }
+    }
+    (demo_project(tone220, tone440), None, 0)
+}
+
+/// FNV-1a 64bit（ファイル変更検出用。video-editor と同じ実装）。
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// プロジェクトのソース集合に対する波形と長さを計算する。
+fn compute_waveforms(project: &Project) -> (HashMap<String, Vec<f32>>, HashMap<String, i64>) {
     let mut waveforms = HashMap::new();
-    let mut source_durations = HashMap::new();
-    for source in [tone220, tone440, dropped.clone()] {
-        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(&source)) {
+    let mut durations = HashMap::new();
+    let mut sources: Vec<&str> = project
+        .tracks
+        .iter()
+        .flat_map(|t| t.clips.iter().map(|c| c.source.as_str()))
+        .collect();
+    sources.sort();
+    sources.dedup();
+    for source in sources {
+        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(source)) {
             waveforms.insert(
-                source.clone(),
+                source.to_string(),
                 timeline::waveform_peaks(
                     &decoded.samples,
                     decoded.channels as usize,
                     WAVEFORM_COLUMNS,
                 ),
             );
-            source_durations.insert(source, decoded.duration_ms());
+            durations.insert(source.to_string(), decoded.duration_ms());
         }
+    }
+    (waveforms, durations)
+}
+
+fn model(app: &App) -> Model {
+    let (tone220, tone440, dropped) = prepare_demo_media();
+    let (project, project_file, file_stamp) = initial_project(&tone220, &tone440);
+    println!("daw (issue #14: timeline UI)");
+    println!("{}", project.dump_json());
+    println!("elements: {}", timeline::element_ids(&project).join(", "));
+    let (mut waveforms, mut source_durations) = compute_waveforms(&project);
+    // 配置用素材も波形を用意しておく（配置直後から波形が出るように）
+    if let Ok(decoded) = audio::decode_audio(std::path::Path::new(&dropped)) {
+        waveforms.insert(
+            dropped.clone(),
+            timeline::waveform_peaks(
+                &decoded.samples,
+                decoded.channels as usize,
+                WAVEFORM_COLUMNS,
+            ),
+        );
+        source_durations.insert(dropped.clone(), decoded.duration_ms());
     }
     let window = app
         .new_window()
@@ -161,6 +222,9 @@ fn model(app: &App) -> Model {
         dropped_source: dropped,
         mixer_active: None,
         last_mixer_cmd: None,
+        project_file,
+        file_stamp,
+        last_watch_check: 0.0,
     }
 }
 
@@ -172,8 +236,73 @@ fn main() {
     nannou::app(model).update(update).run();
 }
 
+/// プロジェクトファイルの変更を監視し、変わっていたら読み直す
+/// （Issue #16、video-editor の #11 と同じ方式）。読み込みに失敗した
+/// 場合は現在の状態を保ち、次回に再試行する。
+fn watch_project_file(app: &App, model: &mut Model) {
+    let Some(path) = model.project_file.clone() else {
+        return;
+    };
+    if app.time - model.last_watch_check < 0.5 {
+        return;
+    }
+    model.last_watch_check = app.time;
+    let Ok(bytes) = std::fs::read(&path) else {
+        return;
+    };
+    let stamp = fnv1a(&bytes);
+    if stamp == model.file_stamp {
+        return;
+    }
+    match Project::load_from_path(&path) {
+        Ok(new_project) => {
+            model.file_stamp = stamp;
+            // 外部変更で状態が差し替わるため、旧状態前提の操作は打ち切る
+            model.drag = None;
+            model.last_drag_cmd = None;
+            model.last_rejection = None;
+            model.mixer_active = None;
+            model.last_mixer_cmd = None;
+            let mut new_sources: Vec<String> = new_project
+                .tracks
+                .iter()
+                .flat_map(|t| t.clips.iter().map(|c| c.source.clone()))
+                .collect();
+            new_sources.sort();
+            new_sources.dedup();
+            let mut old_sources: Vec<String> = model.waveforms.keys().cloned().collect();
+            old_sources.sort();
+            model.project = new_project;
+            if new_sources != old_sources {
+                let (waveforms, durations) = compute_waveforms(&model.project);
+                model.waveforms = waveforms;
+                model.source_durations = durations;
+            }
+            println!("project reloaded: {}", model.project.dump_json());
+        }
+        Err(e) => {
+            println!("warning: project reload failed: {e}");
+        }
+    }
+}
+
+/// GUI の編集結果をプロジェクトファイルへ保存し直す（Issue #16）。
+/// 自分の保存で監視が再読込しないよう、スタンプも同期させる。
+fn save_project_file(model: &mut Model) {
+    let Some(path) = model.project_file.clone() else {
+        return;
+    };
+    match model.project.save_to_path(&path) {
+        Ok(()) => {
+            model.file_stamp = fnv1a(model.project.dump_json().as_bytes());
+        }
+        Err(e) => println!("warning: cannot save project file {}: {e}", path.display()),
+    }
+}
+
 fn update(app: &App, model: &mut Model, update: Update) {
     handle_pointer(app, model);
+    watch_project_file(app, model);
     let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
     let end = timeline::project_end_ms(&model.project);
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end);
@@ -217,6 +346,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
     if !left_down && model.prev_left_down && model.mixer_active.take().is_some() {
         println!("after mixer: {}", model.project.dump_json());
+        save_project_file(model);
         model.last_mixer_cmd = None;
     }
 
@@ -236,7 +366,10 @@ fn handle_pointer(app: &App, model: &mut Model) {
                     &model.dropped_source,
                 ) {
                     match apply(&mut model.project, &cmd) {
-                        Ok(_) => println!("placed: {}", model.project.dump_json()),
+                        Ok(_) => {
+                            println!("placed: {}", model.project.dump_json());
+                            save_project_file(model);
+                        }
                         Err(e) => println!("command rejected: {e}"),
                     }
                 }
@@ -258,6 +391,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
 
     if !left_down && model.prev_left_down && model.drag.take().is_some() {
         println!("after drag: {}", model.project.dump_json());
+        save_project_file(model);
         if let Some(rejection) = model.last_rejection.take() {
             println!("command rejected during drag: {rejection}");
         }
@@ -526,5 +660,22 @@ fn engine_demo() {
             "player: position={}ms playing={}",
             player.position_ms, player.playing
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_file_stamp_matches_dump_stamp() {
+        // GUI が保存した直後に監視が再読込しないこと（#11 と同じ不変条件）。
+        let project = demo_project("demo/a.wav", "demo/b.wav");
+        let path =
+            std::env::temp_dir().join(format!("rust-studio-daw-test-{}.json", std::process::id()));
+        project.save_to_path(&path).unwrap();
+        let file_bytes = std::fs::read(&path).unwrap();
+        assert_eq!(fnv1a(&file_bytes), fnv1a(project.dump_json().as_bytes()));
+        let _ = std::fs::remove_file(&path);
     }
 }
