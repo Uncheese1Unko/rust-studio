@@ -1,0 +1,2 @@
+shot1-playing-first.png: tone-220 accent=3316 soft=0 | tone-440 accent=44 soft=3272
+shot2-playing-second.png: tone-220 accent=44 soft=3272 | tone-440 accent=3316 soft=0
