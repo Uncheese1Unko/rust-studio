@@ -146,7 +146,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド6種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド7種＋状態ダンプ取得。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -196,6 +196,19 @@ fn tool_definitions() -> Value {
                     "new_start_ms": {"type": "integer", "minimum": 0},
                 },
                 "required": ["clip_id", "new_start_ms"],
+            },
+        },
+        {
+            "name": "trim_clip",
+            "description": "クリップの開始位置と長さをまとめて変える（トリミング）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "new_start_ms": {"type": "integer", "minimum": 0},
+                    "new_duration_ms": {"type": "integer", "minimum": 1},
+                },
+                "required": ["clip_id", "new_start_ms", "new_duration_ms"],
             },
         },
         {

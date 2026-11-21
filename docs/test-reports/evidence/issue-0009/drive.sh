@@ -36,6 +36,11 @@ xdotool mousemove 750 48; sleep 0.3
 xdotool mousedown 1; sleep 0.15; xdotool mouseup 1; sleep 0.1
 xdotool mousedown 1; sleep 0.15; xdotool mouseup 1; sleep 0.5
 
+# 5) Trim "interview" LEFT edge -> +1000ms start, end stays 5500.
+#    opening の右端 (x=324) と interview の左端 (x=330) が近いので、
+#    誤認しないよう掴み位置は x=336（左端から +6px）にする。
+drag 336 48 420 48
+
 ffmpeg -y -loglevel error -f x11grab -video_size 1024x600 -i :99 -frames:v 1 "$OUT/after-ops.png"
 
 kill "$APP_PID" 2>/dev/null

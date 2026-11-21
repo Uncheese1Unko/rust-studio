@@ -157,3 +157,27 @@ fn trim_clip_unknown_clip_errors_and_keeps_state() {
     assert_eq!(err, CommandError::ClipNotFound(9999));
     assert_eq!(p.dump_json(), before);
 }
+
+#[test]
+fn trim_clip_command_round_trips_through_json() {
+    // API／MCP から JSON で受けられる形であること（architecture ルール）。
+    let cmd = Command::TrimClip {
+        clip_id: 42,
+        new_start_ms: 500,
+        new_duration_ms: 3_000,
+    };
+    let text = serde_json::to_string(&cmd).unwrap();
+    assert!(text.contains("\"type\":\"trim_clip\""), "{text}");
+    let parsed: Command = serde_json::from_str(&text).unwrap();
+    assert_eq!(parsed, cmd);
+    // デシリアライズしたコマンドがそのまま適用できること
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    let parsed = Command::TrimClip {
+        clip_id,
+        new_start_ms: 500,
+        new_duration_ms: 3_000,
+    };
+    apply(&mut p, &parsed).unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!((clip.start_ms, clip.duration_ms), (500, 3_000));
+}

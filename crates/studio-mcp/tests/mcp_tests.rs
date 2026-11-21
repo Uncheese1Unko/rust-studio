@@ -47,6 +47,7 @@ fn tools_list_exposes_all_commands() {
         "remove_track",
         "add_clip",
         "move_clip",
+        "trim_clip",
         "remove_clip",
         "set_clip_gain",
         "get_project",
@@ -229,4 +230,37 @@ fn stdio_end_to_end_session() {
     assert_eq!(lines[1]["result"]["isError"], false);
     let dump_text = lines[2]["result"]["content"][0]["text"].as_str().unwrap();
     assert!(dump_text.contains("\"A1\""), "dump: {dump_text}");
+}
+
+#[test]
+fn trim_clip_tool_applies_via_tools_call() {
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        10,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        11,
+        "add_clip",
+        json!({"track_id": 1, "name": "opening", "start_ms": 1000,
+               "duration_ms": 2000, "source": "demo/opening.mp4"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    // 配置したクリップ（id は採番順で 2）をトリミングする
+    let res = call_tool(
+        &server,
+        12,
+        "trim_clip",
+        json!({"clip_id": 2, "new_start_ms": 1300, "new_duration_ms": 1700}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let (_, clip) = project.clip(2).unwrap();
+    assert_eq!(clip.start_ms, 1300);
+    assert_eq!(clip.duration_ms, 1700);
 }
