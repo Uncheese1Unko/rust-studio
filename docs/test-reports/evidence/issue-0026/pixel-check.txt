@@ -1,0 +1,3 @@
+shot1 key5 accent: 0
+shot2 key5 accent: 868
+shot2 key0 accent: 0
