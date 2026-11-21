@@ -1,6 +1,7 @@
 # ドキュメントの更新履歴
 
 ## 2026-11-21
+* **Addition**: デザイン文書 `docs/design/daw-visual-design.md`（参照動画ベースの DAW テーマ）と ADR-0012（DAW のビジュアルテーマに参照動画ベースのライトテーマを採用する、決定者：ユーザー、PBI #20）を追加した。
 * **Addition**: 試験レポート issue-0014 / issue-0016 / issue-0018 を追加した。
 * **Addition**: 試験レポート issue-0011 / issue-0015 を追加した。
 * **Addition**: 試験レポート issue-0013 / issue-0019 / issue-0022 を追加した。
