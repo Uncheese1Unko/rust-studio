@@ -220,8 +220,9 @@ pub fn hit_track_delete(project: &Project, x: f32, y: f32) -> Option<usize> {
     }
 }
 
-/// トラック追加のコマンド（Issue #57）。名前は同じ種別の既存数 +1 で
-/// 映像は「V1」「V2」…、音声は「A1」「A2」… と付ける。
+/// トラック追加のコマンド（Issue #57）。名前は同じ種別の既存名の
+/// 最大番号 +1 で、映像は「V1」「V2」…、音声は「A1」「A2」… と
+/// 付ける（バグ #60 で採番規則を変更）。
 pub fn add_track_command(project: &Project, kind: TrackKind) -> Command {
     let prefix = match kind {
         TrackKind::Video => "V",
