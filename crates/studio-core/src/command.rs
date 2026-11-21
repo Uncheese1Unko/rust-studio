@@ -44,6 +44,14 @@ pub enum Command {
         clip_id: u64,
         gain: f32,
     },
+    SetTrackVolume {
+        track_id: u64,
+        volume: f32,
+    },
+    SetTrackPan {
+        track_id: u64,
+        pan: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +84,8 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 name: name.clone(),
                 kind: *kind,
                 clips: Vec::new(),
+                volume: 1.0,
+                pan: 0.0,
             });
             Ok(Some(id))
         }
@@ -188,6 +198,32 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.gain = *gain;
+            Ok(None)
+        }
+        Command::SetTrackVolume { track_id, volume } => {
+            if !(0.0..=2.0).contains(volume) {
+                return Err(CommandError::InvalidRange(
+                    "volume must be within 0.0..=2.0",
+                ));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == *track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.volume = *volume;
+            Ok(None)
+        }
+        Command::SetTrackPan { track_id, pan } => {
+            if !(-1.0..=1.0).contains(pan) {
+                return Err(CommandError::InvalidRange("pan must be within -1.0..=1.0"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == *track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.pan = *pan;
             Ok(None)
         }
     }

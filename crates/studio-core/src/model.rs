@@ -30,12 +30,23 @@ impl Clip {
     }
 }
 
+fn default_track_volume() -> f32 {
+    1.0
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub id: u64,
     pub name: String,
     pub kind: TrackKind,
     pub clips: Vec<Clip>,
+    /// トラック音量（Issue #15）。旧形式の JSON では欠けているため
+    /// 既定 1.0 で読み込む。
+    #[serde(default = "default_track_volume")]
+    pub volume: f32,
+    /// パン（-1.0 = 左、0.0 = 中央、1.0 = 右。Issue #15）。
+    #[serde(default)]
+    pub pan: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

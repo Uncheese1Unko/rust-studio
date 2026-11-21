@@ -73,6 +73,12 @@ pub fn render_mix(
             if track.kind != studio_core::TrackKind::Audio {
                 continue;
             }
+            // トラック音量とパン（Issue #15）。パンはバランス方式:
+            // 中央では左右とも等倍、端では反対側が 0 になる。
+            let channel_factor = [
+                track.volume * (1.0 - track.pan.max(0.0)),
+                track.volume * (1.0 + track.pan.min(0.0)),
+            ];
             for clip in &track.clips {
                 if t_ms < clip.start_ms as f64 || t_ms >= (clip.start_ms + clip.duration_ms) as f64
                 {
@@ -101,7 +107,7 @@ pub fn render_mix(
                         .get((i0 + 1) * ch + src_ch)
                         .copied()
                         .unwrap_or(0.0);
-                    *slot += (a + (b - a) * frac) * clip.gain;
+                    *slot += (a + (b - a) * frac) * clip.gain * channel_factor[out_ch];
                 }
             }
         }
@@ -322,5 +328,113 @@ mod tests {
         assert!(!player.playing, "playback stops at project end");
         player.seek(-100);
         assert_eq!(player.position_ms, 0, "seek clamps at 0");
+    }
+}
+
+#[cfg(test)]
+mod mixer_tests {
+    use super::*;
+    use studio_core::{apply, Command, TrackKind};
+
+    fn project_with_track() -> (Project, HashMap<String, ClipAudio>) {
+        let mut p = Project::new("mixer test");
+        let track = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: track,
+                name: "tone".into(),
+                start_ms: 0,
+                duration_ms: 1000,
+                source: "a.wav".into(),
+            },
+        )
+        .unwrap();
+        let mut audio = HashMap::new();
+        audio.insert(
+            "a.wav".to_string(),
+            ClipAudio {
+                sample_rate: 44100,
+                channels: 1,
+                samples: (0..44100)
+                    .map(|i| 0.4 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
+                    .collect(),
+            },
+        );
+        (p, audio)
+    }
+
+    fn channel_rms(mix: &[f32], channel: usize) -> f32 {
+        let samples: Vec<f32> = mix.iter().skip(channel).step_by(2).cloned().collect();
+        (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn track_volume_scales_the_mix() {
+        let (mut p, audio) = project_with_track();
+        let base = render_mix(&p, &audio, 0, 1000, 44100);
+        apply(
+            &mut p,
+            &Command::SetTrackVolume {
+                track_id: 1,
+                volume: 0.5,
+            },
+        )
+        .unwrap();
+        let halved = render_mix(&p, &audio, 0, 1000, 44100);
+        let ratio = channel_rms(&halved, 0) / channel_rms(&base, 0);
+        assert!((ratio - 0.5).abs() < 0.03, "volume ratio was {ratio}");
+    }
+
+    #[test]
+    fn track_pan_moves_the_balance() {
+        let (mut p, audio) = project_with_track();
+        // 左いっぱい: 右は無音、左はそのまま
+        apply(
+            &mut p,
+            &Command::SetTrackPan {
+                track_id: 1,
+                pan: -1.0,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1000, 44100);
+        assert!(channel_rms(&mix, 1) < 1e-5, "right must be silent");
+        assert!(channel_rms(&mix, 0) > 0.2, "left must sound");
+        // 右いっぱい: 逆
+        apply(
+            &mut p,
+            &Command::SetTrackPan {
+                track_id: 1,
+                pan: 1.0,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1000, 44100);
+        assert!(channel_rms(&mix, 0) < 1e-5, "left must be silent");
+        assert!(channel_rms(&mix, 1) > 0.2, "right must sound");
+        // 中央: 左右が等しい
+        apply(
+            &mut p,
+            &Command::SetTrackPan {
+                track_id: 1,
+                pan: 0.0,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1000, 44100);
+        let (l, r) = (channel_rms(&mix, 0), channel_rms(&mix, 1));
+        assert!(
+            (l - r).abs() < 1e-4,
+            "center pan must be balanced: {l} vs {r}"
+        );
     }
 }

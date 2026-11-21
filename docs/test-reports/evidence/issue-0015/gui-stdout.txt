@@ -1,0 +1,95 @@
+daw (issue #14: timeline UI)
+{
+  "name": "daw demo session",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "tone-220",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone220.wav",
+          "gain": 1.0
+        },
+        {
+          "id": 3,
+          "name": "tone-440",
+          "start_ms": 2500,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "gain": 1.0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0
+    }
+  ],
+  "next_id": 4
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.2, timeline.clip.3
+after mixer: {
+  "name": "daw demo session",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "tone-220",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone220.wav",
+          "gain": 1.0
+        },
+        {
+          "id": 3,
+          "name": "tone-440",
+          "start_ms": 2500,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "gain": 1.0
+        }
+      ],
+      "volume": 0.5,
+      "pan": 0.0
+    }
+  ],
+  "next_id": 4
+}
+after mixer: {
+  "name": "daw demo session",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "tone-220",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone220.wav",
+          "gain": 1.0
+        },
+        {
+          "id": 3,
+          "name": "tone-440",
+          "start_ms": 2500,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "gain": 1.0
+        }
+      ],
+      "volume": 0.5,
+      "pan": 0.5
+    }
+  ],
+  "next_id": 4
+}

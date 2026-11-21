@@ -181,3 +181,78 @@ fn trim_clip_command_round_trips_through_json() {
     let (_, clip) = p.clip(clip_id).unwrap();
     assert_eq!((clip.start_ms, clip.duration_ms), (500, 3_000));
 }
+
+#[test]
+fn set_track_volume_and_pan_apply_and_validate() {
+    // Issue #15: トラック音量・パンのコマンド。
+    let (mut p, track_id, _clip_id) = project_with_clip();
+    // 既定値
+    assert_eq!(p.tracks[0].volume, 1.0);
+    assert_eq!(p.tracks[0].pan, 0.0);
+
+    apply(
+        &mut p,
+        &Command::SetTrackVolume {
+            track_id,
+            volume: 0.25,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.tracks[0].volume, 0.25);
+    apply(
+        &mut p,
+        &Command::SetTrackPan {
+            track_id,
+            pan: -0.5,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.tracks[0].pan, -0.5);
+
+    // 範囲外は弾いて状態を変えない
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackVolume {
+            track_id,
+            volume: 2.5,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(err, CommandError::InvalidRange(_)));
+    let err = apply(&mut p, &Command::SetTrackPan { track_id, pan: 1.5 }).unwrap_err();
+    assert!(matches!(err, CommandError::InvalidRange(_)));
+    assert_eq!(p.dump_json(), before);
+
+    // 存在しないトラック
+    let err = apply(
+        &mut p,
+        &Command::SetTrackVolume {
+            track_id: 9999,
+            volume: 1.0,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::TrackNotFound(9999));
+}
+
+#[test]
+fn track_volume_pan_json_round_trip_and_legacy_defaults() {
+    // コマンドが JSON で往復できること（API／MCP の前提）
+    let cmd = Command::SetTrackPan {
+        track_id: 7,
+        pan: 0.75,
+    };
+    let text = serde_json::to_string(&cmd).unwrap();
+    assert!(text.contains("\"type\":\"set_track_pan\""), "{text}");
+    let parsed: Command = serde_json::from_str(&text).unwrap();
+    assert_eq!(parsed, cmd);
+
+    // volume / pan を含まない旧形式のプロジェクト JSON も読み込め、
+    // 既定値（音量 1.0、パン 0.0）になること
+    let legacy =
+        r#"{"name":"old","tracks":[{"id":1,"name":"A1","kind":"audio","clips":[]}],"next_id":2}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    assert_eq!(project.tracks[0].volume, 1.0);
+    assert_eq!(project.tracks[0].pan, 0.0);
+}

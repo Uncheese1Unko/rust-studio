@@ -13,6 +13,7 @@
 
 mod audio;
 mod edit;
+mod mixer;
 mod timeline;
 
 use std::collections::HashMap;
@@ -112,6 +113,9 @@ struct Model {
     /// ソースごとの長さ（ms）。波形の切り出しに使う。
     source_durations: HashMap<String, i64>,
     dropped_source: String,
+    /// 操作中のミキサースライダー（トラック ID とパラメータ）。
+    mixer_active: Option<(u64, mixer::Param)>,
+    last_mixer_cmd: Option<Command>,
 }
 
 fn model(app: &App) -> Model {
@@ -155,6 +159,8 @@ fn model(app: &App) -> Model {
         waveforms,
         source_durations,
         dropped_source: dropped,
+        mixer_active: None,
+        last_mixer_cmd: None,
     }
 }
 
@@ -184,6 +190,35 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let ly = win.h() / 2.0 - app.mouse.y;
     let left_down = app.mouse.buttons.left().is_down();
     let pointer_ms = edit::x_to_ms(lx, win.w());
+
+    // ミキサー（Issue #15）: スライダーの押下・ドラッグで音量／パンを
+    // コマンド経由で変える。タイムライン領域とは重ならない。
+    if left_down && !model.prev_left_down {
+        if let Some(hit) = mixer::hit_mixer(&model.project, lx, ly) {
+            model.mixer_active = Some((hit.track_id, hit.param));
+            let cmd = mixer::command_for(&hit);
+            if apply(&mut model.project, &cmd).is_ok() {
+                model.last_mixer_cmd = Some(cmd);
+            }
+        }
+    }
+    if left_down {
+        if let Some((track_id, param)) = model.mixer_active {
+            if let Some(hit) = mixer::hit_with_x(&model.project, track_id, param, lx) {
+                let cmd = mixer::command_for(&hit);
+                if model.last_mixer_cmd.as_ref() != Some(&cmd) {
+                    match apply(&mut model.project, &cmd) {
+                        Ok(_) => model.last_mixer_cmd = Some(cmd),
+                        Err(e) => println!("command rejected: {e}"),
+                    }
+                }
+            }
+        }
+    }
+    if !left_down && model.prev_left_down && model.mixer_active.take().is_some() {
+        println!("after mixer: {}", model.project.dump_json());
+        model.last_mixer_cmd = None;
+    }
 
     if left_down && !model.prev_left_down {
         let target = edit::hit_test(&model.project, win.w(), lx, ly);
@@ -326,6 +361,51 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .font_size(11)
                 .color(rgb(0.05, 0.05, 0.08));
         }
+    }
+
+    // ミキサー（mixer）: トラックごとの音量・パンスライダー（Issue #15）。
+    for (index, track) in model.project.tracks.iter().enumerate() {
+        let count = model.project.tracks.len();
+        let v = mixer::volume_rect(count, index);
+        let p = mixer::pan_rect(count, index);
+        let top = mixer::mixer_top_y(count) + index as f32 * mixer::STRIP_HEIGHT_PX;
+        let (sx, sy) = rect_center(win, 0.0, top, win.w(), mixer::STRIP_HEIGHT_PX);
+        draw.rect()
+            .x_y(sx, sy)
+            .w_h(win.w(), mixer::STRIP_HEIGHT_PX)
+            .color(rgb(0.10, 0.10, 0.12));
+        // ラベルと現在値
+        draw.text(&format!("{} VOL {:.2}", track.name, track.volume))
+            .x_y(
+                timeline::HEADER_WIDTH_PX / 2.0 - win.w() / 2.0,
+                win.h() / 2.0 - (top + mixer::STRIP_HEIGHT_PX / 2.0),
+            )
+            .font_size(11)
+            .color(rgb(0.80, 0.80, 0.85));
+        for (rect, value_x, label) in [
+            (v, mixer::x_for_volume(v, track.volume), "VOL"),
+            (p, mixer::x_for_pan(p, track.pan), "PAN"),
+        ] {
+            let _ = label;
+            let (bx, by) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+            draw.rect()
+                .x_y(bx, by)
+                .w_h(rect.w, 4.0)
+                .color(rgb(0.30, 0.30, 0.35));
+            // つまみ
+            let (kx, ky) = rect_center(win, value_x - 3.0, rect.y, 6.0, rect.h);
+            draw.rect()
+                .x_y(kx, ky)
+                .w_h(6.0, rect.h)
+                .color(rgb(0.90, 0.75, 0.25));
+        }
+        draw.text(&format!("PAN {:+.2}", track.pan))
+            .x_y(
+                mixer::PAN_X - 40.0 - win.w() / 2.0,
+                win.h() / 2.0 - (top + mixer::STRIP_HEIGHT_PX / 2.0),
+            )
+            .font_size(11)
+            .color(rgb(0.80, 0.80, 0.85));
     }
 
     // 再生ヘッド（timeline.playhead）。

@@ -199,7 +199,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド7種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド9種＋状態ダンプ取得。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -283,6 +283,30 @@ fn tool_definitions() -> Value {
                     "gain": {"type": "number"},
                 },
                 "required": ["clip_id", "gain"],
+            },
+        },
+        {
+            "name": "set_track_volume",
+            "description": "トラックの音量を設定する（0.0〜2.0、既定 1.0）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "volume": {"type": "number"},
+                },
+                "required": ["track_id", "volume"],
+            },
+        },
+        {
+            "name": "set_track_pan",
+            "description": "トラックのパンを設定する（-1.0=左〜1.0=右、既定 0.0）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "pan": {"type": "number"},
+                },
+                "required": ["track_id", "pan"],
             },
         },
         {
