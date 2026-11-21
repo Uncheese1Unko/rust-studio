@@ -105,7 +105,12 @@ round 1: REQUEST_CHANGES（Major 2件、Minor 1件）。いずれも実装側で
    - 選択の強調は #25 以来「行の縁取り」が仕様であり、shot2 でも
      A2 行の縁取りで示されている（塗りつぶしではない）。
 
-round 2: （結果を記入）
+round 2: **APPROVE**（新規指摘なし）。round 1 の2件はレビュアーが
+実コードと nannou 原典を再確認し、指摘1は不成立（ID 保持＋
+`hit_with_x_follows_track_id_after_removal` が振る舞いを固定）、
+指摘2は前提誤り（`app.time` は実経過秒）と結論づけた。Minor 1 は
+x11grab のカーソル合成が原因と特定し、`-draw_mouse 0` で撮り直した
+証拠で解消を確認した。
 
 ## 実装レベルの判断（ADR-0006 に基づき記録）
 
