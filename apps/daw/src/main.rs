@@ -744,6 +744,15 @@ fn draw_rounded_rect(draw: &Draw, win: Rect, rect: mixer::Rect, radius: f32, col
     }
 }
 
+/// ピッチ表示の文字色（Issue #28）。
+///
+/// ピッチ表示は小さい補助文字（キャプション）なので、デザイン文書の
+/// 役割づけに従い `theme::TEXT_SUB`（グレージュ）に統一する。
+/// 旧来の金色リテラルは #23〜#27 のテーマ適用から漏れていた残件。
+fn pitch_label_color() -> theme::Rgb {
+    theme::TEXT_SUB
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     let win = app.window_rect();
@@ -1095,10 +1104,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .map(|c| format!("pitch: {} {:+.1} st", c.name, c.pitch_semitones))
     });
     if let Some(label) = pitch_label {
+        let c = pitch_label_color();
         draw.text(&label)
             .x_y(-win.w() / 2.0 + 130.0, -win.h() / 2.0 + 16.0)
             .font_size(12)
-            .color(rgb(0.95, 0.75, 0.35));
+            .color(rgb(c.0, c.1, c.2));
     }
 
     // サンプラーの鍵盤（Issue #19）: 13 鍵を下部に描き、発音中を灯す。
@@ -1313,6 +1323,16 @@ fn engine_demo() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pitch_label_color_is_theme_text_sub() {
+        // Issue #28: ピッチ表示は小さい補助文字なので、旧来の金色
+        // リテラル (0.95, 0.75, 0.35) ではなくテーマの TEXT_SUB
+        // （グレージュ）を使う。色の決定は pitch_label_color() に
+        // 集約し、ここで固定する。
+        assert_eq!(pitch_label_color(), theme::TEXT_SUB);
+        assert_ne!(pitch_label_color(), (0.95, 0.75, 0.35));
+    }
 
     #[test]
     fn saved_file_stamp_matches_dump_stamp() {
