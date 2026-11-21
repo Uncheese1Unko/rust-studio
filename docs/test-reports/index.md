@@ -27,3 +27,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #19 サンプラー楽器（取り込んだ音を音程で演奏する） | [issue-0019-sampler-instrument.md](issue-0019-sampler-instrument.md) |
 | 2026-11-21 | #23 DAW テーマ基盤（theme.rs 集約とライトテーマ化） | [issue-0023-theme-foundation.md](issue-0023-theme-foundation.md) |
 | 2026-11-21 | #24 タイムライン画面へのテーマ適用 | [issue-0024-timeline-theme.md](issue-0024-timeline-theme.md) |
+| 2026-11-21 | #25 ミキサー画面へのテーマ適用 | [issue-0025-mixer-theme.md](issue-0025-mixer-theme.md) |

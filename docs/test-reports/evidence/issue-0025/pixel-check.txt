@@ -1,0 +1,2 @@
+shot1 knob accent: 0
+shot2 knob accent: 96
