@@ -640,3 +640,92 @@ mod pitch_tests {
         assert!(goertzel(&w, RATE, 440.0) < 0.05, "440 should be gone");
     }
 }
+
+#[cfg(test)]
+mod review_fix_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{apply, Command, TrackKind};
+
+    #[test]
+    fn decode_24bit_wav_normalizes_by_bit_depth() {
+        // Issue #13 レビュー指摘: 正規化はビット深度依存なので、
+        // 16bit 以外（24bit）でも振幅が保たれることを固定する。
+        let path =
+            std::env::temp_dir().join(format!("daw-decode24-{}.wav", std::process::id()));
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: RATE,
+            bits_per_sample: 24,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        // hound の 24bit 書き込みは i32 の下位 24bit に値を置く
+        for s in sine(440.0, 100, 0.5).samples {
+            writer.write_sample((s * (1 << 23) as f32) as i32).unwrap();
+        }
+        writer.finalize().unwrap();
+        let decoded = decode_audio(&path).unwrap();
+        let max = decoded.samples.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!((max - 0.5).abs() < 0.02, "24bit amplitude was {max}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn render_mix_resamples_other_rates_without_pitch_change() {
+        // Issue #13 レビュー指摘: ソースと出力のレートが違っても
+        // 音程が保たれること（pos 計算がソースレート基準であること）。
+        let mut p = Project::new("resample test");
+        let track = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: track,
+                name: "low".into(),
+                start_ms: 0,
+                duration_ms: 1000,
+                source: "low.wav".into(),
+            },
+        )
+        .unwrap();
+        // 22050Hz の 440Hz サイン
+        let low_rate = 22050u32;
+        let frames = low_rate as usize;
+        let samples: Vec<f32> = (0..frames)
+            .map(|i| 0.4 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / low_rate as f32).sin())
+            .collect();
+        let mut audio = HashMap::new();
+        audio.insert(
+            "low.wav".to_string(),
+            ClipAudio {
+                sample_rate: low_rate,
+                channels: 1,
+                samples,
+            },
+        );
+        let mix = render_mix(&p, &audio, 0, 1000, RATE);
+        let w = window(&mix, 2, 100, 900, RATE);
+        assert!(
+            goertzel(&w, RATE, 440.0) > 0.1,
+            "440 must survive resampling"
+        );
+        assert!(goertzel(&w, RATE, 220.0) < 0.03);
+        assert!(goertzel(&w, RATE, 880.0) < 0.03);
+    }
+
+    #[test]
+    fn player_seek_clamps_above_project_end() {
+        // Issue #13 レビュー指摘: seek の上限クランプを直接固定する。
+        let mut player = Player::new(3000);
+        player.seek(9999);
+        assert_eq!(player.position_ms, 3000);
+    }
+}
