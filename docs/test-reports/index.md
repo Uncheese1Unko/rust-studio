@@ -31,3 +31,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #26 サンプラー画面へのテーマ適用 | [issue-0026-sampler-theme.md](issue-0026-sampler-theme.md) |
 | 2026-11-21 | #27 再生状態のライブ表示（トランスポート） | [issue-0027-transport-live-display.md](issue-0027-transport-live-display.md) |
 | 2026-11-21 | #20 DAW ビジュアルデザイン（参照動画基準、#23〜#27 の締め） | [issue-0020-daw-visual-design.md](issue-0020-daw-visual-design.md) |
+| 2026-11-21 | #28 DAW ピッチ表示のテーマ色統一（金色リテラル → TEXT_SUB） | [issue-0028-pitch-label-theme-color.md](issue-0028-pitch-label-theme-color.md) |

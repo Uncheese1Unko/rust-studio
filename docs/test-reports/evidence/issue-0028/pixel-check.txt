@@ -1,0 +1,2 @@
+shot-before.png bg(480,300)==#FBF4EC: True gold in pitch-label region: 9 text_sub in pitch-label region: 0
+shot-after.png bg(480,300)==#FBF4EC: True gold in pitch-label region: 0 text_sub in pitch-label region: 9
