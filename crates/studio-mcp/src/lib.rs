@@ -17,6 +17,11 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 /// MCP サーバーの状態。プロジェクトはコマンド層経由でのみ変更される。
 pub struct McpServer {
     project: Mutex<Project>,
+    /// プロジェクトファイル backing（Issue #11、ADR-0010）。
+    /// Some のとき、変更系ツールの成功たびにプロジェクトをこのファイルへ
+    /// 保存し、起動時に読み込む。GUI（video-editor）が同じファイルを読む
+    /// ことで、MCP の編集結果が画面にも現れる。
+    project_file: Option<std::path::PathBuf>,
 }
 
 impl Default for McpServer {
@@ -29,6 +34,32 @@ impl McpServer {
     pub fn new() -> Self {
         McpServer {
             project: Mutex::new(Project::new("untitled")),
+            project_file: None,
+        }
+    }
+
+    /// プロジェクトファイルに backing されたサーバーを作る。
+    /// ファイルがあれば読み込む。読めない場合は警告を出して空の
+    /// プロジェクトから始める（壊れた内容を上書きで隠さないため、
+    /// 読み込み失敗そのものは保存を止めない）。
+    pub fn with_project_file(path: std::path::PathBuf) -> Self {
+        let project = if path.exists() {
+            match Project::load_from_path(&path) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!(
+                        "warning: cannot load project file {}: {e}; starting empty",
+                        path.display()
+                    );
+                    Project::new("untitled")
+                }
+            }
+        } else {
+            Project::new("untitled")
+        };
+        McpServer {
+            project: Mutex::new(project),
+            project_file: Some(path),
         }
     }
 
@@ -101,11 +132,21 @@ impl McpServer {
             .map_err(|e| format!("invalid arguments for tool '{name}': {e}"))?;
         let mut project = self.project.lock().unwrap();
         match studio_core::apply(&mut project, &command) {
-            Ok(created_id) => Ok(serde_json::to_string(&json!({
-                "ok": true,
-                "created_id": created_id,
-            }))
-            .unwrap()),
+            Ok(created_id) => {
+                // プロジェクトファイル backing 時は、適用の成功をファイルへ
+                // 反映する（ADR-0010）。保存失敗は適用自体を取り消せないため、
+                // 結果は成功のまま警告だけ出す。
+                if let Some(path) = &self.project_file {
+                    if let Err(e) = project.save_to_path(path) {
+                        eprintln!("warning: cannot save project file {}: {e}", path.display());
+                    }
+                }
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "created_id": created_id,
+                }))
+                .unwrap())
+            }
             Err(e) => Err(e.to_string()),
         }
     }

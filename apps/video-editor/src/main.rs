@@ -30,6 +30,10 @@ struct Model {
     textures: std::collections::HashMap<std::path::PathBuf, wgpu::Texture>,
     /// (source, frame 番号)。表示フレームが変わったときだけ記録する。
     last_preview: Option<(String, usize)>,
+    // Issue #11: プロジェクトファイル共有モードの状態。
+    project_file: Option<std::path::PathBuf>,
+    file_stamp: u64,
+    last_watch_check: f32,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -85,24 +89,38 @@ fn demo_project() -> Project {
     project
 }
 
-fn model(app: &App) -> Model {
-    let project = demo_project();
-    // 観測経路（ADR-0005）: 画面に描かれる状態と同一のダンプを出す。
-    println!("video-editor (issue #8: timeline UI)");
-    println!("{}", project.dump_json());
-    println!(
-        "elements: {}, {PREVIEW_ID}",
-        timeline::element_ids(&project).join(", ")
-    );
-    // メディア層（Issue #10）: フレーム列を準備し、テクスチャを読み込む。
-    let frames = media::prepare_media(&project);
-    let window = app
-        .new_window()
-        .size(960, 540)
-        .title("video-editor")
-        .view(view)
-        .build()
-        .unwrap();
+/// プロジェクトファイル共有モード（Issue #11、ADR-0010）の入口。
+/// 環境変数 `STUDIO_PROJECT_FILE` があればそのファイルのプロジェクトを、
+/// なければデモプロジェクトを返す。ファイルの内容スタンプも返す
+/// （変更検出の初期値。読めなければデモにフォールバックする）。
+fn initial_project() -> (Project, Option<std::path::PathBuf>, u64) {
+    let path = std::env::var_os("STUDIO_PROJECT_FILE").map(std::path::PathBuf::from);
+    if let Some(path) = path {
+        match Project::load_from_path(&path) {
+            Ok(project) => {
+                let stamp = std::fs::read(&path)
+                    .map(|bytes| media::fnv1a(&bytes))
+                    .unwrap_or(0);
+                println!("project file mode: {}", path.display());
+                return (project, Some(path), stamp);
+            }
+            Err(e) => {
+                println!(
+                    "warning: cannot load project file {}: {e}; using demo project",
+                    path.display()
+                );
+            }
+        }
+    }
+    (demo_project(), None, 0)
+}
+
+/// フレーム列のテクスチャをすべて読み込む。
+fn load_textures(
+    app: &App,
+    project: &Project,
+    frames: &media::FrameStore,
+) -> std::collections::HashMap<std::path::PathBuf, wgpu::Texture> {
     let mut textures = std::collections::HashMap::new();
     for track in &project.tracks {
         for clip in &track.clips {
@@ -124,6 +142,28 @@ fn model(app: &App) -> Model {
         }
     }
     println!("preview textures loaded: {}", textures.len());
+    textures
+}
+
+fn model(app: &App) -> Model {
+    let (project, project_file, file_stamp) = initial_project();
+    // 観測経路（ADR-0005）: 画面に描かれる状態と同一のダンプを出す。
+    println!("video-editor (issue #8: timeline UI)");
+    println!("{}", project.dump_json());
+    println!(
+        "elements: {}, {PREVIEW_ID}",
+        timeline::element_ids(&project).join(", ")
+    );
+    // メディア層（Issue #10）: フレーム列を準備し、テクスチャを読み込む。
+    let frames = media::prepare_media(&project);
+    let window = app
+        .new_window()
+        .size(960, 540)
+        .title("video-editor")
+        .view(view)
+        .build()
+        .unwrap();
+    let textures = load_textures(app, &project, &frames);
     Model {
         _window: window,
         project,
@@ -136,11 +176,73 @@ fn model(app: &App) -> Model {
         frames,
         textures,
         last_preview: None,
+        project_file,
+        file_stamp,
+        last_watch_check: 0.0,
+    }
+}
+
+/// プロジェクトファイルの変更を監視し、変わっていたら読み直す
+/// （Issue #11）。MCP 側の編集を GUI に反映する経路。読み込みに失敗
+/// （書き込み途中の読み等）した場合は現在の状態を保ち、次回に再試行する。
+fn watch_project_file(app: &App, model: &mut Model) {
+    let Some(path) = model.project_file.clone() else {
+        return;
+    };
+    if app.time - model.last_watch_check < 0.5 {
+        return;
+    }
+    model.last_watch_check = app.time;
+    let Ok(bytes) = std::fs::read(&path) else {
+        return;
+    };
+    let stamp = media::fnv1a(&bytes);
+    if stamp == model.file_stamp {
+        return;
+    }
+    match Project::load_from_path(&path) {
+        Ok(new_project) => {
+            model.file_stamp = stamp;
+            // ソース集合が変わったらメディアも準備し直す
+            let mut new_sources: Vec<String> = new_project
+                .tracks
+                .iter()
+                .flat_map(|t| t.clips.iter().map(|c| c.source.clone()))
+                .collect();
+            new_sources.sort();
+            new_sources.dedup();
+            let mut old_sources = model.frames.sources();
+            old_sources.sort();
+            model.project = new_project;
+            if new_sources != old_sources {
+                model.frames = media::prepare_media(&model.project);
+                model.textures = load_textures(app, &model.project, &model.frames);
+            }
+            println!("project reloaded: {}", model.project.dump_json());
+        }
+        Err(e) => {
+            println!("warning: project reload failed: {e}");
+        }
+    }
+}
+
+/// GUI の編集結果をプロジェクトファイルへ保存し直す（Issue #11）。
+/// 自分の保存で監視が再読込しないよう、スタンプも同期させる。
+fn save_project_file(model: &mut Model) {
+    let Some(path) = model.project_file.clone() else {
+        return;
+    };
+    match model.project.save_to_path(&path) {
+        Ok(()) => {
+            model.file_stamp = media::fnv1a(model.project.dump_json().as_bytes());
+        }
+        Err(e) => println!("warning: cannot save project file {}: {e}", path.display()),
     }
 }
 
 fn update(app: &App, model: &mut Model, update: Update) {
     handle_pointer(app, model);
+    watch_project_file(app, model);
 
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(&model.project);
@@ -190,7 +292,10 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 if let Some(cmd) = edit::place_clip_command(&model.project, track_index, pointer_ms)
                 {
                     match apply(&mut model.project, &cmd) {
-                        Ok(_) => println!("placed: {}", model.project.dump_json()),
+                        Ok(_) => {
+                            println!("placed: {}", model.project.dump_json());
+                            save_project_file(model);
+                        }
                         Err(e) => println!("command rejected: {e}"),
                     }
                 }
@@ -212,6 +317,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
 
     if !left_down && model.prev_left_down && model.drag.take().is_some() {
         println!("after drag: {}", model.project.dump_json());
+        save_project_file(model);
         if let Some(rejection) = model.last_rejection.take() {
             println!("command rejected during drag: {rejection}");
         }
@@ -332,4 +438,43 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .color(rgb(pr, pg, pb));
 
     draw.to_frame(app, &frame).unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_file_stamp_matches_dump_stamp() {
+        // GUI が保存した直後に監視が「変更あり」と誤判定して再読込
+        // しないこと（Issue #11 の自己保存ループ防止）を固定する。
+        let project = demo_project();
+        let path =
+            std::env::temp_dir().join(format!("rust-studio-ve-test-{}.json", std::process::id()));
+        project.save_to_path(&path).unwrap();
+        let file_bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            media::fnv1a(&file_bytes),
+            media::fnv1a(project.dump_json().as_bytes())
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn stamp_distinguishes_different_states() {
+        let a = demo_project();
+        let mut b = demo_project();
+        apply(
+            &mut b,
+            &Command::MoveClip {
+                clip_id: 3,
+                new_start_ms: 100,
+            },
+        )
+        .unwrap();
+        assert_ne!(
+            media::fnv1a(a.dump_json().as_bytes()),
+            media::fnv1a(b.dump_json().as_bytes())
+        );
+    }
 }

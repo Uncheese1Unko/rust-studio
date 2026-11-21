@@ -264,3 +264,56 @@ fn trim_clip_tool_applies_via_tools_call() {
     assert_eq!(clip.start_ms, 1300);
     assert_eq!(clip.duration_ms, 1700);
 }
+
+#[test]
+fn project_file_backing_persists_across_server_instances() {
+    // Issue #11: --project-file モードでは、コマンドの結果がファイルに
+    // 保存され、別のサーバーインスタンス（= GUI と同じファイルを読む側）
+    // から同じ状態が見えること。
+    let path =
+        std::env::temp_dir().join(format!("rust-studio-mcp-test-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+
+    let server = studio_mcp::McpServer::with_project_file(path.clone());
+    let res = call_tool(
+        &server,
+        20,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        21,
+        "add_clip",
+        json!({"track_id": 1, "name": "opening", "start_ms": 0,
+               "duration_ms": 2000, "source": "demo/opening.mp4"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let dump_a = project_dump_via_tool(&server);
+    drop(server);
+
+    // ファイルが存在し、内容がダンプと一致する
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    let from_disk: studio_core::Project = serde_json::from_str(&on_disk).unwrap();
+    let from_dump: studio_core::Project = serde_json::from_str(&dump_a).unwrap();
+    assert_eq!(from_disk, from_dump);
+
+    // 別のインスタンスは同じ状態から始まり、移動もまた保存される
+    let server_b = studio_mcp::McpServer::with_project_file(path.clone());
+    assert_eq!(project_dump_via_tool(&server_b), dump_a);
+    let res = call_tool(
+        &server_b,
+        22,
+        "move_clip",
+        json!({"clip_id": 2, "new_start_ms": 1000}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    drop(server_b);
+    let on_disk = std::fs::read_to_string(&path).unwrap();
+    let project: studio_core::Project = serde_json::from_str(&on_disk).unwrap();
+    let (_, clip) = project.clip(2).unwrap();
+    assert_eq!(clip.start_ms, 1000);
+
+    let _ = std::fs::remove_file(&path);
+}

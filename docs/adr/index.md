@@ -14,3 +14,4 @@ supersede する。ルールは `.claude/rules/documentation.md`。
 | 0007 | サンプリング文化フレンドリー：性質を保ったまま音程を変える | 採用 |
 | 0008 | HTTP API は std のみの薄いラッパーとして実装する | 採用 |
 | 0009 | 性質を保つピッチシフトは Signalsmith Stretch を採用する | 採用 |
+| 0010 | GUI と MCP の状態共有はプロジェクトファイル経由とする | 採用 |

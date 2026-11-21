@@ -95,6 +95,11 @@ impl FrameStore {
     pub fn frame_count(&self, source: &str) -> usize {
         self.frames.get(source).map_or(0, |v| v.len())
     }
+
+    /// 展開済みのソース一覧。
+    pub fn sources(&self) -> Vec<String> {
+        self.frames.keys().cloned().collect()
+    }
 }
 
 /// デモ用のサンプル素材をメディアディレクトリに用意する（なければ生成）。
@@ -159,6 +164,17 @@ fn ensure_sample_media(dir: &Path) {
     }
 }
 
+/// FNV-1a 64bit（決定的な簡易ハッシュ。依存を増やさない）。
+/// フレーム置き場の名前付けと、プロジェクトファイルの変更検出で使う。
+pub fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 /// フレーム列の置き場の名前。素材の stem だけだと別ディレクトリの同名
 /// 素材が衝突するため、ソース文字列全体のハッシュを付ける。
 pub fn frames_dir_name(source: &str) -> String {
@@ -166,13 +182,7 @@ pub fn frames_dir_name(source: &str) -> String {
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "clip".to_string());
-    // FNV-1a（決定的な簡易ハッシュ。依存を増やさない）
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in source.as_bytes() {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{stem}-{hash:08x}")
+    format!("{stem}-{:08x}", fnv1a(source.as_bytes()))
 }
 
 /// 展開先にある既存のフレーム PNG を消す。再展開時に古いフレームが
