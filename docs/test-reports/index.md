@@ -25,3 +25,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #13 DAW 音声再生エンジン | [issue-0013-audio-engine.md](issue-0013-audio-engine.md) |
 | 2026-11-21 | #22 人物切り抜きの実装 | [issue-0022-person-cutout.md](issue-0022-person-cutout.md) |
 | 2026-11-21 | #19 サンプラー楽器（取り込んだ音を音程で演奏する） | [issue-0019-sampler-instrument.md](issue-0019-sampler-instrument.md) |
+| 2026-11-21 | #23 DAW テーマ基盤（theme.rs 集約とライトテーマ化） | [issue-0023-theme-foundation.md](issue-0023-theme-foundation.md) |

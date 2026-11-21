@@ -1,0 +1,4 @@
+background: #FBF4EC (expected #FBF4EC) OK
+ruler band (sunk): #F3E7D9 (expected #F3E7D9) OK
+track header (sunk): #F3E7D9 (expected #F3E7D9) OK
+panel face: #FFFDF9 (expected #FFFDF9) OK
