@@ -221,13 +221,19 @@ pub fn hit_track_delete(project: &Project, x: f32, y: f32) -> Option<usize> {
 /// （イシューのスコープ）。名前は既存の音声トラック数 +1 で
 /// 「A1」「A2」… と付ける。
 pub fn add_track_command(project: &Project) -> Command {
-    let audio_count = project
+    // 名前は既存の音声トラック名の最大番号 + 1（バグ #60: 既存数 + 1
+    // では削除→追加で既存名と重複した）。「A<数字>」の形でない名前は
+    // 採番の対象にしない。
+    let next = project
         .tracks
         .iter()
         .filter(|t| t.kind == TrackKind::Audio)
-        .count();
+        .filter_map(|t| t.name.strip_prefix('A')?.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+        + 1;
     Command::AddTrack {
-        name: format!("A{}", audio_count + 1),
+        name: format!("A{next}"),
         kind: TrackKind::Audio,
     }
 }
@@ -512,7 +518,7 @@ mod tests {
 
     #[test]
     fn add_track_command_uses_next_audio_name() {
-        // Issue #56: 追加は Audio のみ。名前は既存の音声トラック数 +1。
+        // Issue #56: 追加は Audio のみ。名前は既存の最大番号 +1。
         let p = sample_project();
         assert_eq!(
             add_track_command(&p),
@@ -534,6 +540,38 @@ mod tests {
             add_track_command(&p),
             Command::AddTrack {
                 name: "A2".into(),
+                kind: TrackKind::Audio
+            }
+        );
+    }
+
+    #[test]
+    fn add_track_command_skips_numbers_of_removed_tracks() {
+        // バグ #60: A1・A2 がある状態で A1 を削除して追加すると、
+        // 既存数 + 1 では「A2」が重複した。最大番号 + 1 で A3 になる。
+        let mut p = Project::new("t");
+        let a1 = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A2".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap();
+        apply(&mut p, &Command::RemoveTrack { track_id: a1 }).unwrap();
+        assert_eq!(
+            add_track_command(&p),
+            Command::AddTrack {
+                name: "A3".into(),
                 kind: TrackKind::Audio
             }
         );

@@ -432,6 +432,10 @@ fn watch_project_file(app: &App, model: &mut Model) {
             model.last_rejection = None;
             model.mixer_active = None;
             model.last_mixer_cmd = None;
+            // リネーム編集も打ち切る（バグ #60: 対象が消えると Enter の
+            // たびに拒否され続け、残っていても外部変更後の名前を編集中
+            // テキストで黙って上書きしてしまうため）。
+            model.rename = None;
             // ソース集合の比較はプロジェクトのクリップ同士で行い、
             // 再計算では配置用素材の波形を保持する（Issue #16 レビュー指摘）。
             let changed = sources_changed(&model.project, &new_project);
@@ -513,6 +517,15 @@ fn update(app: &App, model: &mut Model, update: Update) {
     let renaming = model.rename.is_some();
     if renaming {
         model.prev_left_down = app.mouse.buttons.left().is_down();
+        // エッジ検出用の prev は編集中も現在値に同期する（バグ #60:
+        // 同期しないと、編集中に押したキーを押したまま編集を終えた
+        // 次のフレームで「新規押下」と誤判定され、意図しないピッチ
+        // 変更やサンプラー発音が起きた）。ハンドラ本体は呼ばない。
+        model.prev_pitch_up = app.keys.down.contains(&Key::Up);
+        model.prev_pitch_down = app.keys.down.contains(&Key::Down);
+        for (idx, (key, _)) in NOTE_KEYS.iter().enumerate() {
+            model.prev_note_keys[idx] = app.keys.down.contains(key);
+        }
     } else {
         handle_pointer(app, model);
     }

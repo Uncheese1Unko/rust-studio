@@ -237,6 +237,8 @@ fn watch_project_file(app: &App, model: &mut Model) {
             model.drag = None;
             model.last_drag_cmd = None;
             model.last_rejection = None;
+            // リネーム編集も打ち切る（バグ #60: DAW と同じ理由）。
+            model.rename = None;
             // ソース集合が変わったらメディアも準備し直す
             let mut new_sources: Vec<String> = new_project
                 .tracks
@@ -318,6 +320,9 @@ fn update(app: &App, model: &mut Model, update: Update) {
         // リネーム編集中はポインタ操作と切り抜きキーを受け付けない
         // （Issue #57）。再生ヘッドとプレビューは進み続ける。
         model.prev_left_down = app.mouse.buttons.left().is_down();
+        // エッジ検出用の prev は編集中も同期する（バグ #60: 同期しないと
+        // K を押したままリネームを確定した直後に切り抜きが誤発する）。
+        model.prev_k_down = app.keys.down.contains(&Key::K);
     } else {
         handle_pointer(app, model);
         handle_cutout(app, model);

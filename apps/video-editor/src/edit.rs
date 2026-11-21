@@ -223,13 +223,23 @@ pub fn hit_track_delete(project: &Project, x: f32, y: f32) -> Option<usize> {
 /// トラック追加のコマンド（Issue #57）。名前は同じ種別の既存数 +1 で
 /// 映像は「V1」「V2」…、音声は「A1」「A2」… と付ける。
 pub fn add_track_command(project: &Project, kind: TrackKind) -> Command {
-    let count = project.tracks.iter().filter(|t| t.kind == kind).count();
     let prefix = match kind {
         TrackKind::Video => "V",
         TrackKind::Audio => "A",
     };
+    // 名前は同種別の既存名の最大番号 + 1（バグ #60: 既存数 + 1 では
+    // 削除→追加で既存名と重複した）。「<接頭辞><数字>」の形でない
+    // 名前は採番の対象にしない。
+    let next = project
+        .tracks
+        .iter()
+        .filter(|t| t.kind == kind)
+        .filter_map(|t| t.name.strip_prefix(prefix)?.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+        + 1;
     Command::AddTrack {
-        name: format!("{prefix}{}", count + 1),
+        name: format!("{prefix}{next}"),
         kind,
     }
 }
@@ -546,6 +556,35 @@ mod tests {
                 assert_eq!(name, "A2");
                 assert_eq!(kind, TrackKind::Audio);
             }
+            other => panic!("expected AddTrack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn add_track_command_skips_numbers_of_removed_tracks() {
+        // バグ #60: V1・V2 がある状態で V1 を削除して追加すると、
+        // 既存数 + 1 では「V2」が重複した。最大番号 + 1 で V3 になる。
+        let mut p = Project::new("t");
+        let v1 = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "V2".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap();
+        apply(&mut p, &Command::RemoveTrack { track_id: v1 }).unwrap();
+        match crate::edit::add_track_command(&p, TrackKind::Video) {
+            Command::AddTrack { name, .. } => assert_eq!(name, "V3"),
             other => panic!("expected AddTrack, got {other:?}"),
         }
     }
