@@ -22,3 +22,6 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #18 クリップのピッチ変更（性質を保つ） | [issue-0018-clip-pitch.md](issue-0018-clip-pitch.md) |
 | 2026-11-21 | #11 MCP 編集受け入れ（video-editor） | [issue-0011-mcp-acceptance.md](issue-0011-mcp-acceptance.md) |
 | 2026-11-21 | #15 ミキサー（トラック音量・パン） | [issue-0015-mixer.md](issue-0015-mixer.md) |
+| 2026-11-21 | #13 DAW 音声再生エンジン | [issue-0013-audio-engine.md](issue-0013-audio-engine.md) |
+| 2026-11-21 | #22 人物切り抜きの実装 | [issue-0022-person-cutout.md](issue-0022-person-cutout.md) |
+| 2026-11-21 | #19 サンプラー楽器（取り込んだ音を音程で演奏する） | [issue-0019-sampler-instrument.md](issue-0019-sampler-instrument.md) |
