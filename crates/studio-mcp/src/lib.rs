@@ -1,22 +1,22 @@
 //! studio-mcp: MCP サーバー（Issue #5、ADR-0004 / ADR-0008）。
 //!
 //! stdio 上の JSON-RPC 2.0（改行区切り）で MCP の最小サブセットを話す
-//! 薄いラッパー。状態の変更はすべてコマンド層（`studio_core::apply`）
-//! 経由で、このクレートからプロジェクトを直接変更することはない。
+//! 薄いラッパー。状態の変更はすべてコマンド層（履歴経由、Issue #29）
+//! で、このクレートからプロジェクトを直接変更することはない。
 //! 依存は serde / serde_json のみ（ADR-0008 の方針）。
 
 use std::io::{BufRead, Write};
 use std::sync::Mutex;
 
 use serde_json::{json, Map, Value};
-use studio_core::{Command, Project};
+use studio_core::{Command, History, Project};
 
 /// MCP のプロトコルバージョン（このサーバーが名乗る版）。
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
 /// MCP サーバーの状態。プロジェクトはコマンド層経由でのみ変更される。
 pub struct McpServer {
-    project: Mutex<Project>,
+    history: Mutex<History>,
     /// プロジェクトファイル backing（Issue #11、ADR-0010）。
     /// Some のとき、変更系ツールの成功たびにプロジェクトをこのファイルへ
     /// 保存し、起動時に読み込む。GUI（video-editor）が同じファイルを読む
@@ -33,7 +33,7 @@ impl Default for McpServer {
 impl McpServer {
     pub fn new() -> Self {
         McpServer {
-            project: Mutex::new(Project::new("untitled")),
+            history: Mutex::new(History::new(Project::new("untitled"))),
             project_file: None,
         }
     }
@@ -47,7 +47,7 @@ impl McpServer {
         if path.exists() {
             match Project::load_from_path(&path) {
                 Ok(project) => McpServer {
-                    project: Mutex::new(project),
+                    history: Mutex::new(History::new(project)),
                     project_file: Some(path),
                 },
                 Err(e) => {
@@ -57,14 +57,14 @@ impl McpServer {
                         path.display()
                     );
                     McpServer {
-                        project: Mutex::new(Project::new("untitled")),
+                        history: Mutex::new(History::new(Project::new("untitled"))),
                         project_file: None,
                     }
                 }
             }
         } else {
             McpServer {
-                project: Mutex::new(Project::new("untitled")),
+                history: Mutex::new(History::new(Project::new("untitled"))),
                 project_file: Some(path),
             }
         }
@@ -124,8 +124,22 @@ impl McpServer {
 
     fn execute_tool(&self, name: &str, arguments: &Value) -> Result<String, String> {
         if name == "get_project" {
-            let project = self.project.lock().unwrap();
-            return Ok(project.dump_json());
+            let history = self.history.lock().unwrap();
+            return Ok(history.project().dump_json());
+        }
+        if name == "undo" || name == "redo" {
+            // Issue #29: 履歴操作。履歴が空でもエラーにせず、実施できたか
+            // どうかを bool で返す（何も起きない結果）。
+            let mut history = self.history.lock().unwrap();
+            let done = if name == "undo" {
+                history.undo()
+            } else {
+                history.redo()
+            };
+            let key = if name == "undo" { "undone" } else { "redone" };
+            let mut payload = json!({ "ok": true, key: done });
+            self.persist(&history, &mut payload);
+            return Ok(serde_json::to_string(&payload).unwrap());
         }
         // tool 名 = コマンドの type タグ。引数オブジェクトに type を足して
         // コマンドとして解釈する（未知の tool 名はここで弾かれる）。
@@ -137,29 +151,33 @@ impl McpServer {
         object.insert("type".to_string(), Value::String(name.to_string()));
         let command: Command = serde_json::from_value(Value::Object(object))
             .map_err(|e| format!("invalid arguments for tool '{name}': {e}"))?;
-        let mut project = self.project.lock().unwrap();
-        match studio_core::apply(&mut project, &command) {
+        let mut history = self.history.lock().unwrap();
+        match history.apply(&command) {
             Ok(created_id) => {
-                // プロジェクトファイル backing 時は、適用の成功をファイルへ
-                // 反映する（ADR-0010）。保存に失敗しても適用自体は取り消せ
-                // ないが、結果に `persisted: false` を含めて黙って成功と
-                // 偽らない（Issue #11 レビュー対応）。
                 let mut payload = json!({
                     "ok": true,
                     "created_id": created_id,
                 });
-                if let Some(path) = &self.project_file {
-                    match project.save_to_path(path) {
-                        Ok(()) => payload["persisted"] = json!(true),
-                        Err(e) => {
-                            eprintln!("warning: cannot save project file {}: {e}", path.display());
-                            payload["persisted"] = json!(false);
-                        }
-                    }
-                }
+                self.persist(&history, &mut payload);
                 Ok(serde_json::to_string(&payload).unwrap())
             }
             Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// プロジェクトファイル backing 時は、変更後の状態をファイルへ
+    /// 反映する（ADR-0010）。保存に失敗しても変更自体は取り消せない
+    /// が、結果に `persisted: false` を含めて黙って成功と偽らない
+    /// （Issue #11 レビュー対応）。
+    fn persist(&self, history: &History, payload: &mut Value) {
+        if let Some(path) = &self.project_file {
+            match history.project().save_to_path(path) {
+                Ok(()) => payload["persisted"] = json!(true),
+                Err(e) => {
+                    eprintln!("warning: cannot save project file {}: {e}", path.display());
+                    payload["persisted"] = json!(false);
+                }
+            }
         }
     }
 
@@ -199,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド14種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド14種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -372,6 +390,16 @@ fn tool_definitions() -> Value {
         {
             "name": "get_project",
             "description": "プロジェクトの状態ダンプ（JSON）を返す",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "undo",
+            "description": "直前のコマンド適用を取り消す（履歴が空なら何も起きない）",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "redo",
+            "description": "undo で取り消した適用をやり直す（redo がなければ何も起きない）",
             "inputSchema": {"type": "object", "properties": {}},
         },
     ])

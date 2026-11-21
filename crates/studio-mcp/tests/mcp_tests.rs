@@ -58,6 +58,8 @@ fn tools_list_exposes_all_commands() {
         "set_clip_color",
         "rename_track",
         "get_project",
+        "undo",
+        "redo",
     ] {
         assert!(
             names.contains(&expected),
@@ -546,4 +548,46 @@ fn set_color_tools_apply_via_tools_call() {
         json!({"track_id": 1, "color": "neon"}),
     );
     assert_eq!(res["result"]["isError"], true, "{res}");
+}
+
+#[test]
+fn undo_redo_tools_restore_state() {
+    // Issue #29: 適用→undo→redo が get_project のダンプで観測できる。
+    let server = McpServer::new();
+    let initial = project_dump_via_tool(&server);
+    let res = call_tool(
+        &server,
+        1,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let applied = project_dump_via_tool(&server);
+    assert_ne!(applied, initial);
+
+    let res = call_tool(&server, 2, "undo", json!({}));
+    assert_eq!(res["result"]["isError"], false);
+    let text: Value =
+        serde_json::from_str(res["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(text["undone"], true);
+    assert_eq!(project_dump_via_tool(&server), initial);
+
+    let res = call_tool(&server, 3, "redo", json!({}));
+    assert_eq!(res["result"]["isError"], false);
+    let text: Value =
+        serde_json::from_str(res["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(text["redone"], true);
+    assert_eq!(project_dump_via_tool(&server), applied);
+}
+
+#[test]
+fn undo_on_empty_history_is_a_noop_not_an_error() {
+    // Issue #29: 履歴が空の undo はエラーにならず undone: false を返す。
+    let server = McpServer::new();
+    let res = call_tool(&server, 1, "undo", json!({}));
+    assert_eq!(res["result"]["isError"], false);
+    let text: Value =
+        serde_json::from_str(res["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(text["ok"], true);
+    assert_eq!(text["undone"], false);
 }

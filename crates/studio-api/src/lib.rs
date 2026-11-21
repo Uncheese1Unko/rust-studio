@@ -9,22 +9,27 @@
 //! - `POST /commands` — コマンド JSON を適用し、成否を返す。
 //!   成功: `200 {"ok":true,"created_id":<id|null>}`
 //!   失敗: `400 {"ok":false,"error":"..."}`（状態は変わらない）
+//! - `POST /undo` / `POST /redo` — コマンド履歴を1つ戻す／やり直す
+//!   （Issue #29）。成功: `200 {"ok":true,"undone":<bool>}` /
+//!   `{"ok":true,"redone":<bool>}`。履歴が空のときはエラーにせず、
+//!   false を返して何も起きない。
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Mutex;
 
-use studio_core::{apply, Command, Project};
+use studio_core::{Command, History, Project};
 
-/// API が保持するプロジェクト状態。変更はコマンド経由でのみ行う。
+/// API が保持するプロジェクト状態（履歴つき）。変更はコマンド経由
+/// でのみ行う。
 pub struct ApiState {
-    project: Mutex<Project>,
+    history: Mutex<History>,
 }
 
 impl ApiState {
     pub fn new(project: Project) -> Self {
         ApiState {
-            project: Mutex::new(project),
+            history: Mutex::new(History::new(project)),
         }
     }
 }
@@ -49,14 +54,14 @@ fn error_response(status: u16, message: &str) -> Response {
     }
 }
 
-/// リクエストを処理する。状態の変更は `studio_core::apply` 経由でのみ行う。
+/// リクエストを処理する。状態の変更は履歴（コマンド層）経由でのみ行う。
 pub fn handle_request(state: &ApiState, request: &Request) -> Response {
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/project") => {
-            let project = state.project.lock().expect("project lock poisoned");
+            let history = state.history.lock().expect("history lock poisoned");
             Response {
                 status: 200,
-                body: project.dump_json(),
+                body: history.project().dump_json(),
             }
         }
         ("POST", "/commands") => {
@@ -66,8 +71,8 @@ pub fn handle_request(state: &ApiState, request: &Request) -> Response {
                     return error_response(400, &format!("invalid command JSON: {e}"));
                 }
             };
-            let mut project = state.project.lock().expect("project lock poisoned");
-            match apply(&mut project, &command) {
+            let mut history = state.history.lock().expect("history lock poisoned");
+            match history.apply(&command) {
                 Ok(created_id) => Response {
                     status: 200,
                     body: serde_json::json!({ "ok": true, "created_id": created_id }).to_string(),
@@ -75,7 +80,25 @@ pub fn handle_request(state: &ApiState, request: &Request) -> Response {
                 Err(e) => error_response(400, &e.to_string()),
             }
         }
-        (_, "/project") | (_, "/commands") => error_response(405, "method not allowed"),
+        ("POST", "/undo") => {
+            let mut history = state.history.lock().expect("history lock poisoned");
+            let undone = history.undo();
+            Response {
+                status: 200,
+                body: serde_json::json!({ "ok": true, "undone": undone }).to_string(),
+            }
+        }
+        ("POST", "/redo") => {
+            let mut history = state.history.lock().expect("history lock poisoned");
+            let redone = history.redo();
+            Response {
+                status: 200,
+                body: serde_json::json!({ "ok": true, "redone": redone }).to_string(),
+            }
+        }
+        (_, "/project") | (_, "/commands") | (_, "/undo") | (_, "/redo") => {
+            error_response(405, "method not allowed")
+        }
         _ => error_response(404, "not found"),
     }
 }

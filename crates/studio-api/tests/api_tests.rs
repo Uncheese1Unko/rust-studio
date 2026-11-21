@@ -298,3 +298,48 @@ fn set_track_color_command_applies_via_api() {
     let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
     assert_eq!(project.tracks[0].color, Some(studio_core::ColorTag::Sky));
 }
+
+#[test]
+fn undo_redo_endpoints_restore_state() {
+    // Issue #29: 適用→undo→redo が全量ダンプで観測できる。
+    let state = state();
+    let initial = get_dump(&state);
+    let res = handle_request(
+        &state,
+        &req(
+            "POST",
+            "/commands",
+            r#"{"type":"add_track","name":"A1","kind":"audio"}"#,
+        ),
+    );
+    assert_eq!(res.status, 200);
+    let applied = get_dump(&state);
+    assert_ne!(applied, initial);
+
+    let res = handle_request(&state, &req("POST", "/undo", ""));
+    assert_eq!(res.status, 200);
+    let value: serde_json::Value = serde_json::from_str(&res.body).unwrap();
+    assert_eq!(value["undone"], true);
+    assert_eq!(get_dump(&state), initial);
+
+    let res = handle_request(&state, &req("POST", "/redo", ""));
+    assert_eq!(res.status, 200);
+    let value: serde_json::Value = serde_json::from_str(&res.body).unwrap();
+    assert_eq!(value["redone"], true);
+    assert_eq!(get_dump(&state), applied);
+}
+
+#[test]
+fn undo_on_empty_history_is_a_noop_not_an_error() {
+    // Issue #29: 履歴が空の undo/redo はエラーにせず false を返す。
+    let state = state();
+    let res = handle_request(&state, &req("POST", "/undo", ""));
+    assert_eq!(res.status, 200);
+    let value: serde_json::Value = serde_json::from_str(&res.body).unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["undone"], false);
+    let res = handle_request(&state, &req("POST", "/redo", ""));
+    assert_eq!(res.status, 200);
+    let value: serde_json::Value = serde_json::from_str(&res.body).unwrap();
+    assert_eq!(value["redone"], false);
+}

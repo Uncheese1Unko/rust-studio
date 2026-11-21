@@ -5,7 +5,9 @@
 //! ネットワークには依存しない。
 
 pub mod command;
+pub mod history;
 pub mod model;
 
 pub use command::{apply, Command, CommandError};
+pub use history::History;
 pub use model::{Clip, ColorTag, PersistenceError, Project, Track, TrackKind};
