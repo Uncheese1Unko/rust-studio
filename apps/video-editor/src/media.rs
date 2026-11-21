@@ -159,6 +159,39 @@ fn ensure_sample_media(dir: &Path) {
     }
 }
 
+/// フレーム列の置き場の名前。素材の stem だけだと別ディレクトリの同名
+/// 素材が衝突するため、ソース文字列全体のハッシュを付ける。
+pub fn frames_dir_name(source: &str) -> String {
+    let stem = Path::new(source)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "clip".to_string());
+    // FNV-1a（決定的な簡易ハッシュ。依存を増やさない）
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in source.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{stem}-{hash:08x}")
+}
+
+/// 展開先にある既存のフレーム PNG を消す。再展開時に古いフレームが
+/// 残ってフレーム数がずれるのを防ぐ（レビュー観察への対応）。
+pub fn clear_frame_files(dir: &Path) {
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let is_frame = path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with('f'))
+                && path.extension().is_some_and(|x| x == "png");
+            if is_frame {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}
+
 /// 映像ファイルをフレーム PNG 列に展開し、時刻順のパス一覧を返す。
 fn extract_frames(media_file: &Path, out_dir: &Path) -> Vec<PathBuf> {
     if !out_dir.exists() {
@@ -170,6 +203,7 @@ fn extract_frames(media_file: &Path, out_dir: &Path) -> Vec<PathBuf> {
             return Vec::new();
         }
     }
+    clear_frame_files(out_dir);
     let pattern = out_dir.join("f%03d.png");
     let status = ProcCommand::new("ffmpeg")
         .arg("-y")
@@ -228,11 +262,7 @@ pub fn prepare_media(project: &Project) -> FrameStore {
                 continue;
             }
             let file = resolve_source(&dir, &clip.source);
-            let stem = Path::new(&clip.source)
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "clip".to_string());
-            let out_dir = frames_root.join(stem);
+            let out_dir = frames_root.join(frames_dir_name(&clip.source));
             let frames = if file.exists() {
                 extract_frames(&file, &out_dir)
             } else {
@@ -355,5 +385,36 @@ mod tests {
         );
         assert_eq!(store.frame_path("demo/unknown.mp4", 0), None);
         assert_eq!(store.frame_count("demo/opening.mp4"), 40);
+    }
+}
+
+#[cfg(test)]
+mod hygiene_tests {
+    use super::*;
+
+    #[test]
+    fn frames_dir_name_distinguishes_same_stem_sources() {
+        // a/opening.mp4 と b/opening.mp4 が同じフレーム置き場を共有しないこと
+        let a = frames_dir_name("a/opening.mp4");
+        let b = frames_dir_name("b/opening.mp4");
+        assert_ne!(a, b);
+        assert!(a.starts_with("opening-"), "{a}");
+        // 同じソースからは常に同じ名前（決定的）
+        assert_eq!(a, frames_dir_name("a/opening.mp4"));
+    }
+
+    #[test]
+    fn clear_frame_files_removes_only_frame_pngs() {
+        let dir =
+            std::env::temp_dir().join(format!("rust-studio-test-clear-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("f001.png"), b"x").unwrap();
+        std::fs::write(dir.join("f002.png"), b"x").unwrap();
+        std::fs::write(dir.join("keep.txt"), b"x").unwrap();
+        clear_frame_files(&dir);
+        assert!(!dir.join("f001.png").exists());
+        assert!(!dir.join("f002.png").exists());
+        assert!(dir.join("keep.txt").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

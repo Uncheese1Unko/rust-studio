@@ -28,7 +28,8 @@ struct Model {
     // Issue #10: プレビュー再生の状態。
     frames: media::FrameStore,
     textures: std::collections::HashMap<std::path::PathBuf, wgpu::Texture>,
-    last_preview: Option<(String, i64, usize)>,
+    /// (source, frame 番号)。表示フレームが変わったときだけ記録する。
+    last_preview: Option<(String, usize)>,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -107,7 +108,8 @@ fn model(app: &App) -> Model {
         for clip in &track.clips {
             let count = frames.frame_count(&clip.source);
             for i in 0..count {
-                if let Some(path) = frames.frame_path(&clip.source, (i * 100) as i64) {
+                let at_ms = (i as i64) * 1_000 / media::FRAME_FPS as i64;
+                if let Some(path) = frames.frame_path(&clip.source, at_ms) {
                     if textures.contains_key(path) {
                         continue;
                     }
@@ -150,14 +152,17 @@ fn update(app: &App, model: &mut Model, update: Update) {
         let frame = media::frame_index(source_time, model.frames.fps);
         Some((clip.source.clone(), source_time, frame))
     });
-    if current != model.last_preview {
+    let current_key = current
+        .as_ref()
+        .map(|(source, _, frame)| (source.clone(), *frame));
+    if current_key != model.last_preview {
         if let Some((source, source_time, frame)) = &current {
             println!(
                 "preview: source={source} playhead={} source_time={source_time} frame={frame}",
                 model.playhead_ms
             );
         }
-        model.last_preview = current;
+        model.last_preview = current_key;
     }
 }
 
