@@ -234,6 +234,16 @@ fn set_track_volume_and_pan_apply_and_validate() {
     )
     .unwrap_err();
     assert_eq!(err, CommandError::TrackNotFound(9999));
+    // パン側も同じく（Issue #15 レビュー観察: 対称性の担保）
+    let err = apply(
+        &mut p,
+        &Command::SetTrackPan {
+            track_id: 9999,
+            pan: 0.0,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::TrackNotFound(9999));
 }
 
 #[test]
