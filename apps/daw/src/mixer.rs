@@ -273,4 +273,39 @@ mod tests {
         assert!(hit_mixer(&p, v.x + 10.0, 10.0).is_none());
         assert!(hit_mixer(&p, 10.0, v.y + 10.0).is_none());
     }
+
+    #[test]
+    fn hit_with_x_follows_track_id_after_removal() {
+        // Issue #56 レビュー round 1 の固定テスト: 操作中スライダーは
+        // トラック ID で保持され（Model::mixer_active）、ドラッグ中の
+        // 値解決も ID から現在位置を引き直す。手前のトラックを削除して
+        // インデックスがずれても、対象トラックは変わらない。
+        let mut p = sample_project();
+        for name in ["A2", "A3"] {
+            apply(
+                &mut p,
+                &Command::AddTrack {
+                    name: name.into(),
+                    kind: TrackKind::Audio,
+                },
+            )
+            .unwrap();
+        }
+        let a3 = p.tracks[2].id;
+        let first = p.tracks[0].id;
+        apply(&mut p, &Command::RemoveTrack { track_id: first }).unwrap();
+        assert_eq!(p.tracks.len(), 2);
+        assert_eq!(p.tracks[1].id, a3, "A3 はインデックス 1 へずれる");
+        // ずれた後の位置（インデックス 1）の矩形右端で解決しても A3。
+        let rect = volume_rect(p.tracks.len(), 1);
+        let hit = hit_with_x(&p, a3, Param::Volume, rect.x + rect.w - 0.5).unwrap();
+        assert_eq!(hit.track_id, a3);
+        assert!(
+            hit.value > 0.99,
+            "right end should be ~max, was {}",
+            hit.value
+        );
+        // 削除済みトラックの ID は解決できない。
+        assert!(hit_with_x(&p, first, Param::Volume, rect.x).is_none());
+    }
 }

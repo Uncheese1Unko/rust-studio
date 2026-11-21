@@ -16,7 +16,7 @@ sleep 1
 GUI_PID=$!
 for i in $(seq 1 60); do grep -q "elements:" "$OUT/gui-stdout.txt" 2>/dev/null && break; sleep 0.5; done
 sleep 1
-shot() { ffmpeg -y -loglevel error -f x11grab -video_size 960x540 -i :99 -frames:v 1 "$OUT/$1"; }
+shot() { ffmpeg -y -loglevel error -draw_mouse 0 -f x11grab -video_size 960x540 -i :99 -frames:v 1 "$OUT/$1"; }
 click() { # x y
   xdotool mousemove "$1" "$2"; sleep 0.2
   xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 0.6

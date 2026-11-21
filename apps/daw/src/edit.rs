@@ -151,6 +151,11 @@ impl Drag {
 }
 
 /// ダブルクリック判定。前回のクリック時刻と位置を保持する。
+///
+/// `now_ms` には実経過ミリ秒を渡すこと。呼び出し側は nannou の
+/// `app.time`（起動時 Instant からの経過秒。dt の累積ではないため
+/// フレーム落ちで圧縮されない）× 1000 を渡している（Issue #56
+/// レビュー round 1 で原典を確認済み）。
 #[derive(Debug, Default)]
 pub struct ClickTracker {
     last: Option<(u64, f32, f32)>,
