@@ -660,6 +660,27 @@ fn draw_hline(draw: &Draw, win: Rect, y: f32, color: theme::Rgb) {
         .color(rgb(color.0, color.1, color.2));
 }
 
+/// 角丸矩形を左上原点ピクセル座標で描く（Issue #24）。nannou の
+/// `rect` には角丸がないため、2枚の矩形と四隅の円で近似する。
+fn draw_rounded_rect(draw: &Draw, win: Rect, rect: mixer::Rect, radius: f32, color: theme::Rgb) {
+    let (x, y, w, h) = (rect.x, rect.y, rect.w, rect.h);
+    let r = radius.min(w / 2.0).min(h / 2.0);
+    let c = rgb(color.0, color.1, color.2);
+    let (cx, cy) = rect_center(win, x + r, y, w - 2.0 * r, h);
+    draw.rect().x_y(cx, cy).w_h(w - 2.0 * r, h).color(c);
+    let (cx, cy) = rect_center(win, x, y + r, w, h - 2.0 * r);
+    draw.rect().x_y(cx, cy).w_h(w, h - 2.0 * r).color(c);
+    for (ex, ey) in [
+        (x + r, y + r),
+        (x + w - r, y + r),
+        (x + r, y + h - r),
+        (x + w - r, y + h - r),
+    ] {
+        let (cx, cy) = rect_center(win, ex - r, ey - r, 2.0 * r, 2.0 * r);
+        draw.ellipse().x_y(cx, cy).w_h(2.0 * r, 2.0 * r).color(c);
+    }
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     let win = app.window_rect();
@@ -733,15 +754,40 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     // クリップ（timeline.clip.<id>）＋波形の概形。
     for rect in timeline::layout_clips(&model.project, win.w()) {
-        let (r, g, b) = timeline::clip_color(rect.kind);
+        let clip = model.project.clip(rect.clip_id).map(|(_, c)| c);
+        let playing = clip
+            .map(|c| timeline::clip_is_playing(c, model.playhead_ms))
+            .unwrap_or(false);
+        let (face, edge) = timeline::clip_colors(rect.kind, playing);
         let inner_y = rect.y + 4.0;
         let inner_h = rect.h - 8.0;
         let (cx, cy) = rect_center(win, rect.x, inner_y, rect.w, inner_h);
-        draw.rect()
-            .x_y(cx, cy)
-            .w_h(rect.w, inner_h)
-            .color(rgb(r, g, b));
-        if let Some((_, clip)) = model.project.clip(rect.clip_id) {
+        // 縁→面の順に角丸で描く（Issue #24、デザイン文書の対応表）。
+        draw_rounded_rect(
+            &draw,
+            win,
+            mixer::Rect {
+                x: rect.x,
+                y: inner_y,
+                w: rect.w,
+                h: inner_h,
+            },
+            theme::CHIP_CORNER_RADIUS,
+            edge,
+        );
+        draw_rounded_rect(
+            &draw,
+            win,
+            mixer::Rect {
+                x: rect.x + 1.5,
+                y: inner_y + 1.5,
+                w: rect.w - 3.0,
+                h: inner_h - 3.0,
+            },
+            theme::CHIP_CORNER_RADIUS,
+            face,
+        );
+        if let Some(clip) = clip {
             // 波形: クリップの表示範囲に対応するピークを縦線で描く。
             if let (Some(peaks), Some(&src_ms)) = (
                 model.waveforms.get(&clip.source),
@@ -760,7 +806,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
                             .start(pt2(nx, mid_y - half))
                             .end(pt2(nx, mid_y + half))
                             .weight(1.0)
-                            .color(rgb(0.06, 0.10, 0.06));
+                            .color(rgb(theme::TEAL.0, theme::TEAL.1, theme::TEAL.2));
                     }
                 }
             }
@@ -880,14 +926,35 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .color(rgb(0.80, 0.80, 0.85));
     }
 
-    // 再生ヘッド（timeline.playhead）。
-    let (pr, pg, pb) = timeline::PLAYHEAD_COLOR;
+    // 再生ヘッド（timeline.playhead）: 黒の細線＋現在の小節チップ
+    // （Issue #24、デザイン文書「ライブ感の要素」）。
     let px = timeline::playhead_x(model.playhead_ms, win.w()) - win.w() / 2.0;
     draw.line()
         .start(pt2(px, win.h() / 2.0))
         .end(pt2(px, -win.h() / 2.0))
-        .weight(2.0)
-        .color(rgb(pr, pg, pb));
+        .weight(1.5)
+        .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+    let chip_w = 48.0;
+    let chip_h = 18.0;
+    let chip_x = timeline::playhead_x(model.playhead_ms, win.w())
+        .clamp(timeline::HEADER_WIDTH_PX, win.w() - chip_w);
+    draw_rounded_rect(
+        &draw,
+        win,
+        mixer::Rect {
+            x: chip_x,
+            y: 3.0,
+            w: chip_w,
+            h: chip_h,
+        },
+        theme::CHIP_CORNER_RADIUS,
+        theme::ACCENT,
+    );
+    let (ccx, ccy) = rect_center(win, chip_x, 3.0, chip_w, chip_h);
+    draw.text(&format!("BAR {}", timeline::bar_at_ms(model.playhead_ms)))
+        .x_y(ccx, ccy)
+        .font_size(11)
+        .color(rgb(theme::PANEL.0, theme::PANEL.1, theme::PANEL.2));
 
     draw.to_frame(app, &frame).unwrap();
 }

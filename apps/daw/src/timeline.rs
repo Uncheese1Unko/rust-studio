@@ -6,7 +6,36 @@
 //! 状態は studio-core の Project が正であり、ここは読み取り専用
 //! （状態変更はコマンド層経由のみ、ADR-0004）。
 
-use studio_core::{Project, TrackKind};
+use studio_core::{Clip, Project, TrackKind};
+
+use crate::theme;
+
+/// クリップの色（面, 縁）をテーマから返す（Issue #24、デザイン文書
+/// 「現状との対応」）。音声=ソフトピンク面＋ピンクの縁、映像=ミント面
+/// ＋ティールの縁。再生中は面がホットピンクになる（強調原則：
+/// アクセントは「今」のものだけ）。
+pub fn clip_colors(kind: TrackKind, playing: bool) -> (theme::Rgb, theme::Rgb) {
+    if playing {
+        return (theme::ACCENT, theme::ACCENT);
+    }
+    match kind {
+        TrackKind::Audio => (theme::ACCENT_SOFT, theme::ACCENT),
+        TrackKind::Video => (theme::MINT, theme::TEAL),
+    }
+}
+
+/// 再生ヘッド位置がクリップの範囲内にあるか（再生中クリップの判定）。
+/// 範囲は [start_ms, end_ms) で、ピッチ／サンプラーの既存判定と揃える。
+/// 読み取りのみで、状態は変えない。
+pub fn clip_is_playing(clip: &Clip, playhead_ms: i64) -> bool {
+    playhead_ms >= clip.start_ms && playhead_ms < clip.end_ms()
+}
+
+/// 再生位置の小節番号（1始まり）。プロジェクトのモデルにテンポが
+/// ないため、ルーラーの1秒区切りを1小節として数える（Issue #24）。
+pub fn bar_at_ms(playhead_ms: i64) -> i64 {
+    playhead_ms.max(0) / 1_000 + 1
+}
 
 /// トラック名を表示する左端ヘッダーの幅（px）。
 pub const HEADER_WIDTH_PX: f32 = 120.0;
@@ -16,21 +45,6 @@ pub const RULER_HEIGHT_PX: f32 = 24.0;
 pub const TRACK_HEIGHT_PX: f32 = 48.0;
 /// 画面に表示する時間幅（ms）。M1 では固定幅とする。
 pub const VIEW_DURATION_MS: i64 = 10_000;
-
-/// 映像クリップの塗り色（RGB, 0.0–1.0）。
-pub const CLIP_VIDEO_COLOR: (f32, f32, f32) = (0.25, 0.45, 0.85);
-/// 音声クリップの塗り色（RGB, 0.0–1.0）。
-pub const CLIP_AUDIO_COLOR: (f32, f32, f32) = (0.25, 0.70, 0.40);
-/// 再生ヘッドの色（RGB, 0.0–1.0）。
-pub const PLAYHEAD_COLOR: (f32, f32, f32) = (0.90, 0.20, 0.20);
-
-/// トラック種別ごとのクリップ色。
-pub fn clip_color(kind: TrackKind) -> (f32, f32, f32) {
-    match kind {
-        TrackKind::Video => CLIP_VIDEO_COLOR,
-        TrackKind::Audio => CLIP_AUDIO_COLOR,
-    }
-}
 
 /// 1ミリ秒あたりのピクセル数。
 pub fn px_per_ms(view_width_px: f32) -> f32 {
@@ -263,6 +277,81 @@ mod tests {
         assert!(first.iter().any(|id| id == ruler_id()));
         // トラック2つ＋クリップ2つ＋固定3要素
         assert_eq!(first.len(), 3 + 2 + 2);
+    }
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+    use crate::theme;
+    use studio_core::{apply, Command};
+
+    fn audio_clip() -> studio_core::Clip {
+        let mut project = Project::new("theme test");
+        let a = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::AddClip {
+                track_id: a,
+                name: "tone".into(),
+                start_ms: 1_000,
+                duration_ms: 2_000,
+                source: "demo/tone.wav".into(),
+            },
+        )
+        .unwrap();
+        project.tracks[0].clips[0].clone()
+    }
+
+    #[test]
+    fn clip_is_playing_within_start_inclusive_end_exclusive() {
+        // Issue #24: 再生中クリップ判定。範囲は [start, end) で、
+        // ピッチ／サンプラーの既存判定と揃える。
+        let clip = audio_clip();
+        assert!(!clip_is_playing(&clip, 999), "開始前は再生中でない");
+        assert!(clip_is_playing(&clip, 1_000), "開始位置は含む");
+        assert!(clip_is_playing(&clip, 2_999));
+        assert!(!clip_is_playing(&clip, 3_000), "終了位置は含まない");
+        assert!(!clip_is_playing(&clip, 5_000));
+    }
+
+    #[test]
+    fn clip_colors_follow_design_doc() {
+        // Issue #24: 音声=ソフトピンク面＋ピンクの縁、映像=ミント面＋
+        // ティールの縁。再生中だけ面がホットピンクになる。
+        assert_eq!(
+            clip_colors(TrackKind::Audio, false),
+            (theme::ACCENT_SOFT, theme::ACCENT)
+        );
+        assert_eq!(
+            clip_colors(TrackKind::Video, false),
+            (theme::MINT, theme::TEAL)
+        );
+        assert_eq!(
+            clip_colors(TrackKind::Audio, true).0,
+            theme::ACCENT,
+            "再生中は面がホットピンク"
+        );
+        assert_eq!(clip_colors(TrackKind::Video, true).0, theme::ACCENT);
+    }
+
+    #[test]
+    fn bar_at_ms_counts_one_second_bars_from_one() {
+        // Issue #24: 現在の小節チップ用。モデルにテンポがないため、
+        // ルーラーの1秒区切りを1小節として数える（1始まり）。
+        assert_eq!(bar_at_ms(0), 1);
+        assert_eq!(bar_at_ms(999), 1);
+        assert_eq!(bar_at_ms(1_000), 2);
+        assert_eq!(bar_at_ms(4_500), 5);
+        assert_eq!(bar_at_ms(-100), 1, "負の位置は1小節目に丸める");
     }
 }
 
