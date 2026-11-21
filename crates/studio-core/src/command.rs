@@ -29,6 +29,14 @@ pub enum Command {
         clip_id: u64,
         new_start_ms: i64,
     },
+    /// クリップの開始位置と長さをまとめて変える（トリミング）。
+    /// 左端のドラッグは end を保った (start, duration) の組として、
+    /// 右端のドラッグは start を保った組として、このコマンドに落ちる。
+    TrimClip {
+        clip_id: u64,
+        new_start_ms: i64,
+        new_duration_ms: i64,
+    },
     RemoveClip {
         clip_id: u64,
     },
@@ -129,6 +137,31 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.start_ms = *new_start_ms;
+            Ok(None)
+        }
+        Command::TrimClip {
+            clip_id,
+            new_start_ms,
+            new_duration_ms,
+        } => {
+            if *new_start_ms < 0 {
+                return Err(CommandError::InvalidRange("new_start_ms must be >= 0"));
+            }
+            if *new_duration_ms <= 0 {
+                return Err(CommandError::InvalidRange("new_duration_ms must be > 0"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.start_ms = *new_start_ms;
+            clip.duration_ms = *new_duration_ms;
             Ok(None)
         }
         Command::RemoveClip { clip_id } => {

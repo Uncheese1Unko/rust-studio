@@ -103,3 +103,57 @@ fn commands_and_state_round_trip_through_json() {
     let restored: Project = serde_json::from_str(&dumped).unwrap();
     assert_eq!(restored, p);
 }
+
+#[test]
+fn trim_clip_changes_start_and_duration() {
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::TrimClip {
+            clip_id,
+            new_start_ms: 500,
+            new_duration_ms: 3_000,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.start_ms, 500);
+    assert_eq!(clip.duration_ms, 3_000);
+    assert_eq!(clip.end_ms(), 3_500);
+}
+
+#[test]
+fn trim_clip_rejects_invalid_ranges_and_keeps_state() {
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    let before = p.dump_json();
+    for (start, duration) in [(-1, 3_000), (500, 0), (500, -100)] {
+        let err = apply(
+            &mut p,
+            &Command::TrimClip {
+                clip_id,
+                new_start_ms: start,
+                new_duration_ms: duration,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, CommandError::InvalidRange(_)), "{err}");
+        assert_eq!(p.dump_json(), before, "失敗したコマンドが状態を変えた");
+    }
+}
+
+#[test]
+fn trim_clip_unknown_clip_errors_and_keeps_state() {
+    let (mut p, _track_id, _clip_id) = project_with_clip();
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::TrimClip {
+            clip_id: 9999,
+            new_start_ms: 0,
+            new_duration_ms: 1_000,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ClipNotFound(9999));
+    assert_eq!(p.dump_json(), before);
+}
