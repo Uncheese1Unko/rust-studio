@@ -270,6 +270,48 @@ fn trim_clip_tool_applies_via_tools_call() {
 }
 
 #[test]
+fn set_clip_cutout_tool_applies_via_tools_call() {
+    // Issue #22 レビュー観察: tools/list の登録だけでなく、tools/call
+    // 経由でダンプに反映されることまで保証する。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        30,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        31,
+        "add_clip",
+        json!({"track_id": 1, "name": "interview", "start_ms": 0,
+               "duration_ms": 1000, "source": "demo/interview.mp4"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        32,
+        "set_clip_cutout",
+        json!({"clip_id": 2, "enabled": true}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let (_, clip) = project.clip(2).unwrap();
+    assert!(clip.cutout);
+    // 存在しないクリップはエラーになり、状態は変わらない
+    let res = call_tool(
+        &server,
+        33,
+        "set_clip_cutout",
+        json!({"clip_id": 9999, "enabled": true}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(dump, project_dump_via_tool(&server));
+}
+
+#[test]
 fn set_clip_pitch_tool_applies_via_tools_call() {
     // Issue #18 レビュー指摘: tools/list の登録だけでなく、tools/call
     // 経由でダンプに反映されることまで保証する。

@@ -342,6 +342,32 @@ fn handle_cutout(app: &App, model: &mut Model) {
         return;
     };
     let enabled = !clip.cutout;
+    // 有効化のときは、適用前に処理の前提が揃っているか確認する
+    // （レビュー観察: 前提が無いのに cutout: true だけが保存され、
+    // 状態表示と実体がずれるのを防ぐ）。無効化はいつでもできる。
+    let mut job_inputs = None;
+    if enabled {
+        let frames = model.frames.frames_for(&clip.source);
+        if frames.is_empty() {
+            println!("cutout unavailable: no frames for {}", clip.source);
+            return;
+        }
+        let (Some(model_path), Some(dylib_path)) =
+            (cutout::find_model(), cutout::find_onnxruntime())
+        else {
+            println!("cutout unavailable: MODNet model or onnxruntime not found");
+            return;
+        };
+        if model
+            .cutout_job
+            .as_ref()
+            .is_some_and(|j| j.lock().unwrap().status == cutout::JobStatus::Running)
+        {
+            println!("cutout: a job is already running");
+            return;
+        }
+        job_inputs = Some((frames, model_path, dylib_path));
+    }
     let cmd = Command::SetClipCutout {
         clip_id: clip.id,
         enabled,
@@ -352,28 +378,9 @@ fn handle_cutout(app: &App, model: &mut Model) {
     }
     println!("after cutout toggle: {}", model.project.dump_json());
     save_project_file(model);
-    if !enabled {
-        return;
-    }
-    // 処理の開始に必要なものが揃っているか確認する。
-    let frames = model.frames.frames_for(&clip.source);
-    if frames.is_empty() {
-        println!("cutout unavailable: no frames for {}", clip.source);
-        return;
-    }
-    let (Some(model_path), Some(dylib_path)) = (cutout::find_model(), cutout::find_onnxruntime())
-    else {
-        println!("cutout unavailable: MODNet model or onnxruntime not found");
+    let Some((frames, model_path, dylib_path)) = job_inputs else {
         return;
     };
-    if model
-        .cutout_job
-        .as_ref()
-        .is_some_and(|j| j.lock().unwrap().status == cutout::JobStatus::Running)
-    {
-        println!("cutout: a job is already running");
-        return;
-    }
     // 背景フレーム: 別の映像トラックで同じ時刻を覆うクリップを探す。
     let fg_track = model
         .project
