@@ -18,9 +18,10 @@ pub const VOLUME_X: f32 = timeline::HEADER_WIDTH_PX + 60.0;
 /// パンスライダーの左端（px）。
 pub const PAN_X: f32 = VOLUME_X + SLIDER_WIDTH_PX + 80.0;
 
-/// ミキサー領域の上端 y（トラック行の直下）。
+/// ミキサー領域の上端 y。トラック行の直下にはトラック追加行
+/// （Issue #56）が1行あるため、その下から始まる。
 pub fn mixer_top_y(track_count: usize) -> f32 {
-    timeline::RULER_HEIGHT_PX + track_count as f32 * timeline::TRACK_HEIGHT_PX
+    timeline::RULER_HEIGHT_PX + (track_count + 1) as f32 * timeline::TRACK_HEIGHT_PX
 }
 
 /// 矩形（左上原点ピクセル）。
@@ -230,6 +231,18 @@ mod tests {
         assert_eq!(format_pan(1.0), "R100");
         assert_eq!(format_pan(-0.25), "L25");
         assert_eq!(format_pan(0.5), "R50");
+    }
+
+    #[test]
+    fn mixer_starts_below_the_track_add_row() {
+        // Issue #56: 最終トラック行の直下はトラック追加行であり、
+        // ミキサーはその下から始まる（追加行と重ならない）。
+        assert_eq!(
+            mixer_top_y(1),
+            timeline::track_top_y(2),
+            "1トラック時: 追加行（2行目）の下がミキサー上端"
+        );
+        assert_eq!(mixer_top_y(0), timeline::track_top_y(1));
     }
 
     #[test]

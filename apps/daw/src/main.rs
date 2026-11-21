@@ -114,6 +114,11 @@ struct Model {
     last_rejection: Option<String>,
     prev_left_down: bool,
     clicks: edit::ClickTracker,
+    /// トラック操作（Issue #56）: ヘッダーのダブルクリック判定と
+    /// リネーム編集セッション。どちらも GUI の表示状態で、
+    /// プロジェクト状態には含めない（#25 の選択状態と同じ扱い）。
+    header_clicks: edit::ClickTracker,
+    rename: Option<edit::RenameSession>,
     /// ソースごとの波形ピーク（全体を WAVEFORM_COLUMNS 本で事前計算）。
     waveforms: HashMap<String, Vec<f32>>,
     /// ソースごとの長さ（ms）。波形の切り出しに使う。
@@ -300,6 +305,8 @@ fn model(app: &App) -> Model {
         last_rejection: None,
         prev_left_down: false,
         clicks: edit::ClickTracker::new(),
+        header_clicks: edit::ClickTracker::new(),
+        rename: None,
         waveforms,
         source_durations,
         dropped_source: dropped,
@@ -337,7 +344,7 @@ fn main() {
         sampler_demo(&args[2], &args[3]);
         return;
     }
-    nannou::app(model).update(update).run();
+    nannou::app(model).event(event).update(update).run();
 }
 
 /// 素材をサンプラーに読み、和音（0/+4/+7）と単音（+7）を書き出す。
@@ -459,12 +466,63 @@ fn save_project_file(model: &mut Model) {
     }
 }
 
+/// キーボード入力（Issue #56）: リネーム編集中だけ受け付ける。
+/// Enter で RenameTrack コマンド（#55）を発行し、Esc で中止する。
+/// 確定がコマンド層に弾かれた場合（空白名など）は編集を続け、
+/// 理由をログに出す（イシューの実装方針）。
+fn event(_app: &App, model: &mut Model, event: Event) {
+    if model.rename.is_none() {
+        return;
+    }
+    let Event::WindowEvent {
+        simple: Some(window_event),
+        ..
+    } = event
+    else {
+        return;
+    };
+    let input = match window_event {
+        WindowEvent::ReceivedCharacter(c) => edit::RenameInput::Char(c),
+        WindowEvent::KeyPressed(Key::Back) => edit::RenameInput::Backspace,
+        WindowEvent::KeyPressed(Key::Return) => edit::RenameInput::Enter,
+        WindowEvent::KeyPressed(Key::Escape) => edit::RenameInput::Escape,
+        _ => return,
+    };
+    let action = model.rename.as_mut().expect("checked above").handle(input);
+    match action {
+        edit::RenameAction::None => {}
+        edit::RenameAction::Cancel => {
+            model.rename = None;
+            println!("rename cancelled");
+        }
+        edit::RenameAction::Commit(cmd) => match apply(&mut model.project, &cmd) {
+            Ok(_) => {
+                model.rename = None;
+                println!("after rename: {}", model.project.dump_json());
+                save_project_file(model);
+            }
+            Err(e) => println!("rename rejected: {e}"),
+        },
+    }
+}
+
 fn update(app: &App, model: &mut Model, update: Update) {
-    handle_pointer(app, model);
+    // リネーム編集中は他の操作（ポインタ編集・ピッチ・サンプラー）を
+    // 受け付けない（Issue #56）。再生ヘッドとファイル監視は続ける。
+    let renaming = model.rename.is_some();
+    if renaming {
+        model.prev_left_down = app.mouse.buttons.left().is_down();
+    } else {
+        handle_pointer(app, model);
+    }
     watch_project_file(app, model);
-    handle_pitch_keys(app, model);
+    if !renaming {
+        handle_pitch_keys(app, model);
+    }
     let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
-    handle_sampler_keys(app, model);
+    if !renaming {
+        handle_sampler_keys(app, model);
+    }
     if let Some(sampler) = &mut model.sampler {
         sampler.advance(dt_ms);
     }
@@ -644,9 +702,61 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down && !model.prev_left_down {
-        // トラックヘッダーのクリックで選択（Issue #25、表示状態のみ）
+        // トラック削除（Issue #56）: ヘッダー右端の帯。コマンド経由で
+        // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
+        // 選択を移す。削除したトラックの操作状態も打ち切る。
+        if let Some(index) = edit::hit_track_delete(&model.project, lx, ly) {
+            let track_id = model.project.tracks[index].id;
+            let cmd = Command::RemoveTrack { track_id };
+            match apply(&mut model.project, &cmd) {
+                Ok(_) => {
+                    if model.selected_track == Some(track_id) {
+                        model.selected_track = model
+                            .project
+                            .tracks
+                            .get(index)
+                            .or_else(|| model.project.tracks.last())
+                            .map(|t| t.id);
+                    }
+                    if model.mixer_active.map(|(id, _)| id) == Some(track_id) {
+                        model.mixer_active = None;
+                        model.last_mixer_cmd = None;
+                    }
+                    model.drag = None;
+                    model.last_drag_cmd = None;
+                    println!("after track remove: {}", model.project.dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
+        // トラック追加（Issue #56）: 最終行直下のヘッダー列。
+        // 追加したトラックを選択する。
+        if edit::hit_track_add_area(&model.project, lx, ly) {
+            let cmd = edit::add_track_command(&model.project);
+            match apply(&mut model.project, &cmd) {
+                Ok(created) => {
+                    model.selected_track = created;
+                    println!("after track add: {}", model.project.dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
+        // トラックヘッダーのクリックで選択（Issue #25、表示状態のみ）。
+        // ダブルクリックでリネーム編集に入る（Issue #56）。
         if let Some(index) = edit::hit_track_header(&model.project, lx, ly) {
             model.selected_track = Some(model.project.tracks[index].id);
+            let now_ms = (app.time * 1_000.0) as u64;
+            if model.header_clicks.register(now_ms, lx, ly) {
+                let track = &model.project.tracks[index];
+                model.rename = Some(edit::RenameSession::begin(track.id, &track.name));
+                println!("rename begin: track {}", track.id);
+            }
         }
         let target = edit::hit_test(&model.project, win.w(), lx, ly);
         if let Some(drag) = edit::Drag::begin(&model.project, &target, pointer_ms) {
@@ -818,9 +928,62 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
             .color(rgb(r, g, b));
         let (r, g, b) = theme::TEXT;
-        draw.text(&track.name)
-            .x_y(hx, hy)
+        // リネーム編集中のトラックは編集中の文字列＋キャレットを出す
+        // （Issue #56）。それ以外はトラック名。名前は削除帯を除いた
+        // 範囲の中央に置き、「×」と重ならないようにする。
+        let renaming_this = model
+            .rename
+            .as_ref()
+            .filter(|s| s.track_id == track.id);
+        let name_text = match renaming_this {
+            Some(session) => format!("{}_", session.text),
+            None => track.name.clone(),
+        };
+        let (nx, ny) = rect_center(
+            win,
+            0.0,
+            top,
+            timeline::HEADER_WIDTH_PX - edit::DELETE_STRIP_PX,
+            timeline::TRACK_HEIGHT_PX,
+        );
+        draw.text(&name_text)
+            .x_y(nx, ny)
             .font_size(13)
+            .color(rgb(r, g, b));
+        // 削除ボタン（Issue #56）: ヘッダー右端の帯に「×」。
+        let (xx, xy) = rect_center(
+            win,
+            timeline::HEADER_WIDTH_PX - edit::DELETE_STRIP_PX,
+            top,
+            edit::DELETE_STRIP_PX,
+            timeline::TRACK_HEIGHT_PX,
+        );
+        let (r, g, b) = theme::TEXT_SUB;
+        draw.text("×")
+            .x_y(xx, xy)
+            .font_size(12)
+            .color(rgb(r, g, b));
+    }
+
+    // トラック追加エリア（Issue #56）: 最終行直下のヘッダー列。
+    {
+        let top = timeline::track_top_y(model.project.tracks.len());
+        let (ax, ay) = rect_center(
+            win,
+            0.0,
+            top,
+            timeline::HEADER_WIDTH_PX,
+            timeline::TRACK_HEIGHT_PX,
+        );
+        let (r, g, b) = theme::PANEL_SUNK;
+        draw.rect()
+            .x_y(ax, ay)
+            .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
+            .color(rgb(r, g, b));
+        let (r, g, b) = theme::TEXT_SUB;
+        draw.text("+ TRACK")
+            .x_y(ax, ay)
+            .font_size(11)
             .color(rgb(r, g, b));
     }
 
