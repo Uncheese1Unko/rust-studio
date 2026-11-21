@@ -14,6 +14,7 @@
 mod audio;
 mod edit;
 mod mixer;
+mod sampler;
 mod timeline;
 
 use std::collections::HashMap;
@@ -123,6 +124,9 @@ struct Model {
     // Issue #18: ピッチ操作キー（↑↓）の押下エッジ検出。
     prev_pitch_up: bool,
     prev_pitch_down: bool,
+    // Issue #19: サンプラー（素材は初回ノートオン時に確定する）。
+    sampler: Option<sampler::Sampler>,
+    prev_note_keys: [bool; 13],
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -230,6 +234,8 @@ fn model(app: &App) -> Model {
         last_watch_check: 0.0,
         prev_pitch_up: false,
         prev_pitch_down: false,
+        sampler: None,
+        prev_note_keys: [false; 13],
     }
 }
 
@@ -245,7 +251,49 @@ fn main() {
         pitch_demo(&args[2], &args[3], &args[4]);
         return;
     }
+    // サンプラーの和音レンダリング（Issue #19 の音声証拠生成用）:
+    // daw --sampler-demo <in.wav> <out_dir>
+    if args.len() == 4 && args[1] == "--sampler-demo" {
+        sampler_demo(&args[2], &args[3]);
+        return;
+    }
     nannou::app(model).update(update).run();
+}
+
+/// 素材をサンプラーに読み、和音（0/+4/+7）と単音（+7）を書き出す。
+fn sampler_demo(input: &str, out_dir: &str) {
+    let decoded = audio::decode_audio(std::path::Path::new(input)).expect("decode input wav");
+    std::fs::create_dir_all(out_dir).expect("create out dir");
+    let write = |name: &str, samples: &[f32], rate: u32| {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let path = format!("{out_dir}/{name}");
+        let mut writer = hound::WavWriter::create(&path, spec).expect("create wav");
+        for s in samples {
+            writer
+                .write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                .expect("write sample");
+        }
+        writer.finalize().expect("finalize wav");
+        println!("sampler demo: wrote {path}");
+    };
+    let rate = decoded.sample_rate;
+    let frames = rate as usize; // 1 秒
+    let mut chord = sampler::Sampler::new(input.to_string(), decoded.clone());
+    chord.note_on(0);
+    chord.note_on(4);
+    chord.note_on(7);
+    println!("sampler demo: active {:?}", chord.active_notes());
+    let mixed = chord.render(frames);
+    write("chord.wav", &mixed, rate);
+    let mut single = sampler::Sampler::new(input.to_string(), decoded);
+    single.note_on(7);
+    let mixed = single.render(frames);
+    write("note-plus7.wav", &mixed, rate);
 }
 
 /// WAV を読み、ピッチ変更して書き出す（エンジンと同じ処理経路）。
@@ -338,8 +386,83 @@ fn update(app: &App, model: &mut Model, update: Update) {
     watch_project_file(app, model);
     handle_pitch_keys(app, model);
     let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
+    handle_sampler_keys(app, model);
+    if let Some(sampler) = &mut model.sampler {
+        sampler.advance(dt_ms);
+    }
     let end = timeline::project_end_ms(&model.project);
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end);
+}
+
+/// サンプラーのキー配置（sampler::key_to_semitone と対応）。
+const NOTE_KEYS: [(Key, char); 13] = [
+    (Key::A, 'a'),
+    (Key::W, 'w'),
+    (Key::S, 's'),
+    (Key::E, 'e'),
+    (Key::D, 'd'),
+    (Key::F, 'f'),
+    (Key::T, 't'),
+    (Key::G, 'g'),
+    (Key::Y, 'y'),
+    (Key::H, 'h'),
+    (Key::U, 'u'),
+    (Key::J, 'j'),
+    (Key::K, 'k'),
+];
+
+/// サンプラー演奏（Issue #19）: ピアノ式キー配置で、再生ヘッド位置の
+/// クリップの素材を音程で鳴らす。ノートオン／オフは操作ログに出す。
+fn handle_sampler_keys(app: &App, model: &mut Model) {
+    for (idx, (key, ch)) in NOTE_KEYS.iter().enumerate() {
+        let down = app.keys.down.contains(key);
+        let was = model.prev_note_keys[idx];
+        model.prev_note_keys[idx] = down;
+        let Some(semitones) = sampler::key_to_semitone(*ch) else {
+            continue;
+        };
+        if down && !was {
+            if model.sampler.is_none() {
+                // 素材は再生ヘッド位置の音声クリップ、無ければ配置用素材。
+                let source = model
+                    .project
+                    .tracks
+                    .iter()
+                    .filter(|t| t.kind == studio_core::TrackKind::Audio)
+                    .flat_map(|t| t.clips.iter())
+                    .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+                    .map(|c| c.source.clone())
+                    .unwrap_or_else(|| model.dropped_source.clone());
+                match audio::decode_audio(std::path::Path::new(&source)) {
+                    Ok(decoded) => {
+                        println!("sampler source: {source}");
+                        model.sampler = Some(sampler::Sampler::new(source, decoded));
+                    }
+                    Err(e) => {
+                        println!("sampler unavailable: cannot decode {source}: {e}");
+                        return;
+                    }
+                }
+            }
+            if let Some(sampler) = &mut model.sampler {
+                sampler.note_on(semitones);
+                println!(
+                    "note on: {:+}, active: {:?}",
+                    semitones,
+                    sampler.active_notes()
+                );
+            }
+        } else if !down && was {
+            if let Some(sampler) = &mut model.sampler {
+                sampler.note_off(semitones);
+                println!(
+                    "note off: {:+}, active: {:?}",
+                    semitones,
+                    sampler.active_notes()
+                );
+            }
+        }
+    }
 }
 
 /// ピッチ操作（Issue #18）: ↑↓ キーで再生ヘッド位置の音声クリップの
@@ -631,6 +754,46 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(-win.w() / 2.0 + 130.0, -win.h() / 2.0 + 16.0)
             .font_size(12)
             .color(rgb(0.95, 0.75, 0.35));
+    }
+
+    // サンプラーの鍵盤（Issue #19）: 13 鍵を下部に描き、発音中を灯す。
+    {
+        let active: Vec<i32> = model
+            .sampler
+            .as_ref()
+            .map(|s| s.active_notes())
+            .unwrap_or_default();
+        let key_w = 30.0f32;
+        let key_h = 34.0f32;
+        let x0 = -win.w() / 2.0 + 24.0;
+        let y = -win.h() / 2.0 + 52.0;
+        for i in 0..13i32 {
+            let cx = x0 + (i as f32 + 0.5) * key_w;
+            let is_active = active.contains(&i);
+            let (r, g, b) = if is_active {
+                (0.95, 0.75, 0.35)
+            } else if [1, 3, 6, 8, 10].contains(&i) {
+                (0.16, 0.16, 0.20)
+            } else {
+                (0.55, 0.55, 0.60)
+            };
+            draw.rect()
+                .x_y(cx, y)
+                .w_h(key_w - 3.0, key_h)
+                .color(rgb(r, g, b));
+        }
+        let sampler_label = match &model.sampler {
+            Some(s) => format!(
+                "sampler: {} notes: {:?}",
+                s.source_name.rsplit('/').next().unwrap_or(&s.source_name),
+                active
+            ),
+            None => "sampler: (play keys A-K)".to_string(),
+        };
+        draw.text(&sampler_label)
+            .x_y(x0 + 13.0 * key_w / 2.0, y + key_h / 2.0 + 12.0)
+            .font_size(11)
+            .color(rgb(0.80, 0.80, 0.85));
     }
 
     // 再生ヘッド（timeline.playhead）。
