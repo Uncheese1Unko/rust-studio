@@ -6,6 +6,7 @@
 * **Addition**: 試験レポート issue-0005（MCP サーバー）を追加した。
 * **Addition**: `scripts/verify.sh`（ローカル検証の一括実行、PBI #6）と試験レポート issue-0006（途中経過）を追加した。ワークフローファイルの追加は権限のため needs-human で引き継ぎ中。
 * **Addition**: 調査レポート issue-0017（ピッチ方式選定、PBI #17）を追加した。聴き比べは未実施のため needs-human で引き継ぎ中。
+* **Addition**: ADR-0009（ピッチシフト方式に Signalsmith Stretch を採用）を追加。調査レポート issue-0017 に測定と聴取結果を追記し、#17 を閉じた。
 * **Addition**: ADR-0008（HTTP API は std のみの薄いラッパーとして実装する）を追加した。
 * **Addition**: 試験レポート issue-0003（JSON 永続化）を追加した。
 * **Addition**: 試験レポート issue-0002（nannou ビルドと最小ウィンドウ表示の検証）を追加した。

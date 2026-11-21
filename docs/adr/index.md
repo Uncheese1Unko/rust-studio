@@ -13,3 +13,4 @@ supersede する。ルールは `.claude/rules/documentation.md`。
 | 0006 | ohta 式ハーネスを採用し、設計判断は人間が持つ | 採用 |
 | 0007 | サンプリング文化フレンドリー：性質を保ったまま音程を変える | 採用 |
 | 0008 | HTTP API は std のみの薄いラッパーとして実装する | 採用 |
+| 0009 | 性質を保つピッチシフトは Signalsmith Stretch を採用する | 採用 |

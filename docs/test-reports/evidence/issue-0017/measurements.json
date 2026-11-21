@@ -1,0 +1,962 @@
+[
+ {
+  "src": "piano",
+  "semitones": 4,
+  "method": "naive_resample_atempo",
+  "target": 1.26,
+  "f0_ratio": 1.254,
+  "formant_alpha": 1.264
+ },
+ {
+  "src": "piano",
+  "semitones": 4,
+  "method": "rubberband_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.254,
+  "formant_alpha": 1.255
+ },
+ {
+  "src": "piano",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.254,
+  "formant_alpha": 1.043
+ },
+ {
+  "src": "piano",
+  "semitones": 4,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.254,
+  "formant_alpha": 1.26
+ },
+ {
+  "src": "piano",
+  "semitones": 4,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.254,
+  "formant_alpha": 1.003
+ },
+ {
+  "src": "piano",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.26,
+  "f0_ratio": 1.254,
+  "formant_alpha": 1.059
+ },
+ {
+  "src": "piano",
+  "semitones": 7,
+  "method": "naive_resample_atempo",
+  "target": 1.498,
+  "f0_ratio": 1.483,
+  "formant_alpha": 1.468
+ },
+ {
+  "src": "piano",
+  "semitones": 7,
+  "method": "rubberband_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.508,
+  "formant_alpha": 1.48
+ },
+ {
+  "src": "piano",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.508,
+  "formant_alpha": 1.279
+ },
+ {
+  "src": "piano",
+  "semitones": 7,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.483,
+  "formant_alpha": 1.451
+ },
+ {
+  "src": "piano",
+  "semitones": 7,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.483,
+  "formant_alpha": 1.059
+ },
+ {
+  "src": "piano",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.498,
+  "f0_ratio": 1.483,
+  "formant_alpha": 1.08
+ },
+ {
+  "src": "piano",
+  "semitones": 12,
+  "method": "naive_resample_atempo",
+  "target": 2.0,
+  "f0_ratio": 1.978,
+  "formant_alpha": 1.698
+ },
+ {
+  "src": "piano",
+  "semitones": 12,
+  "method": "rubberband_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.978,
+  "formant_alpha": 2.133
+ },
+ {
+  "src": "piano",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.978,
+  "formant_alpha": 1.225
+ },
+ {
+  "src": "piano",
+  "semitones": 12,
+  "method": "signalsmith_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.978,
+  "formant_alpha": 1.678
+ },
+ {
+  "src": "piano",
+  "semitones": 12,
+  "method": "signalsmith_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.978,
+  "formant_alpha": 1.211
+ },
+ {
+  "src": "piano",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 2.0,
+  "f0_ratio": 1.978,
+  "formant_alpha": 1.235
+ },
+ {
+  "src": "piano",
+  "semitones": -4,
+  "method": "naive_resample_atempo",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.789
+ },
+ {
+  "src": "piano",
+  "semitones": -4,
+  "method": "rubberband_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.786
+ },
+ {
+  "src": "piano",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.92
+ },
+ {
+  "src": "piano",
+  "semitones": -4,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.786
+ },
+ {
+  "src": "piano",
+  "semitones": -4,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.964
+ },
+ {
+  "src": "piano",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.92
+ },
+ {
+  "src": "piano",
+  "semitones": -7,
+  "method": "naive_resample_atempo",
+  "target": 0.667,
+  "f0_ratio": 0.664,
+  "formant_alpha": 0.666
+ },
+ {
+  "src": "piano",
+  "semitones": -7,
+  "method": "rubberband_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.669,
+  "formant_alpha": 0.664
+ },
+ {
+  "src": "piano",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.664,
+  "formant_alpha": 0.92
+ },
+ {
+  "src": "piano",
+  "semitones": -7,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.664,
+  "formant_alpha": 0.664
+ },
+ {
+  "src": "piano",
+  "semitones": -7,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.669,
+  "formant_alpha": 0.991
+ },
+ {
+  "src": "piano",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.667,
+  "f0_ratio": 0.669,
+  "formant_alpha": 0.972
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 4,
+  "method": "naive_resample_atempo",
+  "target": 1.26,
+  "f0_ratio": 1.25,
+  "formant_alpha": 1.26
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 4,
+  "method": "rubberband_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.25,
+  "formant_alpha": 1.255
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.186,
+  "formant_alpha": 1.059
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 4,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.273,
+  "formant_alpha": 1.25
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 4,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.186,
+  "formant_alpha": 1.011
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.26,
+  "f0_ratio": 1.25,
+  "formant_alpha": 1.051
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 7,
+  "method": "naive_resample_atempo",
+  "target": 1.498,
+  "f0_ratio": 1.489,
+  "formant_alpha": 1.451
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 7,
+  "method": "rubberband_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.489,
+  "formant_alpha": 1.474
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.489,
+  "formant_alpha": 1.173
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 7,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.489,
+  "formant_alpha": 1.44
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 7,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.458,
+  "formant_alpha": 1.08
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.498,
+  "f0_ratio": 1.489,
+  "formant_alpha": 1.155
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 12,
+  "method": "naive_resample_atempo",
+  "target": 2.0,
+  "f0_ratio": 1.014,
+  "formant_alpha": 1.685
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 12,
+  "method": "rubberband_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.029,
+  "formant_alpha": 2.116
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.022,
+  "formant_alpha": 1.685
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 12,
+  "method": "signalsmith_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.029,
+  "formant_alpha": 1.665
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 12,
+  "method": "signalsmith_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.014,
+  "formant_alpha": 1.003
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 2.0,
+  "f0_ratio": 1.029,
+  "formant_alpha": 1.659
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -4,
+  "method": "naive_resample_atempo",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.798
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -4,
+  "method": "rubberband_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.798
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.912
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -4,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.798
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -4,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.968
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.794,
+  "f0_ratio": 0.795,
+  "formant_alpha": 0.912
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -7,
+  "method": "naive_resample_atempo",
+  "target": 0.667,
+  "f0_ratio": 0.673,
+  "formant_alpha": 0.671
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -7,
+  "method": "rubberband_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.667,
+  "formant_alpha": 0.671
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.667,
+  "formant_alpha": 1.035
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -7,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.673,
+  "formant_alpha": 0.671
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -7,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.673,
+  "formant_alpha": 1.011
+ },
+ {
+  "src": "voice1_omedetou",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.667,
+  "f0_ratio": 0.673,
+  "formant_alpha": 1.119
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 4,
+  "method": "naive_resample_atempo",
+  "target": 1.26,
+  "f0_ratio": 1.241,
+  "formant_alpha": 1.24
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 4,
+  "method": "rubberband_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.271,
+  "formant_alpha": 1.25
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.213,
+  "formant_alpha": 1.085
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 4,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.256,
+  "formant_alpha": 1.25
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 4,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.179,
+  "formant_alpha": 1.102
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.26,
+  "f0_ratio": 1.107,
+  "formant_alpha": 1.102
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 7,
+  "method": "naive_resample_atempo",
+  "target": 1.498,
+  "f0_ratio": 1.379,
+  "formant_alpha": 1.491
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 7,
+  "method": "rubberband_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.445,
+  "formant_alpha": 1.491
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.388,
+  "formant_alpha": 1.102
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 7,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.456,
+  "formant_alpha": 1.497
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 7,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.417,
+  "formant_alpha": 1.098
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.498,
+  "f0_ratio": 1.265,
+  "formant_alpha": 1.115
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 12,
+  "method": "naive_resample_atempo",
+  "target": 2.0,
+  "f0_ratio": 1.991,
+  "formant_alpha": 1.911
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 12,
+  "method": "rubberband_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.919,
+  "formant_alpha": 1.972
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.419,
+  "formant_alpha": 1.051
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 12,
+  "method": "signalsmith_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.918,
+  "formant_alpha": 2.003
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 12,
+  "method": "signalsmith_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.54,
+  "formant_alpha": 1.031
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 2.0,
+  "f0_ratio": 1.456,
+  "formant_alpha": 1.064
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -4,
+  "method": "naive_resample_atempo",
+  "target": 0.794,
+  "f0_ratio": 0.793,
+  "formant_alpha": 0.798
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -4,
+  "method": "rubberband_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.812,
+  "formant_alpha": 0.795
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.815,
+  "formant_alpha": 0.884
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -4,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.793,
+  "formant_alpha": 0.795
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -4,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.793,
+  "formant_alpha": 0.85
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.794,
+  "f0_ratio": 0.779,
+  "formant_alpha": 0.884
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -7,
+  "method": "naive_resample_atempo",
+  "target": 0.667,
+  "f0_ratio": 0.668,
+  "formant_alpha": 0.664
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -7,
+  "method": "rubberband_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.69,
+  "formant_alpha": 0.664
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.672,
+  "formant_alpha": 0.938
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -7,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.668,
+  "formant_alpha": 0.661
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -7,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.666,
+  "formant_alpha": 1.039
+ },
+ {
+  "src": "voice2_saaikuzo",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.667,
+  "f0_ratio": 0.699,
+  "formant_alpha": 0.698
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 4,
+  "method": "naive_resample_atempo",
+  "target": 1.26,
+  "f0_ratio": 1.261,
+  "formant_alpha": 1.25
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 4,
+  "method": "rubberband_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.276,
+  "formant_alpha": 1.255
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.261,
+  "formant_alpha": 1.093
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 4,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.26,
+  "f0_ratio": 1.261,
+  "formant_alpha": 1.255
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 4,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.26,
+  "f0_ratio": 1.247,
+  "formant_alpha": 1.019
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.26,
+  "f0_ratio": 1.261,
+  "formant_alpha": 1.085
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 7,
+  "method": "naive_resample_atempo",
+  "target": 1.498,
+  "f0_ratio": 1.5,
+  "formant_alpha": 1.486
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 7,
+  "method": "rubberband_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.51,
+  "formant_alpha": 1.503
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.49,
+  "formant_alpha": 1.225
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 7,
+  "method": "signalsmith_formant_shifted",
+  "target": 1.498,
+  "f0_ratio": 1.5,
+  "formant_alpha": 1.503
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 7,
+  "method": "signalsmith_formant_preserved",
+  "target": 1.498,
+  "f0_ratio": 1.49,
+  "formant_alpha": 1.047
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 1.498,
+  "f0_ratio": 1.5,
+  "formant_alpha": 1.187
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 12,
+  "method": "naive_resample_atempo",
+  "target": 2.0,
+  "f0_ratio": 1.982,
+  "formant_alpha": 1.964
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 12,
+  "method": "rubberband_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.982,
+  "formant_alpha": 2.003
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.947,
+  "formant_alpha": 1.766
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 12,
+  "method": "signalsmith_formant_shifted",
+  "target": 2.0,
+  "f0_ratio": 1.982,
+  "formant_alpha": 2.059
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 12,
+  "method": "signalsmith_formant_preserved",
+  "target": 2.0,
+  "f0_ratio": 1.947,
+  "formant_alpha": 1.146
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": 12,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 2.0,
+  "f0_ratio": 1.947,
+  "formant_alpha": 1.197
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -4,
+  "method": "naive_resample_atempo",
+  "target": 0.794,
+  "f0_ratio": 0.793,
+  "formant_alpha": 0.795
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -4,
+  "method": "rubberband_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.799,
+  "formant_alpha": 0.795
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.799,
+  "formant_alpha": 0.864
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -4,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.794,
+  "f0_ratio": 0.796,
+  "formant_alpha": 0.795
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -4,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.794,
+  "f0_ratio": 0.799,
+  "formant_alpha": 0.953
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -4,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.794,
+  "f0_ratio": 0.804,
+  "formant_alpha": 0.86
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -7,
+  "method": "naive_resample_atempo",
+  "target": 0.667,
+  "f0_ratio": 0.665,
+  "formant_alpha": 0.666
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -7,
+  "method": "rubberband_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.673,
+  "formant_alpha": 0.669
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.673,
+  "formant_alpha": 0.874
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -7,
+  "method": "signalsmith_formant_shifted",
+  "target": 0.667,
+  "f0_ratio": 0.671,
+  "formant_alpha": 0.666
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -7,
+  "method": "signalsmith_formant_preserved",
+  "target": 0.667,
+  "f0_ratio": 0.675,
+  "formant_alpha": 1.055
+ },
+ {
+  "src": "voice3_yoroshiku",
+  "semitones": -7,
+  "method": "rubberband_formant_preserved_pitchq_quality",
+  "target": 0.667,
+  "f0_ratio": 0.677,
+  "formant_alpha": 0.877
+ }
+]

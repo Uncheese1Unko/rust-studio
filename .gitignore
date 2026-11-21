@@ -2,3 +2,7 @@
 .worktrees/
 *.log
 .DS_Store
+
+# 第三者の音声素材と、そこから作った WAV はコミットしない（公開リポジトリ）
+/sample/
+/docs/test-reports/evidence/issue-0017/**/*.wav
