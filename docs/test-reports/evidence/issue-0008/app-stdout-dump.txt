@@ -1,0 +1,46 @@
+video-editor (issue #8: timeline UI)
+{
+  "name": "untitled video",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "gain": 1.0
+        },
+        {
+          "id": 4,
+          "name": "interview",
+          "start_ms": 2500,
+          "duration_ms": 4000,
+          "source": "demo/interview.mp4",
+          "gain": 1.0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 5,
+          "name": "bgm",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bgm.wav",
+          "gain": 1.0
+        }
+      ]
+    }
+  ],
+  "next_id": 6
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.clip.4, timeline.track.2, timeline.clip.5
