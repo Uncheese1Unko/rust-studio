@@ -267,3 +267,34 @@ fn rename_track_command_applies_via_api() {
     assert_eq!(res.status, 400);
     assert_eq!(get_dump(&state), dump);
 }
+
+#[test]
+fn set_track_color_command_applies_via_api() {
+    // Issue #58: HTTP API も Command の汎用デシリアライズで
+    // set_track_color を追加対応なしに実行できることを確認する。
+    let state = state();
+    let res = handle_request(
+        &state,
+        &req(
+            "POST",
+            "/commands",
+            r#"{"type":"add_track","name":"A1","kind":"audio"}"#,
+        ),
+    );
+    assert_eq!(res.status, 200);
+    let value: serde_json::Value = serde_json::from_str(&res.body).unwrap();
+    let track_id = value["created_id"].as_u64().unwrap();
+
+    let res = handle_request(
+        &state,
+        &req(
+            "POST",
+            "/commands",
+            &format!(r#"{{"type":"set_track_color","track_id":{track_id},"color":"sky"}}"#),
+        ),
+    );
+    assert_eq!(res.status, 200, "{}", res.body);
+    let dump = get_dump(&state);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].color, Some(studio_core::ColorTag::Sky));
+}

@@ -24,6 +24,23 @@ pub fn clip_colors(kind: TrackKind, playing: bool) -> (theme::Rgb, theme::Rgb) {
     }
 }
 
+/// ユーザー色を考慮したクリップ色（Issue #58、ADR-0013）。
+/// 優先順位: 再生中は常に ACCENT（状態色を守る）→ ユーザー色が
+/// あればパレット色 → 未設定なら従来の種別色。
+pub fn clip_colors_for(
+    color: Option<studio_core::ColorTag>,
+    kind: TrackKind,
+    playing: bool,
+) -> (theme::Rgb, theme::Rgb) {
+    if playing {
+        return (theme::ACCENT, theme::ACCENT);
+    }
+    match color {
+        Some(tag) => theme::palette_colors(tag),
+        None => clip_colors(kind, false),
+    }
+}
+
 /// 再生ヘッド位置がクリップの範囲内にあるか（再生中クリップの判定）。
 /// 範囲は [start_ms, end_ms) で、ピッチ／サンプラーの既存判定と揃える。
 /// 読み取りのみで、状態は変えない。
@@ -431,5 +448,43 @@ mod waveform_tests {
         assert_eq!(peaks.len(), 2);
         assert!((peaks[0] - 0.1).abs() < 1e-6, "got {peaks:?}");
         assert!((peaks[1] - 0.3).abs() < 1e-6, "got {peaks:?}");
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::*;
+    use studio_core::ColorTag;
+
+    #[test]
+    fn clip_color_falls_back_to_kind_color_when_unset() {
+        // Issue #58: 未設定なら従来の種別色（clip_colors）に一致する。
+        assert_eq!(
+            clip_colors_for(None, TrackKind::Audio, false),
+            clip_colors(TrackKind::Audio, false)
+        );
+        assert_eq!(
+            clip_colors_for(None, TrackKind::Video, false),
+            clip_colors(TrackKind::Video, false)
+        );
+        // 設定があればパレット色になる
+        assert_eq!(
+            clip_colors_for(Some(ColorTag::Sky), TrackKind::Audio, false),
+            theme::palette_colors(ColorTag::Sky)
+        );
+    }
+
+    #[test]
+    fn playing_clip_stays_accent_even_with_user_color() {
+        // Issue #58 / ADR-0013: 再生中はユーザー色があっても ACCENT で
+        // 上書きする（状態色の意味を保つ）。
+        assert_eq!(
+            clip_colors_for(Some(ColorTag::Mint), TrackKind::Audio, true),
+            (theme::ACCENT, theme::ACCENT)
+        );
+        assert_eq!(
+            clip_colors_for(None, TrackKind::Audio, true),
+            (theme::ACCENT, theme::ACCENT)
+        );
     }
 }

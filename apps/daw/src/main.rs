@@ -14,6 +14,7 @@
 mod audio;
 mod edit;
 mod mixer;
+mod palette;
 mod sampler;
 // theme は配色表の全色を先に定義する土台（Issue #23）。アクセント系と
 // トランスポート系の定数は後続 PBI（#24〜#27）で使うため、未使用の
@@ -25,7 +26,7 @@ mod timeline;
 use std::collections::HashMap;
 
 use nannou::prelude::*;
-use studio_core::{apply, Command, Project, TrackKind};
+use studio_core::{apply, ColorTag, Command, Project, TrackKind};
 
 const RATE: u32 = 44100;
 /// 波形ピークの事前計算本数（ソース全体に対して）。
@@ -659,6 +660,45 @@ fn handle_pitch_keys(app: &App, model: &mut Model) {
     }
 }
 
+/// 色選択パネルのクリックをコマンドに変換する（Issue #58）。
+/// TRACK 行は選択中トラック、CLIP 行は選択中トラックの再生位置にある
+/// クリップ（ピッチキーと同じ対象）に適用する。状態変更はコマンド
+/// 経由のみ（ADR-0004）。
+fn apply_palette_click(model: &mut Model, target: palette::PaletteTarget, color: Option<ColorTag>) {
+    let cmd = match target {
+        palette::PaletteTarget::Track => {
+            let Some(track_id) = model.selected_track else {
+                println!("color: no track selected");
+                return;
+            };
+            Command::SetTrackColor { track_id, color }
+        }
+        palette::PaletteTarget::Clip => {
+            let clip_id = model
+                .selected_track
+                .and_then(|tid| model.project.track(tid))
+                .and_then(|t| {
+                    t.clips
+                        .iter()
+                        .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+                })
+                .map(|c| c.id);
+            let Some(clip_id) = clip_id else {
+                println!("color: no clip at playhead on selected track");
+                return;
+            };
+            Command::SetClipColor { clip_id, color }
+        }
+    };
+    match apply(&mut model.project, &cmd) {
+        Ok(_) => {
+            println!("after color: {}", model.project.dump_json());
+            save_project_file(model);
+        }
+        Err(e) => println!("command rejected: {e}"),
+    }
+}
+
 /// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #14、
 /// video-editor と同じ意味論）。押下でドラッグ開始（またはダブルクリック
 /// で配置）、ドラッグ中は候補コマンドが変わるたびに適用し、解放時に
@@ -702,6 +742,13 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down && !model.prev_left_down {
+        // 色選択パネル（Issue #58）: トランスポートの下のパネル。
+        // 他の領域とは重ならない。
+        if let Some((target, color)) = palette::hit_palette(model.project.tracks.len(), lx, ly) {
+            apply_palette_click(model, target, color);
+            model.prev_left_down = left_down;
+            return;
+        }
         // トラック削除（Issue #56）: ヘッダー右端の帯。コマンド経由で
         // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
         // 選択を移す。削除したトラックの操作状態も打ち切る。
@@ -927,6 +974,15 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(hx, hy)
             .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
             .color(rgb(r, g, b));
+        // トラック色（Issue #58）: ヘッダー左端に色の帯を出す。
+        if let Some(tag) = track.color {
+            let (face, _) = theme::palette_colors(tag);
+            let (bar_x, bar_y) = rect_center(win, 0.0, top, 6.0, timeline::TRACK_HEIGHT_PX);
+            draw.rect()
+                .x_y(bar_x, bar_y)
+                .w_h(6.0, timeline::TRACK_HEIGHT_PX)
+                .color(rgb(face.0, face.1, face.2));
+        }
         let (r, g, b) = theme::TEXT;
         // リネーム編集中のトラックは編集中の文字列＋キャレットを出す
         // （Issue #56）。それ以外はトラック名。名前は削除帯を除いた
@@ -987,7 +1043,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
         let playing = clip
             .map(|c| timeline::clip_is_playing(c, model.playhead_ms))
             .unwrap_or(false);
-        let (face, edge) = timeline::clip_colors(rect.kind, playing);
+        let (face, edge) =
+            timeline::clip_colors_for(clip.and_then(|c| c.color), rect.kind, playing);
         let inner_y = rect.y + 4.0;
         let inner_h = rect.h - 8.0;
         let (cx, cy) = rect_center(win, rect.x, inner_y, rect.w, inner_h);
@@ -1067,6 +1124,16 @@ fn view(app: &App, model: &Model, frame: Frame) {
         draw_hline(&draw, win, top, theme::LINE);
         if index == 0 {
             draw_panel_label(&draw, win, theme::MIXER_LABEL, 40.0, top + 7.0);
+        }
+        // トラック色（Issue #58）: ストリップ左端にも色の帯を出す
+        // （タイムラインのヘッダーと同じ表現）。
+        if let Some(tag) = track.color {
+            let (face, _) = theme::palette_colors(tag);
+            let (bar_x, bar_y) = rect_center(win, 0.0, top, 6.0, mixer::STRIP_HEIGHT_PX);
+            draw.rect()
+                .x_y(bar_x, bar_y)
+                .w_h(6.0, mixer::STRIP_HEIGHT_PX)
+                .color(rgb(face.0, face.1, face.2));
         }
         // ラベルと現在値（補助文字はグレージュ、Issue #25）
         draw.text(&format!("{} VOL {:.2}", track.name, track.volume))
@@ -1248,6 +1315,104 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .x_y(880.0 - win.w() / 2.0, win.h() / 2.0 - (top + 17.0))
         .font_size(11)
         .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+    }
+
+    // 色選択パネル（Issue #58）: トランスポートの下。TRACK 行は選択中
+    // トラック、CLIP 行は選択中トラックの再生位置にあるクリップが対象。
+    // 現在の色のスウォッチにはウォームブラックの枠を付ける。
+    {
+        let count = model.project.tracks.len();
+        let top = palette::panel_top(count);
+        draw_rounded_rect(
+            &draw,
+            win,
+            mixer::Rect {
+                x: 8.0,
+                y: top - 8.0,
+                w: win.w() - 16.0,
+                h: palette::panel_height(),
+            },
+            theme::PANEL_CORNER_RADIUS,
+            theme::PANEL,
+        );
+        draw_panel_label(&draw, win, theme::COLOR_LABEL, 40.0, top);
+        let selected_track = model.selected_track.and_then(|id| model.project.track(id));
+        let playhead_clip = selected_track.and_then(|t| {
+            t.clips
+                .iter()
+                .find(|c| timeline::clip_is_playing(c, model.playhead_ms))
+        });
+        for (target, label, current) in [
+            (
+                palette::PaletteTarget::Track,
+                "TRACK",
+                selected_track.and_then(|t| t.color),
+            ),
+            (
+                palette::PaletteTarget::Clip,
+                "CLIP",
+                playhead_clip.and_then(|c| c.color),
+            ),
+        ] {
+            let row_y = top
+                + palette::ROWS_TOP_OFFSET_PX
+                + match target {
+                    palette::PaletteTarget::Track => 0.0,
+                    palette::PaletteTarget::Clip => palette::ROW_H_PX,
+                };
+            let (lx, ly) = rect_center(
+                win,
+                8.0,
+                row_y,
+                palette::ROW_LABEL_W_PX + 8.0,
+                palette::ROW_H_PX,
+            );
+            draw.text(label).x_y(lx, ly).font_size(10).color(rgb(
+                theme::TEXT_SUB.0,
+                theme::TEXT_SUB.1,
+                theme::TEXT_SUB.2,
+            ));
+            for index in 0..=theme::PALETTE.len() {
+                let rect = palette::swatch_rect(top, target, index);
+                let is_current = match index {
+                    0 => current.is_none(),
+                    i => current == Some(theme::PALETTE[i - 1].0),
+                };
+                if is_current {
+                    draw_rounded_rect(
+                        &draw,
+                        win,
+                        mixer::Rect {
+                            x: rect.x - 2.0,
+                            y: rect.y - 2.0,
+                            w: rect.w + 4.0,
+                            h: rect.h + 4.0,
+                        },
+                        theme::CHIP_CORNER_RADIUS,
+                        theme::TEXT,
+                    );
+                }
+                if index == 0 {
+                    // 「なし」: 淡い面＋×（未設定に戻す）
+                    draw_rounded_rect(
+                        &draw,
+                        win,
+                        rect,
+                        theme::CHIP_CORNER_RADIUS,
+                        theme::PANEL_SUNK,
+                    );
+                    let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+                    draw.text("×").x_y(cx, cy).font_size(11).color(rgb(
+                        theme::TEXT_SUB.0,
+                        theme::TEXT_SUB.1,
+                        theme::TEXT_SUB.2,
+                    ));
+                } else {
+                    let (_, face, _) = theme::PALETTE[index - 1];
+                    draw_rounded_rect(&draw, win, rect, theme::CHIP_CORNER_RADIUS, face);
+                }
+            }
+        }
     }
 
     // ピッチ表示（Issue #18）: 再生ヘッド位置の音声クリップのピッチ。

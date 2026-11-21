@@ -199,7 +199,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド12種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド14種＋状態ダンプ取得。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -234,6 +234,30 @@ fn tool_definitions() -> Value {
                     "name": {"type": "string"},
                 },
                 "required": ["track_id", "name"],
+            },
+        },
+        {
+            "name": "set_track_color",
+            "description": "トラックの色を固定パレットから設定する（color を null にすると「なし」に戻す）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "color": {"type": ["string", "null"], "enum": ["pink", "coral", "peach", "lemon", "mint", "teal", "sky", "lavender", null]},
+                },
+                "required": ["track_id"],
+            },
+        },
+        {
+            "name": "set_clip_color",
+            "description": "クリップの色を固定パレットから設定する（color を null にすると「なし」に戻す）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "color": {"type": ["string", "null"], "enum": ["pink", "coral", "peach", "lemon", "mint", "teal", "sky", "lavender", null]},
+                },
+                "required": ["clip_id"],
             },
         },
         {

@@ -437,3 +437,105 @@ fn rename_track_rejects_blank_name() {
         assert_eq!(p.dump_json(), before);
     }
 }
+
+#[test]
+fn set_track_color_round_trips_through_json() {
+    // Issue #58 / ADR-0013: トラック色はパレット識別子で保持し、
+    // プロジェクト JSON を往復しても残る。色なしへの復帰もできる。
+    use studio_core::ColorTag;
+    let (mut p, track_id, _) = project_with_clip();
+    assert_eq!(p.track(track_id).unwrap().color, None, "既定は未設定");
+    apply(
+        &mut p,
+        &Command::SetTrackColor {
+            track_id,
+            color: Some(ColorTag::Mint),
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().color, Some(ColorTag::Mint));
+    // プロジェクト JSON の往復
+    let dumped = p.dump_json();
+    assert!(dumped.contains("\"color\": \"mint\""), "{dumped}");
+    let restored: Project = serde_json::from_str(&dumped).unwrap();
+    assert_eq!(
+        restored.track(track_id).unwrap().color,
+        Some(ColorTag::Mint)
+    );
+    // コマンド自体の JSON 往復（API／MCP の前提）
+    let cmd = Command::SetTrackColor {
+        track_id,
+        color: Some(ColorTag::Sky),
+    };
+    let text = serde_json::to_string(&cmd).unwrap();
+    assert!(text.contains("\"type\":\"set_track_color\""), "{text}");
+    assert_eq!(serde_json::from_str::<Command>(&text).unwrap(), cmd);
+    // None で「なし」に戻せる
+    apply(
+        &mut p,
+        &Command::SetTrackColor {
+            track_id,
+            color: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().color, None);
+    // 存在しないトラックでは状態を変えない
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackColor {
+            track_id: 9999,
+            color: Some(ColorTag::Pink),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::TrackNotFound(9999));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn set_clip_color_applies_and_validates() {
+    // Issue #58 / ADR-0013: クリップ色もパレット識別子で保持する。
+    use studio_core::ColorTag;
+    let (mut p, _, clip_id) = project_with_clip();
+    assert_eq!(p.clip(clip_id).unwrap().1.color, None, "既定は未設定");
+    apply(
+        &mut p,
+        &Command::SetClipColor {
+            clip_id,
+            color: Some(ColorTag::Lemon),
+        },
+    )
+    .unwrap();
+    assert_eq!(p.clip(clip_id).unwrap().1.color, Some(ColorTag::Lemon));
+    apply(
+        &mut p,
+        &Command::SetClipColor {
+            clip_id,
+            color: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.clip(clip_id).unwrap().1.color, None);
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetClipColor {
+            clip_id: 9999,
+            color: Some(ColorTag::Pink),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ClipNotFound(9999));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn legacy_json_without_color_loads_as_unset() {
+    // Issue #58: color を含まない旧形式 JSON は未設定（None）で読める。
+    let legacy = r#"{"name":"old","tracks":[{"id":1,"name":"A1","kind":"audio","clips":[{"id":2,"name":"c","start_ms":0,"duration_ms":1000,"source":"x.wav","gain":1.0}],"volume":1.0,"pan":0.0}],"next_id":3}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    assert_eq!(project.tracks[0].color, None);
+    assert_eq!(project.tracks[0].clips[0].color, None);
+}

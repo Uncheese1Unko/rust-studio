@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Clip, Project, Track, TrackKind};
+use crate::model::{Clip, ColorTag, Project, Track, TrackKind};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -66,6 +66,18 @@ pub enum Command {
         clip_id: u64,
         semitones: f32,
     },
+    /// トラックの色を設定する（Issue #58、ADR-0013）。
+    /// None は「なし（既定の種別色）」に戻す。
+    SetTrackColor {
+        track_id: u64,
+        color: Option<ColorTag>,
+    },
+    /// クリップの色を設定する（Issue #58、ADR-0013）。
+    /// None は「なし（既定の種別色）」に戻す。
+    SetClipColor {
+        clip_id: u64,
+        color: Option<ColorTag>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +112,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 clips: Vec::new(),
                 volume: 1.0,
                 pan: 0.0,
+                color: None,
             });
             Ok(Some(id))
         }
@@ -154,6 +167,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     gain: 1.0,
                     cutout: false,
                     pitch_semitones: 0.0,
+                    color: None,
                 });
             Ok(Some(id))
         }
@@ -285,6 +299,29 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.pitch_semitones = *semitones;
+            Ok(None)
+        }
+        Command::SetTrackColor { track_id, color } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == *track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.color = *color;
+            Ok(None)
+        }
+        Command::SetClipColor { clip_id, color } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.color = *color;
             Ok(None)
         }
     }

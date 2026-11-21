@@ -35,6 +35,72 @@ pub const TRANSPORT_LABEL: &str = "01 TRANSPORT";
 pub const TIMELINE_LABEL: &str = "02 TIMELINE";
 pub const MIXER_LABEL: &str = "03 MIXER";
 pub const SAMPLER_LABEL: &str = "04 SAMPLER";
+pub const COLOR_LABEL: &str = "05 COLOR";
+
+/// ユーザー色の固定パレット（Issue #58、ADR-0013）。(タグ, 面, 縁)。
+/// テーマの2色相（ピンク系・ティール系）と暖色の中間色から作る淡色で
+/// 統一し、再生中専用色 ACCENT そのものは面にも縁にも含めない。
+/// Pink の面と Mint の面・縁はデザイン文書の色（ACCENT_SOFT / MINT /
+/// TEAL）そのもの。
+pub const PALETTE: &[(studio_core::ColorTag, Rgb, Rgb)] = &[
+    // Pink #FFC7DE / 縁 #E56BA3
+    (
+        studio_core::ColorTag::Pink,
+        (1.000, 0.780, 0.871),
+        (0.898, 0.420, 0.639),
+    ),
+    // Coral #FFB59E / 縁 #E07856
+    (
+        studio_core::ColorTag::Coral,
+        (1.000, 0.710, 0.620),
+        (0.878, 0.471, 0.337),
+    ),
+    // Peach #FFD9B8 / 縁 #DE9A5F
+    (
+        studio_core::ColorTag::Peach,
+        (1.000, 0.851, 0.722),
+        (0.871, 0.604, 0.373),
+    ),
+    // Lemon #F7E8A0 / 縁 #C9A93B
+    (
+        studio_core::ColorTag::Lemon,
+        (0.969, 0.910, 0.627),
+        (0.788, 0.663, 0.231),
+    ),
+    // Mint #C4EDE6 / 縁 #12B5A5
+    (
+        studio_core::ColorTag::Mint,
+        (0.769, 0.929, 0.902),
+        (0.071, 0.710, 0.647),
+    ),
+    // Teal #12B5A5 / 縁 #0B7A6E
+    (
+        studio_core::ColorTag::Teal,
+        (0.071, 0.710, 0.647),
+        (0.043, 0.478, 0.431),
+    ),
+    // Sky #BFDCE8 / 縁 #5E93AC
+    (
+        studio_core::ColorTag::Sky,
+        (0.749, 0.863, 0.910),
+        (0.369, 0.576, 0.675),
+    ),
+    // Lavender #D9CFF0 / 縁 #8B76C4
+    (
+        studio_core::ColorTag::Lavender,
+        (0.851, 0.812, 0.941),
+        (0.545, 0.463, 0.769),
+    ),
+];
+
+/// パレット識別子から（面, 縁）の RGB を引く。
+pub fn palette_colors(tag: studio_core::ColorTag) -> (Rgb, Rgb) {
+    PALETTE
+        .iter()
+        .find(|(t, _, _)| *t == tag)
+        .map(|(_, face, edge)| (*face, *edge))
+        .expect("PALETTE covers all ColorTag variants")
+}
 
 /// パネルラベルの文字サイズ（px、デザイン文書の目安 10–11px）。
 pub const LABEL_FONT_SIZE: u32 = 11;
@@ -87,5 +153,36 @@ mod tests {
         assert_eq!(TIMELINE_LABEL, "02 TIMELINE");
         assert_eq!(MIXER_LABEL, "03 MIXER");
         assert_eq!(SAMPLER_LABEL, "04 SAMPLER");
+    }
+}
+
+#[cfg(test)]
+mod palette_tests {
+    use super::*;
+    use studio_core::ColorTag;
+
+    #[test]
+    fn palette_has_all_tags_and_excludes_accent() {
+        // ADR-0013: パレットは全タグを含み、再生中専用色 ACCENT そのものは
+        // 面にも縁にも含めない（判読性のため）。
+        let tags = [
+            ColorTag::Pink,
+            ColorTag::Coral,
+            ColorTag::Peach,
+            ColorTag::Lemon,
+            ColorTag::Mint,
+            ColorTag::Teal,
+            ColorTag::Sky,
+            ColorTag::Lavender,
+        ];
+        assert_eq!(PALETTE.len(), tags.len());
+        for tag in tags {
+            let (face, edge) = palette_colors(tag);
+            assert_ne!(face, ACCENT, "{tag:?} の面が ACCENT と同じ");
+            assert_ne!(edge, ACCENT, "{tag:?} の縁が ACCENT と同じ");
+        }
+        // 文書化した2色はデザイン文書の色と一致する
+        assert_eq!(palette_colors(ColorTag::Pink).0, ACCENT_SOFT);
+        assert_eq!(palette_colors(ColorTag::Mint), (MINT, TEAL));
     }
 }

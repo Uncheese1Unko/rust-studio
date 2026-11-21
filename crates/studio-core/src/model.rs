@@ -10,6 +10,24 @@ pub enum TrackKind {
     Audio,
 }
 
+/// ユーザーが付けられる色のパレット識別子（Issue #58、ADR-0013）。
+/// 色の指定はテーマに合う固定パレットから選ぶ方式とし、自由色は
+/// 採らない。再生中専用色のホットピンク（ACCENT）はパレットに
+/// 含めない。具体的な RGB はアプリ側のテーマが決める（DAW は
+/// `apps/daw/src/theme.rs`）。未設定（None）は「なし＝既定の種別色」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorTag {
+    Pink,
+    Coral,
+    Peach,
+    Lemon,
+    Mint,
+    Teal,
+    Sky,
+    Lavender,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub id: u64,
@@ -28,6 +46,10 @@ pub struct Clip {
     /// ピッチ変更量（半音、Issue #18）。0.0 = 原音。旧形式では 0.0。
     #[serde(default)]
     pub pitch_semitones: f32,
+    /// ユーザーが付けた色（Issue #58、ADR-0013）。None は未設定
+    /// （既定の種別色）。旧形式の JSON では None。
+    #[serde(default)]
+    pub color: Option<ColorTag>,
 }
 
 impl Clip {
@@ -53,6 +75,10 @@ pub struct Track {
     /// パン（-1.0 = 左、0.0 = 中央、1.0 = 右。Issue #15）。
     #[serde(default)]
     pub pan: f32,
+    /// ユーザーが付けた色（Issue #58、ADR-0013）。None は未設定
+    /// （既定の種別色）。旧形式の JSON では None。
+    #[serde(default)]
+    pub color: Option<ColorTag>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
