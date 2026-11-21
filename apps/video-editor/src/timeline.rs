@@ -6,7 +6,7 @@
 //! 状態は studio-core の Project が正であり、ここは読み取り専用
 //! （状態変更はコマンド層経由のみ、ADR-0004）。
 
-use studio_core::{Project, TrackKind};
+use studio_core::{ColorTag, Project, TrackKind};
 
 /// トラック名を表示する左端ヘッダーの幅（px）。
 pub const HEADER_WIDTH_PX: f32 = 120.0;
@@ -30,6 +30,44 @@ pub fn clip_color(kind: TrackKind) -> (f32, f32, f32) {
         TrackKind::Video => CLIP_VIDEO_COLOR,
         TrackKind::Audio => CLIP_AUDIO_COLOR,
     }
+}
+
+/// ユーザー色のパレット（Issue #59、ADR-0013）。コアの `ColorTag` に
+/// 対応する、動画編集の暗い画面に合わせた表示色（RGB, 0.0–1.0）。
+/// 色の保持は識別子のみで、RGB はアプリ側の表現としてここに置く。
+pub const PALETTE: [(ColorTag, (f32, f32, f32)); 8] = [
+    (ColorTag::Pink, (0.95, 0.45, 0.65)),
+    (ColorTag::Coral, (0.95, 0.50, 0.35)),
+    (ColorTag::Peach, (0.95, 0.70, 0.40)),
+    (ColorTag::Lemon, (0.90, 0.80, 0.30)),
+    (ColorTag::Mint, (0.40, 0.90, 0.75)),
+    (ColorTag::Teal, (0.20, 0.75, 0.70)),
+    (ColorTag::Sky, (0.35, 0.65, 0.95)),
+    (ColorTag::Lavender, (0.65, 0.55, 0.95)),
+];
+
+/// パレット識別子から表示色を引く。
+pub fn palette_color(tag: ColorTag) -> (f32, f32, f32) {
+    PALETTE
+        .iter()
+        .find(|(t, _)| *t == tag)
+        .map(|(_, c)| *c)
+        .expect("PALETTE は全タグを持つ")
+}
+
+/// クリップの表示色（Issue #59）: ユーザー色があればそれを、
+/// 未設定なら従来の種別色を使う。
+pub fn clip_display_color(color: Option<ColorTag>, kind: TrackKind) -> (f32, f32, f32) {
+    match color {
+        Some(tag) => palette_color(tag),
+        None => clip_color(kind),
+    }
+}
+
+/// トラックの表示色（Issue #59、ヘッダーの色帯用）: クリップと同じ
+/// 規則（ユーザー色優先、未設定は種別色）。
+pub fn track_display_color(color: Option<ColorTag>, kind: TrackKind) -> (f32, f32, f32) {
+    clip_display_color(color, kind)
 }
 
 /// 1ミリ秒あたりのピクセル数。
@@ -263,5 +301,62 @@ mod tests {
         assert!(first.iter().any(|id| id == ruler_id()));
         // トラック2つ＋クリップ2つ＋固定3要素
         assert_eq!(first.len(), 3 + 2 + 2);
+    }
+
+    #[test]
+    fn clip_display_color_prefers_user_color_over_kind_color() {
+        // Issue #59: ユーザー色があれば種別色より優先する。
+        assert_eq!(
+            clip_display_color(Some(ColorTag::Coral), TrackKind::Video),
+            palette_color(ColorTag::Coral)
+        );
+        assert_ne!(
+            clip_display_color(Some(ColorTag::Coral), TrackKind::Video),
+            clip_color(TrackKind::Video)
+        );
+        // 未設定なら従来の種別色。
+        assert_eq!(
+            clip_display_color(None, TrackKind::Video),
+            clip_color(TrackKind::Video)
+        );
+        assert_eq!(
+            clip_display_color(None, TrackKind::Audio),
+            clip_color(TrackKind::Audio)
+        );
+    }
+
+    #[test]
+    fn track_display_color_falls_back_when_unset() {
+        // Issue #59: トラック色が未設定なら種別色にフォールバックし、
+        // 設定があればパレット色を返す（ヘッダーの色帯用）。
+        assert_eq!(
+            track_display_color(None, TrackKind::Video),
+            clip_color(TrackKind::Video)
+        );
+        assert_eq!(
+            track_display_color(None, TrackKind::Audio),
+            clip_color(TrackKind::Audio)
+        );
+        assert_eq!(
+            track_display_color(Some(ColorTag::Sky), TrackKind::Video),
+            palette_color(ColorTag::Sky)
+        );
+    }
+
+    #[test]
+    fn palette_covers_all_tags() {
+        // Issue #59: パレットは ColorTag の全バリアントを持つ。
+        for tag in [
+            ColorTag::Pink,
+            ColorTag::Coral,
+            ColorTag::Peach,
+            ColorTag::Lemon,
+            ColorTag::Mint,
+            ColorTag::Teal,
+            ColorTag::Sky,
+            ColorTag::Lavender,
+        ] {
+            let _ = palette_color(tag);
+        }
     }
 }

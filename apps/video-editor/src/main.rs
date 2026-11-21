@@ -11,6 +11,7 @@
 mod cutout;
 mod edit;
 mod media;
+mod palette;
 mod timeline;
 
 use nannou::prelude::*;
@@ -483,6 +484,49 @@ fn handle_cutout(app: &App, model: &mut Model) {
 /// 押下でドラッグ開始（またはダブルクリックで配置）、ドラッグ中は候補
 /// コマンドが変わるたびに適用し、解放時に状態ダンプを出す。
 /// 範囲外の候補はコマンド層が弾き、状態は最後の正常値に留まる。
+/// 色選択パネルのクリックをコマンドに変換する（Issue #59）。
+/// TRACK 行は選択中トラック、CLIP 行は選択中トラックの再生位置にある
+/// クリップに適用する（DAW #58 と同じ対象規則）。状態変更はコマンド
+/// 経由のみ（ADR-0004）。
+fn apply_palette_click(
+    model: &mut Model,
+    target: palette::PaletteTarget,
+    color: Option<studio_core::ColorTag>,
+) {
+    let cmd = match target {
+        palette::PaletteTarget::Track => {
+            let Some(track_id) = model.selected_track else {
+                println!("color: no track selected");
+                return;
+            };
+            Command::SetTrackColor { track_id, color }
+        }
+        palette::PaletteTarget::Clip => {
+            let clip_id = model
+                .selected_track
+                .and_then(|tid| model.project.track(tid))
+                .and_then(|t| {
+                    t.clips
+                        .iter()
+                        .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+                })
+                .map(|c| c.id);
+            let Some(clip_id) = clip_id else {
+                println!("color: no clip at playhead on selected track");
+                return;
+            };
+            Command::SetClipColor { clip_id, color }
+        }
+    };
+    match apply(&mut model.project, &cmd) {
+        Ok(_) => {
+            println!("after color: {}", model.project.dump_json());
+            save_project_file(model);
+        }
+        Err(e) => println!("command rejected: {e}"),
+    }
+}
+
 fn handle_pointer(app: &App, model: &mut Model) {
     let win = app.window_rect();
     // nannou の中心原点座標を、レイアウトの左上原点ピクセルへ変換する。
@@ -492,6 +536,13 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let pointer_ms = edit::x_to_ms(lx, win.w());
 
     if left_down && !model.prev_left_down {
+        // 色選択パネル（Issue #59）: トラック追加エリアの下のパネル。
+        // 他の領域とは重ならない。
+        if let Some((target, color)) = palette::hit_palette(model.project.tracks.len(), lx, ly) {
+            apply_palette_click(model, target, color);
+            model.prev_left_down = left_down;
+            return;
+        }
         // トラック削除（Issue #57）: ヘッダー右端の帯。コマンド経由で
         // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
         // 選択を移す。
@@ -646,6 +697,16 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(hx, hy)
             .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
             .color(rgb(header_shade, header_shade, header_shade + 0.03));
+        // トラック色（Issue #59）: ヘッダー左端に表示色の帯を出す。
+        // 未設定なら種別色、設定があればパレット色（track_display_color）。
+        {
+            let (r, g, b) = timeline::track_display_color(track.color, track.kind);
+            let (bar_x, bar_y) = rect_center(win, 0.0, top, 6.0, timeline::TRACK_HEIGHT_PX);
+            draw.rect()
+                .x_y(bar_x, bar_y)
+                .w_h(6.0, timeline::TRACK_HEIGHT_PX)
+                .color(rgb(r, g, b));
+        }
         // リネーム編集中のトラックは編集中文字列＋キャレットを出す
         // （Issue #57）。名前は削除帯を除いた範囲の中央に置く。
         let renaming_this = model.rename.as_ref().filter(|s| s.track_id == track.id);
@@ -702,15 +763,103 @@ fn view(app: &App, model: &Model, frame: Frame) {
         }
     }
 
+    // 色選択パネル（Issue #59）: トラック追加エリアの下。TRACK 行は
+    // 選択中トラック、CLIP 行は選択中トラックの再生位置にあるクリップ
+    // が対象。現在の色のスウォッチには明るい枠を付ける。
+    {
+        let count = model.project.tracks.len();
+        let top = palette::panel_top(count);
+        let panel_h = palette::panel_height() + 8.0;
+        let (px, py) = rect_center(win, 8.0, top - 8.0, 380.0, panel_h);
+        draw.rect()
+            .x_y(px, py)
+            .w_h(380.0, panel_h)
+            .color(rgb(0.13, 0.13, 0.16));
+        let (lx, ly) = rect_center(win, 16.0, top - 6.0, 60.0, 10.0);
+        draw.text("COLOR")
+            .x_y(lx, ly)
+            .font_size(9)
+            .color(rgb(0.65, 0.65, 0.70));
+        let selected_track = model.selected_track.and_then(|id| model.project.track(id));
+        let playhead_clip = selected_track.and_then(|t| {
+            t.clips
+                .iter()
+                .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+        });
+        for (target, label, current) in [
+            (
+                palette::PaletteTarget::Track,
+                "TRACK",
+                selected_track.and_then(|t| t.color),
+            ),
+            (
+                palette::PaletteTarget::Clip,
+                "CLIP",
+                playhead_clip.and_then(|c| c.color),
+            ),
+        ] {
+            let row_y = top
+                + palette::ROWS_TOP_OFFSET_PX
+                + match target {
+                    palette::PaletteTarget::Track => 0.0,
+                    palette::PaletteTarget::Clip => palette::ROW_H_PX,
+                };
+            let (tx, ty) = rect_center(
+                win,
+                8.0,
+                row_y,
+                palette::ROW_LABEL_W_PX + 8.0,
+                palette::ROW_H_PX,
+            );
+            draw.text(label)
+                .x_y(tx, ty)
+                .font_size(10)
+                .color(rgb(0.65, 0.65, 0.70));
+            for index in 0..=timeline::PALETTE.len() {
+                let rect = palette::swatch_rect(top, target, index);
+                let is_current = match index {
+                    0 => current.is_none(),
+                    i => current == Some(timeline::PALETTE[i - 1].0),
+                };
+                let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+                if is_current {
+                    draw.rect()
+                        .x_y(cx, cy)
+                        .w_h(rect.w + 4.0, rect.h + 4.0)
+                        .color(rgb(0.90, 0.90, 0.92));
+                }
+                if index == 0 {
+                    // 「なし」: 暗い面＋×（未設定に戻す）
+                    draw.rect()
+                        .x_y(cx, cy)
+                        .w_h(rect.w, rect.h)
+                        .color(rgb(0.20, 0.20, 0.24));
+                    draw.text("×")
+                        .x_y(cx, cy)
+                        .font_size(11)
+                        .color(rgb(0.65, 0.65, 0.70));
+                } else {
+                    let (r, g, b) = timeline::PALETTE[index - 1].1;
+                    draw.rect()
+                        .x_y(cx, cy)
+                        .w_h(rect.w, rect.h)
+                        .color(rgb(r, g, b));
+                }
+            }
+        }
+    }
+
     // クリップ（timeline.clip.<id>）: コアの start/duration をそのまま矩形にする。
     for rect in timeline::layout_clips(&model.project, win.w()) {
-        let (r, g, b) = timeline::clip_color(rect.kind);
+        let clip = model.project.clip(rect.clip_id).map(|(_, c)| c);
+        // 表示色（Issue #59）: ユーザー色があればそれ、なければ種別色。
+        let (r, g, b) = timeline::clip_display_color(clip.and_then(|c| c.color), rect.kind);
         let (cx, cy) = rect_center(win, rect.x, rect.y + 4.0, rect.w, rect.h - 8.0);
         draw.rect()
             .x_y(cx, cy)
             .w_h(rect.w, rect.h - 8.0)
             .color(rgb(r, g, b));
-        if let Some((_, clip)) = model.project.clip(rect.clip_id) {
+        if let Some(clip) = clip {
             draw.text(&clip.name)
                 .x_y(cx, cy)
                 .font_size(11)
