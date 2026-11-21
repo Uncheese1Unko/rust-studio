@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 studio-core = { path = "../../crates/studio-core" }
+hound = "3"

@@ -1,0 +1,47 @@
+daw (issue #13: audio engine)
+{
+  "name": "daw demo session",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "tone-220",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone220.wav",
+          "gain": 0.5
+        },
+        {
+          "id": 3,
+          "name": "tone-440",
+          "start_ms": 1000,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "gain": 1.0
+        }
+      ]
+    }
+  ],
+  "next_id": 4
+}
+decoded /tmp/rust-studio-daw-media/tone220.wav: 44100 Hz, 1 ch, 2500 ms
+decoded /tmp/rust-studio-daw-media/tone440.wav: 44100 Hz, 1 ch, 2500 ms
+mixdown written: /tmp/rust-studio-daw-media/mixdown.wav
+mix rms 0s-1s: 0.1414
+mix rms 1s-2s: 0.3162
+mix rms 2s-3s: 0.2828
+player: position=500ms playing=true
+player: position=1000ms playing=true
+player: position=1500ms playing=true
+player: paused, advance is ignored
+player: position=1500ms playing=false
+player: position=500ms playing=true
+player: position=1000ms playing=true
+player: position=1500ms playing=true
+player: position=2000ms playing=true
+player: position=2500ms playing=true
+player: position=3000ms playing=false
