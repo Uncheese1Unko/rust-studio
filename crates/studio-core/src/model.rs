@@ -25,6 +25,9 @@ pub struct Clip {
     /// 人物切り抜きの適用有無（Issue #22）。旧形式の JSON では false。
     #[serde(default)]
     pub cutout: bool,
+    /// ピッチ変更量（半音、Issue #18）。0.0 = 原音。旧形式では 0.0。
+    #[serde(default)]
+    pub pitch_semitones: f32,
 }
 
 impl Clip {

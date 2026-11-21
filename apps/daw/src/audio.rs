@@ -54,6 +54,26 @@ pub fn decode_audio(path: &std::path::Path) -> Result<ClipAudio, String> {
     })
 }
 
+/// クリップ音声のピッチを変更する（Issue #18、方式は ADR-0009:
+/// Signalsmith Stretch、フォルマント係数 1.0 で音の性質を保つ）。
+/// 長さ（フレーム数）は変わらない。0 半音はそのまま返す。
+pub fn pitch_shift(audio: &ClipAudio, semitones: f32) -> ClipAudio {
+    if semitones == 0.0 || audio.samples.is_empty() || audio.channels == 0 {
+        return audio.clone();
+    }
+    let mut stretch =
+        signalsmith_stretch::Stretch::preset_default(audio.channels as u32, audio.sample_rate);
+    stretch.set_transpose_factor_semitones(semitones, None);
+    stretch.set_formant_factor(1.0, true);
+    let mut out = vec![0.0f32; audio.samples.len()];
+    stretch.exact(&audio.samples, &mut out);
+    ClipAudio {
+        sample_rate: audio.sample_rate,
+        channels: audio.channels,
+        samples: out,
+    }
+}
+
 /// プロジェクトのミックスを指定範囲でレンダリングする（ステレオ出力）。
 /// 配置位置・ゲインはプロジェクトの状態どおりに反映される。
 pub fn render_mix(
@@ -65,6 +85,8 @@ pub fn render_mix(
 ) -> Vec<f32> {
     let frames = (duration_ms.max(0) as u64 * out_rate as u64 / 1000) as usize;
     let mut out = vec![0.0f32; frames * 2];
+    // ピッチ変更済みクリップ音声のキャッシュ（このレンダリング内のみ）。
+    let mut pitch_cache: HashMap<(String, u32), ClipAudio> = HashMap::new();
     for (i, frame) in out.chunks_mut(2).enumerate() {
         // 時刻は f64 で持つ。整数ミリ秒に丸めると1ms ごとに波形が階段状に
         // なり、音程が壊れる（Issue #13 のテストで検出）。
@@ -84,12 +106,20 @@ pub fn render_mix(
                 {
                     continue;
                 }
-                let Some(clip_audio) = audio.get(&clip.source) else {
+                let Some(base_audio) = audio.get(&clip.source) else {
                     continue;
                 };
-                if clip_audio.channels == 0 || clip_audio.sample_rate == 0 {
+                if base_audio.channels == 0 || base_audio.sample_rate == 0 {
                     continue;
                 }
+                // ピッチ変更（Issue #18）: 指定があれば変更済み音声を使う。
+                let clip_audio = if clip.pitch_semitones != 0.0 {
+                    pitch_cache
+                        .entry((clip.source.clone(), clip.pitch_semitones.to_bits()))
+                        .or_insert_with(|| pitch_shift(base_audio, clip.pitch_semitones))
+                } else {
+                    base_audio
+                };
                 // クリップ内位置 → ソースのフレーム位置（線形補間）
                 let pos = (t_ms - clip.start_ms as f64) * clip_audio.sample_rate as f64 / 1000.0;
                 let i0 = pos.floor() as usize;
@@ -160,9 +190,9 @@ mod tests {
     use super::*;
     use studio_core::{apply, Command, TrackKind};
 
-    const RATE: u32 = 44100;
+    pub(super) const RATE: u32 = 44100;
 
-    fn sine(freq: f32, ms: i64, amp: f32) -> ClipAudio {
+    pub(super) fn sine(freq: f32, ms: i64, amp: f32) -> ClipAudio {
         let frames = (RATE as i64 * ms / 1000) as usize;
         let samples = (0..frames)
             .map(|i| amp * (2.0 * std::f32::consts::PI * freq * i as f32 / RATE as f32).sin())
@@ -174,7 +204,7 @@ mod tests {
         }
     }
 
-    fn goertzel(samples: &[f32], rate: u32, freq: f32) -> f32 {
+    pub(super) fn goertzel(samples: &[f32], rate: u32, freq: f32) -> f32 {
         let n = samples.len() as f32;
         let k = 2.0 * std::f32::consts::PI * freq / rate as f32;
         let coeff = 2.0 * k.cos();
@@ -187,18 +217,26 @@ mod tests {
         (s1 * s1 + s2 * s2 - coeff * s1 * s2).sqrt() / n
     }
 
-    fn window(samples: &[f32], channels: usize, from_ms: i64, to_ms: i64, rate: u32) -> Vec<f32> {
+    pub(super) fn window(
+        samples: &[f32],
+        channels: usize,
+        from_ms: i64,
+        to_ms: i64,
+        rate: u32,
+    ) -> Vec<f32> {
         let a = (from_ms * rate as i64 / 1000) as usize * channels;
         let b = (to_ms * rate as i64 / 1000) as usize * channels;
         // 左チャンネルだけ取り出す
         samples[a..b].iter().step_by(channels).cloned().collect()
     }
 
-    fn rms(samples: &[f32]) -> f32 {
+    pub(super) fn rms(samples: &[f32]) -> f32 {
         (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
     }
 
-    fn project_with(clips: &[(&str, i64, i64, f32)]) -> (Project, HashMap<String, ClipAudio>) {
+    pub(super) fn project_with(
+        clips: &[(&str, i64, i64, f32)],
+    ) -> (Project, HashMap<String, ClipAudio>) {
         let mut p = Project::new("engine test");
         let track = apply(
             &mut p,
@@ -436,5 +474,169 @@ mod mixer_tests {
             (l - r).abs() < 1e-4,
             "center pan must be balanced: {l} vs {r}"
         );
+    }
+}
+
+#[cfg(test)]
+mod pitch_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{apply, Command};
+
+    /// 50ms 窓の Goertzel 平均。長い窓の位相崩れを避ける測定用。
+    fn segmented_goertzel(samples: &[f32], rate: u32, freq: f32) -> f32 {
+        let seg = rate as usize / 20;
+        let mut total = 0.0f32;
+        let mut count = 0usize;
+        for chunk in samples.chunks(seg) {
+            if chunk.len() == seg {
+                total += goertzel(chunk, rate, freq);
+                count += 1;
+            }
+        }
+        total / count.max(1) as f32
+    }
+
+    #[test]
+    fn pitch_shift_octave_up_doubles_frequency_and_keeps_duration() {
+        // Issue #18: Signalsmith Stretch（ADR-0009）によるピッチ変更。
+        let src = sine(220.0, 1000, 0.4);
+        let out = pitch_shift(&src, 12.0);
+        assert_eq!(out.sample_rate, RATE);
+        assert_eq!(out.channels, 1);
+        let ratio = out.samples.len() as f32 / src.samples.len() as f32;
+        assert!(
+            (ratio - 1.0).abs() < 0.02,
+            "duration must be preserved, ratio was {ratio}"
+        );
+        // 中央の安定区間で測る（端の過渡を避ける）。長い窓では
+        // 周波数の微小な誤差で位相が崩れて過小評価になるため、
+        // 50ms の短い窓の平均で測る。
+        let mid = &out.samples[RATE as usize / 4..RATE as usize * 3 / 4];
+        assert!(
+            segmented_goertzel(mid, RATE, 440.0) > 0.05,
+            "440 should dominate after +12"
+        );
+        assert!(
+            segmented_goertzel(mid, RATE, 220.0) < 0.01,
+            "220 should be gone after +12"
+        );
+        // レベルが壊滅的に落ちていないこと。なお ADR-0009 の設定
+        // （フォルマント係数 1.0、compensate あり）は狭帯域の信号で
+        // 約 -8.5dB のレベル低下を伴うことが実測で分かっている
+        // （試験レポートに記録）。広帯域の声では本テストの
+        // フォルマント保持が効く。
+        let in_rms = rms(&src.samples);
+        let out_rms = rms(mid);
+        assert!(
+            out_rms > in_rms * 0.25,
+            "output level collapsed: in {in_rms}, out {out_rms}"
+        );
+    }
+
+    #[test]
+    fn pitch_shift_octave_down_halves_frequency() {
+        let src = sine(440.0, 1000, 0.4);
+        let out = pitch_shift(&src, -12.0);
+        let mid = &out.samples[RATE as usize / 4..RATE as usize * 3 / 4];
+        assert!(goertzel(mid, RATE, 220.0) > 0.1);
+        assert!(goertzel(mid, RATE, 440.0) < 0.03);
+    }
+
+    /// 声らしい信号: 基本周波数の倍音列に、フォルマントの包絡を載せる。
+    fn voice_like(f0: f32) -> ClipAudio {
+        let formants = [
+            (730.0f32, 150.0f32, 1.0f32),
+            (1090.0, 200.0, 0.6),
+            (2440.0, 300.0, 0.3),
+        ];
+        let frames = RATE as usize; // 1 秒
+        let mut samples = vec![0.0f32; frames];
+        for k in 1..40 {
+            let freq = f0 * k as f32;
+            if freq > 4000.0 {
+                break;
+            }
+            let mut amp = 0.15f32;
+            for (fc, sigma, gain) in formants {
+                let d = (freq - fc) / sigma;
+                amp += gain * (-d * d).exp();
+            }
+            let amp = amp / k as f32;
+            for (i, s) in samples.iter_mut().enumerate() {
+                *s += amp * (2.0 * std::f32::consts::PI * freq * i as f32 / RATE as f32).sin();
+            }
+        }
+        let max = samples.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        for s in samples.iter_mut() {
+            *s *= 0.5 / max;
+        }
+        ClipAudio {
+            sample_rate: RATE,
+            channels: 1,
+            samples,
+        }
+    }
+
+    /// 倍音の大きさから包絡のピーク（フォルマント）位置を推定する。
+    fn envelope_peak(samples: &[f32], f0: f32, lo: f32, hi: f32) -> f32 {
+        let mut best = (0.0f32, 0.0f32);
+        let mut k = 1;
+        loop {
+            let freq = f0 * k as f32;
+            if freq > hi {
+                break;
+            }
+            if freq >= lo {
+                let mag = goertzel(samples, RATE, freq);
+                if mag > best.1 {
+                    best = (freq, mag);
+                }
+            }
+            k += 1;
+        }
+        best.0
+    }
+
+    #[test]
+    fn pitch_shift_preserves_formant_position() {
+        // +12 半音で基本周波数は 120→240 になるが、フォルマント
+        // （730Hz 付近の包絡ピーク）は元の位置に留まること。
+        // 単純リサンプリングなら包絡ごと 2 倍へずれる。
+        let src = voice_like(120.0);
+        let before = envelope_peak(&src.samples, 120.0, 400.0, 1300.0);
+        assert!(
+            (before - 730.0).abs() < 150.0,
+            "test signal formant should start near 730, got {before}"
+        );
+        let out = pitch_shift(&src, 12.0);
+        let mid = &out.samples[RATE as usize / 4..RATE as usize * 3 / 4];
+        // 基本周波数が 240 へ移ったこと
+        assert!(goertzel(mid, RATE, 240.0) > goertzel(mid, RATE, 120.0));
+        let after = envelope_peak(mid, 240.0, 400.0, 1300.0);
+        assert!(
+            (after - 730.0).abs() < 200.0,
+            "formant must stay near 730 after +12, got {after}"
+        );
+    }
+
+    #[test]
+    fn render_mix_applies_clip_pitch() {
+        // ピッチ付きクリップと無しのクリップが混ざっても破綻しない。
+        let (mut p, audio) = project_with(&[("a.wav", 0, 1000, 1.0), ("b.wav", 0, 1000, 1.0)]);
+        let clip_id = p.tracks[0].clips[0].id;
+        apply(
+            &mut p,
+            &Command::SetClipPitch {
+                clip_id,
+                semitones: 12.0,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        // a.wav は 440→880 に上がり、b.wav の 880 と重なる。440 は消える。
+        assert!(goertzel(&w, RATE, 880.0) > 0.15, "880 should dominate");
+        assert!(goertzel(&w, RATE, 440.0) < 0.05, "440 should be gone");
     }
 }

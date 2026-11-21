@@ -56,6 +56,10 @@ pub enum Command {
         clip_id: u64,
         enabled: bool,
     },
+    SetClipPitch {
+        clip_id: u64,
+        semitones: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +135,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     source: source.clone(),
                     gain: 1.0,
                     cutout: false,
+                    pitch_semitones: 0.0,
                 });
             Ok(Some(id))
         }
@@ -243,6 +248,25 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.cutout = *enabled;
+            Ok(None)
+        }
+        Command::SetClipPitch { clip_id, semitones } => {
+            if !semitones.is_finite() || *semitones < -24.0 || *semitones > 24.0 {
+                return Err(CommandError::InvalidRange(
+                    "semitones must be within -24.0..=24.0",
+                ));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.pitch_semitones = *semitones;
             Ok(None)
         }
     }

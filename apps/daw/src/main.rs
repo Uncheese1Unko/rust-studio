@@ -120,6 +120,9 @@ struct Model {
     project_file: Option<std::path::PathBuf>,
     file_stamp: u64,
     last_watch_check: f32,
+    // Issue #18: ピッチ操作キー（↑↓）の押下エッジ検出。
+    prev_pitch_up: bool,
+    prev_pitch_down: bool,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -225,6 +228,8 @@ fn model(app: &App) -> Model {
         project_file,
         file_stamp,
         last_watch_check: 0.0,
+        prev_pitch_up: false,
+        prev_pitch_down: false,
     }
 }
 
@@ -233,7 +238,35 @@ fn main() {
         engine_demo();
         return;
     }
+    // ピッチ処理の単体実行（Issue #18 の音声証拠生成用）:
+    // daw --pitch-demo <in.wav> <semitones> <out.wav>
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 5 && args[1] == "--pitch-demo" {
+        pitch_demo(&args[2], &args[3], &args[4]);
+        return;
+    }
     nannou::app(model).update(update).run();
+}
+
+/// WAV を読み、ピッチ変更して書き出す（エンジンと同じ処理経路）。
+fn pitch_demo(input: &str, semitones: &str, output: &str) {
+    let semitones: f32 = semitones.parse().expect("semitones must be a number");
+    let decoded = audio::decode_audio(std::path::Path::new(input)).expect("decode input wav");
+    let shifted = audio::pitch_shift(&decoded, semitones);
+    let spec = hound::WavSpec {
+        channels: shifted.channels,
+        sample_rate: shifted.sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(output, spec).expect("create output wav");
+    for s in &shifted.samples {
+        writer
+            .write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+            .expect("write sample");
+    }
+    writer.finalize().expect("finalize wav");
+    println!("pitch demo: {input} {semitones:+} st -> {output}");
 }
 
 /// プロジェクトファイルの変更を監視し、変わっていたら読み直す
@@ -303,9 +336,50 @@ fn save_project_file(model: &mut Model) {
 fn update(app: &App, model: &mut Model, update: Update) {
     handle_pointer(app, model);
     watch_project_file(app, model);
+    handle_pitch_keys(app, model);
     let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
     let end = timeline::project_end_ms(&model.project);
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end);
+}
+
+/// ピッチ操作（Issue #18）: ↑↓ キーで再生ヘッド位置の音声クリップの
+/// ピッチを ±1 半音変える。変更はコマンド経由で、ダンプに反映される。
+fn handle_pitch_keys(app: &App, model: &mut Model) {
+    let up = app.keys.down.contains(&Key::Up);
+    let down = app.keys.down.contains(&Key::Down);
+    let delta = match (up && !model.prev_pitch_up, down && !model.prev_pitch_down) {
+        (true, false) => 1.0,
+        (false, true) => -1.0,
+        _ => 0.0,
+    };
+    model.prev_pitch_up = up;
+    model.prev_pitch_down = down;
+    if delta == 0.0 {
+        return;
+    }
+    let Some((_, clip)) = model.project.tracks.iter().find_map(|t| {
+        if t.kind != studio_core::TrackKind::Audio {
+            return None;
+        }
+        t.clips
+            .iter()
+            .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+            .map(|c| (t, c))
+    }) else {
+        println!("pitch: no audio clip at playhead");
+        return;
+    };
+    let cmd = Command::SetClipPitch {
+        clip_id: clip.id,
+        semitones: clip.pitch_semitones + delta,
+    };
+    match apply(&mut model.project, &cmd) {
+        Ok(_) => {
+            println!("after pitch: {}", model.project.dump_json());
+            save_project_file(model);
+        }
+        Err(e) => println!("command rejected: {e}"),
+    }
 }
 
 /// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #14、
@@ -540,6 +614,23 @@ fn view(app: &App, model: &Model, frame: Frame) {
             )
             .font_size(11)
             .color(rgb(0.80, 0.80, 0.85));
+    }
+
+    // ピッチ表示（Issue #18）: 再生ヘッド位置の音声クリップのピッチ。
+    let pitch_label = model.project.tracks.iter().find_map(|t| {
+        if t.kind != studio_core::TrackKind::Audio {
+            return None;
+        }
+        t.clips
+            .iter()
+            .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+            .map(|c| format!("pitch: {} {:+.1} st", c.name, c.pitch_semitones))
+    });
+    if let Some(label) = pitch_label {
+        draw.text(&label)
+            .x_y(-win.w() / 2.0 + 130.0, -win.h() / 2.0 + 16.0)
+            .font_size(12)
+            .color(rgb(0.95, 0.75, 0.35));
     }
 
     // 再生ヘッド（timeline.playhead）。

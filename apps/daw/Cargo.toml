@@ -8,3 +8,4 @@ license.workspace = true
 studio-core = { path = "../../crates/studio-core" }
 hound = "3"
 nannou = "0.19"
+signalsmith-stretch = "0.1"

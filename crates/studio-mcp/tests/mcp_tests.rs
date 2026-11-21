@@ -53,6 +53,7 @@ fn tools_list_exposes_all_commands() {
         "set_track_volume",
         "set_track_pan",
         "set_clip_cutout",
+        "set_clip_pitch",
         "get_project",
     ] {
         assert!(

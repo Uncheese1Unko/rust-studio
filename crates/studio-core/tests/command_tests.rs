@@ -295,3 +295,66 @@ fn set_clip_cutout_applies_and_validates() {
     let project: Project = serde_json::from_str(legacy).unwrap();
     assert!(!project.tracks[0].clips[0].cutout);
 }
+
+#[test]
+fn set_clip_pitch_applies_and_validates() {
+    // Issue #18: クリップのピッチ（半音）。方式は ADR-0009。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    assert_eq!(p.clip(clip_id).unwrap().1.pitch_semitones, 0.0);
+    apply(
+        &mut p,
+        &Command::SetClipPitch {
+            clip_id,
+            semitones: 3.5,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.clip(clip_id).unwrap().1.pitch_semitones, 3.5);
+    // JSON 往復
+    let cmd = Command::SetClipPitch {
+        clip_id,
+        semitones: -12.0,
+    };
+    let text = serde_json::to_string(&cmd).unwrap();
+    assert!(text.contains("\"type\":\"set_clip_pitch\""), "{text}");
+    // 範囲外（±24 半音を超える）は状態を変えない
+    for bad in [24.5, -25.0, f32::NAN] {
+        let before = p.dump_json();
+        let err = apply(
+            &mut p,
+            &Command::SetClipPitch {
+                clip_id,
+                semitones: bad,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CommandError::InvalidRange(_)),
+            "bad={bad}: {err}"
+        );
+        assert_eq!(p.dump_json(), before);
+    }
+    // 境界値は通る
+    apply(
+        &mut p,
+        &Command::SetClipPitch {
+            clip_id,
+            semitones: 24.0,
+        },
+    )
+    .unwrap();
+    // 存在しないクリップ
+    let err = apply(
+        &mut p,
+        &Command::SetClipPitch {
+            clip_id: 9999,
+            semitones: 1.0,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ClipNotFound(9999));
+    // pitch を含まない旧形式 JSON は 0.0 で読み込める
+    let legacy = r#"{"name":"old","tracks":[{"id":1,"name":"A1","kind":"audio","clips":[{"id":2,"name":"c","start_ms":0,"duration_ms":1000,"source":"x.wav","gain":1.0,"cutout":false}],"volume":1.0,"pan":0.0}],"next_id":3}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    assert_eq!(project.tracks[0].clips[0].pitch_semitones, 0.0);
+}

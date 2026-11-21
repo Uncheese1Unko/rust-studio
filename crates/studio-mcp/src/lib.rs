@@ -199,7 +199,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド10種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド11種＋状態ダンプ取得。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -274,6 +274,18 @@ fn tool_definitions() -> Value {
                     "enabled": {"type": "boolean"},
                 },
                 "required": ["clip_id", "enabled"],
+            },
+        },
+        {
+            "name": "set_clip_pitch",
+            "description": "クリップのピッチ変更量（半音、-24〜24）を設定する",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "semitones": {"type": "number", "minimum": -24, "maximum": 24},
+                },
+                "required": ["clip_id", "semitones"],
             },
         },
         {
