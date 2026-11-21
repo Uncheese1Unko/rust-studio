@@ -1,0 +1,2 @@
+shot1-full-normal.png bg(480,300)=#FBF4EC key5 accent: 0 meter teal: 2780
+shot2-full-sounding.png bg(480,300)=#FBF4EC key5 accent: 868 meter teal: 2765
