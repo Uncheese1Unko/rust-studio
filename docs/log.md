@@ -1,6 +1,7 @@
 # ドキュメントの更新履歴
 
 ## 2026-11-21
+* **Update**: 試験レポート issue-0009（クリップ配置・移動・トリミング、PBI #9）を追加した。コアに TrimClip コマンドを追加し、MCP の trim_clip ツールとしても公開した。
 * **Update**: 試験レポート issue-0008（タイムライン UI、PBI #8）を追加した。video-editor がコアの状態をそのまま描画し、再生ヘッドが移動する。
 * **Update**: 試験レポート issue-0006（CI）を完了版に更新した。ユーザーがワークフロー（`2cc472c`）を追加し Actions が緑になったため、Issue #6 を close した。
 * **Addition**: 試験レポート issue-0004（HTTP/JSON API）を追加した。
