@@ -1,6 +1,7 @@
 # ドキュメントの更新履歴
 
 ## 2026-11-21
+* **Update**: 試験レポート issue-0006（CI）を完了版に更新した。ユーザーがワークフロー（`2cc472c`）を追加し Actions が緑になったため、Issue #6 を close した。
 * **Addition**: 試験レポート issue-0004（HTTP/JSON API）を追加した。
 * **Addition**: `crates/studio-mcp`（MCP サーバー、PBI #5）を追加した。stdio の JSON-RPC でコマンド群を tool として公開する。
 * **Addition**: 試験レポート issue-0005（MCP サーバー）を追加した。

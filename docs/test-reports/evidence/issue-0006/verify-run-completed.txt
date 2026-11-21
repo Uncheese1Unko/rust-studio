@@ -1,0 +1,118 @@
+== cargo fmt --check ==
+== cargo clippy --workspace --all-targets -- -D warnings ==
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.89s
+warning: the following packages contain code that will be rejected by a future version of Rust: noise v0.7.0
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+== cargo test --workspace ==
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+warning: the following packages contain code that will be rejected by a future version of Rust: noise v0.7.0
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/build/daw/10478cd997e3445c/out/daw-10478cd997e3445c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/studio-api/74270e021dafaa73/out/studio_api-74270e021dafaa73)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/build/studio-api/2369cc4583753870/out/studio_api-2369cc4583753870)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/api_tests.rs (target/debug/build/studio-api/e8ec9dc349fa9edf/out/api_tests-e8ec9dc349fa9edf)
+
+running 8 tests
+test failing_command_returns_error_and_leaves_state_unchanged ... ok
+test malformed_json_returns_400_and_leaves_state_unchanged ... ok
+test get_project_returns_state_dump ... ok
+test post_command_applies_and_dump_reflects_it ... ok
+test unknown_path_is_404_and_wrong_method_is_405 ... ok
+test server_round_trip_over_a_real_socket ... ok
+test server_survives_abruptly_closed_connections ... ok
+test server_does_not_wedge_on_an_idle_connection ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.08s
+
+     Running unittests src/lib.rs (target/debug/build/studio-core/579c02c89bec0722/out/studio_core-579c02c89bec0722)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/command_tests.rs (target/debug/build/studio-core/ca6e2ceea589b94c/out/command_tests-ca6e2ceea589b94c)
+
+running 4 tests
+test add_track_and_clip ... ok
+test failed_command_leaves_state_unchanged ... ok
+test commands_and_state_round_trip_through_json ... ok
+test move_and_gain_and_remove_clip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/persistence_tests.rs (target/debug/build/studio-core/516a328c2bb3f88f/out/persistence_tests-516a328c2bb3f88f)
+
+running 4 tests
+test load_of_corrupt_json_errors ... ok
+test load_of_missing_file_errors ... ok
+test failed_load_leaves_existing_state_unchanged ... ok
+test save_and_load_round_trip_restores_identical_state ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/studio-mcp/8a02b8739ba49be9/out/studio_mcp-8a02b8739ba49be9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/build/studio-mcp/e8e88380a70ea495/out/studio_mcp-e8e88380a70ea495)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mcp_tests.rs (target/debug/build/studio-mcp/22d4c8a6780a4c73/out/mcp_tests-22d4c8a6780a4c73)
+
+running 8 tests
+test initialize_returns_server_info ... ok
+test failing_tool_call_errors_and_leaves_state_unchanged ... ok
+test malformed_line_returns_parse_error ... ok
+test notifications_get_no_response ... ok
+test tool_calls_execute_and_dump_reflects_them ... ok
+test tools_list_exposes_all_commands ... ok
+test unknown_tool_and_unknown_method_error ... ok
+test stdio_end_to_end_session ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/build/video-editor/85986460df652671/out/video_editor-85986460df652671)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests studio_api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests studio_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests studio_mcp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+verify: OK
