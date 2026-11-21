@@ -256,3 +256,42 @@ fn track_volume_pan_json_round_trip_and_legacy_defaults() {
     assert_eq!(project.tracks[0].volume, 1.0);
     assert_eq!(project.tracks[0].pan, 0.0);
 }
+
+#[test]
+fn set_clip_cutout_applies_and_validates() {
+    // Issue #22: 人物切り抜きの適用フラグ。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    assert!(!p.clip(clip_id).unwrap().1.cutout, "default is off");
+    apply(
+        &mut p,
+        &Command::SetClipCutout {
+            clip_id,
+            enabled: true,
+        },
+    )
+    .unwrap();
+    assert!(p.clip(clip_id).unwrap().1.cutout);
+    // JSON 往復
+    let cmd = Command::SetClipCutout {
+        clip_id,
+        enabled: true,
+    };
+    let text = serde_json::to_string(&cmd).unwrap();
+    assert!(text.contains("\"type\":\"set_clip_cutout\""), "{text}");
+    // 存在しないクリップでは状態を変えない
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetClipCutout {
+            clip_id: 9999,
+            enabled: true,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ClipNotFound(9999));
+    assert_eq!(p.dump_json(), before);
+    // cutout を含まない旧形式のクリップ JSON も false で読み込める
+    let legacy = r#"{"name":"old","tracks":[{"id":1,"name":"V1","kind":"video","clips":[{"id":2,"name":"c","start_ms":0,"duration_ms":1000,"source":"x.mp4","gain":1.0}],"volume":1.0,"pan":0.0}],"next_id":3}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    assert!(!project.tracks[0].clips[0].cutout);
+}

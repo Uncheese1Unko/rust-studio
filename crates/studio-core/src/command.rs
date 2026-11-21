@@ -52,6 +52,10 @@ pub enum Command {
         track_id: u64,
         pan: f32,
     },
+    SetClipCutout {
+        clip_id: u64,
+        enabled: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +130,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     duration_ms: *duration_ms,
                     source: source.clone(),
                     gain: 1.0,
+                    cutout: false,
                 });
             Ok(Some(id))
         }
@@ -224,6 +229,20 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|t| t.id == *track_id)
                 .ok_or(CommandError::TrackNotFound(*track_id))?;
             track.pan = *pan;
+            Ok(None)
+        }
+        Command::SetClipCutout { clip_id, enabled } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.cutout = *enabled;
             Ok(None)
         }
     }

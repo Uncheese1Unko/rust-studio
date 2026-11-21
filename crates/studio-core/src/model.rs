@@ -22,6 +22,9 @@ pub struct Clip {
     pub source: String,
     /// 音量ゲイン（1.0 = 原音）。映像クリップでは未使用でも保持する。
     pub gain: f32,
+    /// 人物切り抜きの適用有無（Issue #22）。旧形式の JSON では false。
+    #[serde(default)]
+    pub cutout: bool,
 }
 
 impl Clip {

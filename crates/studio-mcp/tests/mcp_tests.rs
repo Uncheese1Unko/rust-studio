@@ -50,6 +50,9 @@ fn tools_list_exposes_all_commands() {
         "trim_clip",
         "remove_clip",
         "set_clip_gain",
+        "set_track_volume",
+        "set_track_pan",
+        "set_clip_cutout",
         "get_project",
     ] {
         assert!(

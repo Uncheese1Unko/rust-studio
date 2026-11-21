@@ -199,7 +199,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド9種＋状態ダンプ取得。
+/// tools/list で公開する定義。コマンド10種＋状態ダンプ取得。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -262,6 +262,18 @@ fn tool_definitions() -> Value {
                     "new_duration_ms": {"type": "integer", "minimum": 1},
                 },
                 "required": ["clip_id", "new_start_ms", "new_duration_ms"],
+            },
+        },
+        {
+            "name": "set_clip_cutout",
+            "description": "クリップの人物切り抜き適用を切り替える",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "enabled": {"type": "boolean"},
+                },
+                "required": ["clip_id", "enabled"],
             },
         },
         {

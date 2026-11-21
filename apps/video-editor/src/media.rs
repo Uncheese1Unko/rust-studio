@@ -100,12 +100,17 @@ impl FrameStore {
     pub fn sources(&self) -> Vec<String> {
         self.frames.keys().cloned().collect()
     }
+
+    /// ソースの全フレームパス（時刻順）。
+    pub fn frames_for(&self, source: &str) -> Vec<PathBuf> {
+        self.frames.get(source).cloned().unwrap_or_default()
+    }
 }
 
 /// デモ用のサンプル素材をメディアディレクトリに用意する（なければ生成）。
 /// ffmpeg が無い・失敗した場合は警告を出すだけで、アプリは止めない。
 fn ensure_sample_media(dir: &Path) {
-    let samples: [(&str, Vec<String>); 3] = [
+    let samples: [(&str, Vec<String>); 4] = [
         (
             "opening.mp4",
             vec![
@@ -141,6 +146,22 @@ fn ensure_sample_media(dir: &Path) {
                 "lavfi".into(),
                 "-i".into(),
                 "sine=frequency=440:duration=8".into(),
+            ],
+        ),
+        (
+            // 切り抜き合成用の背景素材（Issue #22）: 人物のいない単調な映像
+            "bg.mp4",
+            vec![
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "testsrc=duration=8:size=320x180:rate=30".into(),
+                "-vf".into(),
+                "hue=h=200".into(),
+                "-c:v".into(),
+                "libx264".into(),
+                "-pix_fmt".into(),
+                "yuv420p".into(),
             ],
         ),
     ];

@@ -8,6 +8,7 @@
 //! 起動時のデモプロジェクトはコマンド経由で構築し、状態ダンプと
 //! 要素識別子の一覧を標準出力に出す（ADR-0005 の観測経路）。
 
+mod cutout;
 mod edit;
 mod media;
 mod timeline;
@@ -34,6 +35,10 @@ struct Model {
     project_file: Option<std::path::PathBuf>,
     file_stamp: u64,
     last_watch_check: f32,
+    // Issue #22: 人物切り抜きジョブの状態。
+    cutout_job: Option<std::sync::Arc<std::sync::Mutex<cutout::JobState>>>,
+    cutout_job_reported: bool,
+    prev_k_down: bool,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -69,10 +74,21 @@ fn demo_project() -> Project {
     )
     .expect("demo project: add audio track")
     .expect("add track returns id");
+    // 背景用の映像トラック（Issue #22 の合成先）
+    let v2 = apply(
+        &mut project,
+        &Command::AddTrack {
+            name: "V2".into(),
+            kind: TrackKind::Video,
+        },
+    )
+    .expect("demo project: add background track")
+    .expect("add track returns id");
     for (track_id, name, start_ms, duration_ms, source) in [
         (v, "opening", 0, 2_000, "demo/opening.mp4"),
         (v, "interview", 2_500, 4_000, "demo/interview.mp4"),
         (a, "bgm", 0, 8_000, "demo/bgm.wav"),
+        (v2, "bg", 0, 8_000, "demo/bg.mp4"),
     ] {
         apply(
             &mut project,
@@ -179,6 +195,9 @@ fn model(app: &App) -> Model {
         project_file,
         file_stamp,
         last_watch_check: 0.0,
+        cutout_job: None,
+        cutout_job_reported: false,
+        prev_k_down: false,
     }
 }
 
@@ -248,6 +267,7 @@ fn save_project_file(model: &mut Model) {
 fn update(app: &App, model: &mut Model, update: Update) {
     handle_pointer(app, model);
     watch_project_file(app, model);
+    handle_cutout(app, model);
 
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(&model.project);
@@ -271,6 +291,125 @@ fn update(app: &App, model: &mut Model, update: Update) {
         }
         model.last_preview = current_key;
     }
+}
+
+/// 人物切り抜き（Issue #22）: K キーで再生ヘッド位置の映像クリップに
+/// 切り抜きをトグルし、有効化されたらワーカースレッドでオフライン
+/// 処理を開始する。完了したら合成済みフレームのテクスチャを読み込み、
+/// プレビューが合成結果に切り替わる。
+fn handle_cutout(app: &App, model: &mut Model) {
+    let k_down = app.keys.down.contains(&Key::K);
+    let pressed = k_down && !model.prev_k_down;
+    model.prev_k_down = k_down;
+
+    // ジョブの完了・失敗を一度だけ報告し、完了時はテクスチャを読む。
+    if let Some(job) = &model.cutout_job {
+        let snapshot = job.lock().unwrap().clone();
+        if !model.cutout_job_reported {
+            match &snapshot.status {
+                cutout::JobStatus::Done => {
+                    println!(
+                        "cutout done: clip {} ({} frames)",
+                        snapshot.clip_id, snapshot.total
+                    );
+                    if let Some((_, clip)) = model.project.clip(snapshot.clip_id) {
+                        let dir = media::media_dir().join(cutout::composite_dir_name(&clip.source));
+                        for i in 0..snapshot.total {
+                            let path = dir.join(format!("f{i:03}.png"));
+                            if path.exists() && !model.textures.contains_key(&path) {
+                                if let Ok(texture) = wgpu::Texture::from_path(app, &path) {
+                                    model.textures.insert(path, texture);
+                                }
+                            }
+                        }
+                    }
+                    model.cutout_job_reported = true;
+                }
+                cutout::JobStatus::Failed(e) => {
+                    println!("cutout failed: clip {}: {e}", snapshot.clip_id);
+                    model.cutout_job_reported = true;
+                }
+                cutout::JobStatus::Running => {}
+            }
+        }
+    }
+
+    if !pressed {
+        return;
+    }
+    let Some(clip) = media::active_video_clip(&model.project, model.playhead_ms).cloned() else {
+        println!("cutout: no video clip at playhead");
+        return;
+    };
+    let enabled = !clip.cutout;
+    let cmd = Command::SetClipCutout {
+        clip_id: clip.id,
+        enabled,
+    };
+    if let Err(e) = apply(&mut model.project, &cmd) {
+        println!("command rejected: {e}");
+        return;
+    }
+    println!("after cutout toggle: {}", model.project.dump_json());
+    save_project_file(model);
+    if !enabled {
+        return;
+    }
+    // 処理の開始に必要なものが揃っているか確認する。
+    let frames = model.frames.frames_for(&clip.source);
+    if frames.is_empty() {
+        println!("cutout unavailable: no frames for {}", clip.source);
+        return;
+    }
+    let (Some(model_path), Some(dylib_path)) = (cutout::find_model(), cutout::find_onnxruntime())
+    else {
+        println!("cutout unavailable: MODNet model or onnxruntime not found");
+        return;
+    };
+    if model
+        .cutout_job
+        .as_ref()
+        .is_some_and(|j| j.lock().unwrap().status == cutout::JobStatus::Running)
+    {
+        println!("cutout: a job is already running");
+        return;
+    }
+    // 背景フレーム: 別の映像トラックで同じ時刻を覆うクリップを探す。
+    let fg_track = model
+        .project
+        .clip(clip.id)
+        .map(|(t, _)| t.id)
+        .unwrap_or_default();
+    let bg_frames: Vec<Option<std::path::PathBuf>> = (0..frames.len())
+        .map(|i| {
+            let timeline_ms = clip.start_ms + (i as i64) * (1000 / model.frames.fps as i64);
+            model
+                .project
+                .tracks
+                .iter()
+                .filter(|t| t.kind == TrackKind::Video && t.id != fg_track)
+                .flat_map(|t| t.clips.iter())
+                .find(|c| timeline_ms >= c.start_ms && timeline_ms < c.end_ms())
+                .and_then(|bg| {
+                    model
+                        .frames
+                        .frame_path(&bg.source, timeline_ms - bg.start_ms)
+                        .map(|p| p.to_path_buf())
+                })
+        })
+        .collect();
+    let request = cutout::JobRequest {
+        clip_id: clip.id,
+        frames,
+        bg_frames,
+        mask_dir: media::media_dir().join(cutout::mask_dir_name(&clip.source)),
+        composite_dir: media::media_dir().join(cutout::composite_dir_name(&clip.source)),
+        model_path,
+        dylib_path,
+    };
+    model.cutout_job = Some(cutout::start_job(request));
+    model.cutout_job_reported = false;
+    println!("cutout started: clip {} ({})", clip.id, clip.name);
 }
 
 /// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #9）。
@@ -413,14 +552,37 @@ fn view(app: &App, model: &Model, frame: Frame) {
     match media::active_video_clip(&model.project, model.playhead_ms) {
         Some(clip) => {
             let source_time = media::source_time_ms(clip, model.playhead_ms).unwrap_or(0);
-            if let Some(path) = model.frames.frame_path(&clip.source, source_time) {
-                if let Some(texture) = model.textures.get(path) {
-                    draw.texture(texture)
-                        .x_y(pvx, pvy)
-                        .w_h(PREVIEW_W, PREVIEW_H);
-                }
+            // 切り抜き有効で合成済みフレームがあれば、そちらを優先する。
+            let composite_path = if clip.cutout {
+                let index = media::frame_index(source_time, model.frames.fps);
+                Some(
+                    media::media_dir()
+                        .join(cutout::composite_dir_name(&clip.source))
+                        .join(format!("f{index:03}.png")),
+                )
+            } else {
+                None
+            };
+            let texture = composite_path
+                .as_ref()
+                .and_then(|p| model.textures.get(p))
+                .or_else(|| {
+                    model
+                        .frames
+                        .frame_path(&clip.source, source_time)
+                        .and_then(|p| model.textures.get(p))
+                });
+            if let Some(texture) = texture {
+                draw.texture(texture)
+                    .x_y(pvx, pvy)
+                    .w_h(PREVIEW_W, PREVIEW_H);
             }
-            draw.text(&format!("{} @ {}ms", clip.name, source_time))
+            let label = if clip.cutout {
+                format!("{} @ {}ms (cutout)", clip.name, source_time)
+            } else {
+                format!("{} @ {}ms", clip.name, source_time)
+            };
+            draw.text(&label)
                 .x_y(pvx, pvy + PREVIEW_H / 2.0 + 14.0)
                 .font_size(11)
                 .color(rgb(0.65, 0.65, 0.70));
@@ -430,6 +592,20 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .x_y(pvx, pvy)
                 .font_size(12)
                 .color(rgb(0.45, 0.45, 0.50));
+        }
+    }
+
+    // 切り抜きジョブの進捗（実行中のみ、プレビューの下に表示する）。
+    if let Some(job) = &model.cutout_job {
+        let state = job.lock().unwrap();
+        if state.status == cutout::JobStatus::Running {
+            draw.text(&format!(
+                "cutout processing: {}/{}",
+                state.done, state.total
+            ))
+            .x_y(pvx, pvy - PREVIEW_H / 2.0 - 16.0)
+            .font_size(11)
+            .color(rgb(0.95, 0.75, 0.35));
         }
     }
 
@@ -469,10 +645,17 @@ mod tests {
     fn stamp_distinguishes_different_states() {
         let a = demo_project();
         let mut b = demo_project();
+        let clip_id = a
+            .tracks
+            .iter()
+            .flat_map(|t| t.clips.iter())
+            .find(|c| c.name == "interview")
+            .unwrap()
+            .id;
         apply(
             &mut b,
             &Command::MoveClip {
-                clip_id: 3,
+                clip_id,
                 new_start_ms: 100,
             },
         )
