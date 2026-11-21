@@ -37,6 +37,13 @@ pub fn bar_at_ms(playhead_ms: i64) -> i64 {
     playhead_ms.max(0) / 1_000 + 1
 }
 
+/// 時刻（ms）に対する拍番号（1始まり、Issue #27）。モデルにテンポが
+/// ないため、#24 の判断（1秒＝1小節）に合わせ、1小節を4拍として
+/// 数える（1拍＝250ms）。
+pub fn beat_at_ms(ms: i64) -> i64 {
+    (ms.max(0) % 1_000) / 250 + 1
+}
+
 /// トラック名を表示する左端ヘッダーの幅（px）。
 pub const HEADER_WIDTH_PX: f32 = 120.0;
 /// 上端ルーラーの高さ（px）。
@@ -254,6 +261,17 @@ mod tests {
         assert_eq!(advance_playhead(100, 50, 1_000), 150);
         assert_eq!(advance_playhead(900, 200, 1_000), 100);
         assert_eq!(advance_playhead(0, 500, 0), 0);
+    }
+
+    #[test]
+    fn beat_at_ms_counts_four_beats_per_bar() {
+        // Issue #27: 小節（1秒、#24 の判断）の中の拍。4拍で1小節。
+        assert_eq!(beat_at_ms(0), 1);
+        assert_eq!(beat_at_ms(249), 1);
+        assert_eq!(beat_at_ms(250), 2);
+        assert_eq!(beat_at_ms(999), 4);
+        assert_eq!(beat_at_ms(1_000), 1);
+        assert_eq!(beat_at_ms(4_500), 3);
     }
 
     #[test]

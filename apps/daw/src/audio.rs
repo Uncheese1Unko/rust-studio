@@ -148,6 +148,32 @@ pub fn render_mix(
     out
 }
 
+/// サンプル列のピーク（絶対値の最大、Issue #27）。レベルメーターの
+/// 入力で、読み取り専用（音声処理そのものには手を入れない）。
+pub fn peak_of(samples: &[f32]) -> f32 {
+    samples.iter().fold(0.0f32, |acc, s| acc.max(s.abs()))
+}
+
+/// ピーク付近とみなすレベル（dB）。これ以上はメーターを強調色にする。
+pub const PEAK_LEVEL_DB: f32 = -3.0;
+
+/// レベルメーターの表示下限（dB）。これ以下はメーターが空になる。
+pub const METER_FLOOR_DB: f32 = -60.0;
+
+/// ピーク値の dB 換算（1.0 = 0dB）。0 は -inf。
+pub fn peak_db(peak: f32) -> f32 {
+    if peak <= 0.0 {
+        f32::NEG_INFINITY
+    } else {
+        20.0 * peak.log10()
+    }
+}
+
+/// その dB がピーク付近（`PEAK_LEVEL_DB` 以上）かどうか。
+pub fn is_peak_level(db: f32) -> bool {
+    db >= PEAK_LEVEL_DB
+}
+
 /// 再生位置の状態機械。実時間の進行は呼び出し側が advance で与える。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Player {
@@ -347,6 +373,21 @@ mod tests {
         let m2 = render_mix(&p2, &audio, 0, 1000, RATE);
         let ratio = rms(&window(&m2, 2, 100, 900, RATE)) / rms(&window(&m1, 2, 100, 900, RATE));
         assert!((ratio - 2.0).abs() < 0.1, "sum ratio was {ratio}");
+    }
+
+    #[test]
+    fn peak_and_db_of_known_samples() {
+        // Issue #27: レベルメーターの基礎。既知のサンプル列に対する
+        // ピーク値と dB 変換、ピーク付近（-3dB 以上）の判定を固定する。
+        assert_eq!(peak_of(&[]), 0.0);
+        assert_eq!(peak_of(&[0.1, -0.5, 0.25]), 0.5);
+        assert_eq!(peak_of(&[-0.25, 0.125]), 0.25);
+        assert!((peak_db(1.0) - 0.0).abs() < 1e-4);
+        assert!((peak_db(0.5) - -6.0206).abs() < 0.001);
+        assert_eq!(peak_db(0.0), f32::NEG_INFINITY);
+        // 0.71 は約 -2.97dB（ピーク付近）、0.5 は約 -6.02dB（通常）
+        assert!(is_peak_level(peak_db(0.71)));
+        assert!(!is_peak_level(peak_db(0.5)));
     }
 
     #[test]

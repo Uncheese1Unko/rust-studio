@@ -127,6 +127,13 @@ struct Model {
     /// 最後にノートオンした半音数（GUI の表示状態、Issue #26）。
     /// 現在のピッチの大きな表示に使う。
     sampler_last: Option<i32>,
+    /// デコード済み音声（ソース→音声、Issue #27）。レベルメーターが
+    /// ミックスをレンダリングしてピークを取るために保持する。
+    audio_map: HashMap<String, audio::ClipAudio>,
+    /// 直近に計算したミックスのピーク（線形、Issue #27）。
+    level_peak: f32,
+    /// ピークを計算したときの再生位置（ms）。再計算の間引きに使う。
+    level_at_ms: i64,
     last_mixer_cmd: Option<Command>,
     // Issue #16: プロジェクトファイル共有モードの状態（#11 と同じ方式）。
     project_file: Option<std::path::PathBuf>,
@@ -245,6 +252,27 @@ fn compute_waveforms(project: &Project) -> (HashMap<String, Vec<f32>>, HashMap<S
     (waveforms, durations)
 }
 
+/// プロジェクトのソース集合をデコードした音声マップ（Issue #27）。
+/// レベルメーターが `render_mix` でピークを取るために保持する
+/// （読み取り専用。波形と同じくソース単位でデコードする）。
+fn compute_audio_map(project: &Project, dropped_source: &str) -> HashMap<String, audio::ClipAudio> {
+    let mut map = HashMap::new();
+    let mut sources: Vec<&str> = project
+        .tracks
+        .iter()
+        .flat_map(|t| t.clips.iter().map(|c| c.source.as_str()))
+        .collect();
+    sources.push(dropped_source);
+    sources.sort();
+    sources.dedup();
+    for source in sources {
+        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(source)) {
+            map.insert(source.to_string(), decoded);
+        }
+    }
+    map
+}
+
 fn model(app: &App) -> Model {
     let (tone220, tone440, dropped) = prepare_demo_media();
     let (project, project_file, file_stamp) = initial_project(&tone220, &tone440);
@@ -254,6 +282,7 @@ fn model(app: &App) -> Model {
     let (mut waveforms, mut source_durations) = (HashMap::new(), HashMap::new());
     // 配置用素材も波形を用意しておく（配置直後から波形が出るように）
     refresh_waveforms(&project, &dropped, &mut waveforms, &mut source_durations);
+    let audio_map = compute_audio_map(&project, &dropped);
     let window = app
         .new_window()
         .size(960, 540)
@@ -276,6 +305,9 @@ fn model(app: &App) -> Model {
         dropped_source: dropped,
         mixer_active: None,
         sampler_last: None,
+        audio_map,
+        level_peak: 0.0,
+        level_at_ms: -1_000,
         last_mixer_cmd: None,
         project_file,
         file_stamp,
@@ -403,6 +435,7 @@ fn watch_project_file(app: &App, model: &mut Model) {
                     &mut model.waveforms,
                     &mut model.source_durations,
                 );
+                model.audio_map = compute_audio_map(&model.project, &model.dropped_source);
             }
             println!("project reloaded: {}", model.project.dump_json());
         }
@@ -437,7 +470,24 @@ fn update(app: &App, model: &mut Model, update: Update) {
     }
     let end = timeline::project_end_ms(&model.project);
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end);
+    // レベルメーター（Issue #27）: 再生位置の直後のミックスを
+    // レンダリングしてピークを取る（読み取り専用。音声処理には
+    // 手を入れない）。再生位置が 50ms 以上動いたときだけ再計算する。
+    if (model.playhead_ms - model.level_at_ms).abs() >= 50 {
+        let mix = audio::render_mix(
+            &model.project,
+            &model.audio_map,
+            model.playhead_ms,
+            LEVEL_WINDOW_MS,
+            44_100,
+        );
+        model.level_peak = audio::peak_of(&mix);
+        model.level_at_ms = model.playhead_ms;
+    }
 }
+
+/// レベルメーターがピークを取るミックスの窓（ms、Issue #27）。
+const LEVEL_WINDOW_MS: i64 = 100;
 
 /// サンプラーのキー配置（sampler::key_to_semitone と対応）。
 const NOTE_KEYS: [(Key, char); 13] = [
@@ -931,6 +981,107 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .font_size(theme::VALUE_FONT_SIZE)
                 .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
         }
+    }
+
+    // トランスポート（Issue #27）: 進行度（小節・拍の数値＋横バー）と
+    // レベルメーターを常時表示する。01 TRANSPORT ラベルは、この
+    // パネルを作る本イシューで描く（#23 では定数だけ用意した）。
+    {
+        let count = model.project.tracks.len();
+        let top = mixer::mixer_top_y(count) + count as f32 * mixer::STRIP_HEIGHT_PX + 28.0;
+        draw_rounded_rect(
+            &draw,
+            win,
+            mixer::Rect {
+                x: 8.0,
+                y: top - 8.0,
+                w: win.w() - 16.0,
+                h: 64.0,
+            },
+            theme::PANEL_CORNER_RADIUS,
+            theme::PANEL,
+        );
+        draw_panel_label(&draw, win, theme::TRANSPORT_LABEL, 40.0, top);
+        let end_ms = timeline::project_end_ms(&model.project).max(1);
+        let progress = (model.playhead_ms as f32 / end_ms as f32).clamp(0.0, 1.0);
+        // 現在地の数値（小節・拍）は大きく出す
+        draw.text(&format!(
+            "BAR {} · BEAT {}",
+            timeline::bar_at_ms(model.playhead_ms),
+            timeline::beat_at_ms(model.playhead_ms)
+        ))
+        .x_y(115.0 - win.w() / 2.0, win.h() / 2.0 - (top + 27.0))
+        .font_size(theme::VALUE_FONT_SIZE)
+        .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+        // 進行バー: 溝はサンド、進んだ分はピンク
+        let bar = mixer::Rect {
+            x: 230.0,
+            y: top + 14.0,
+            w: 460.0,
+            h: 7.0,
+        };
+        draw_rounded_rect(&draw, win, bar, 3.0, theme::PANEL_SUNK);
+        if progress > 0.0 {
+            draw_rounded_rect(
+                &draw,
+                win,
+                mixer::Rect {
+                    w: bar.w * progress,
+                    ..bar
+                },
+                3.0,
+                theme::ACCENT,
+            );
+        }
+        // レベルメーター: 溝はサンド、レベルはティール、ピーク付近
+        // （-3dB 以上）だけホットピンク
+        let db = audio::peak_db(model.level_peak);
+        let frac = if db.is_finite() {
+            ((db - audio::METER_FLOOR_DB) / -audio::METER_FLOOR_DB).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let meter = mixer::Rect {
+            x: 230.0,
+            y: top + 31.0,
+            w: 460.0,
+            h: 7.0,
+        };
+        draw_rounded_rect(&draw, win, meter, 3.0, theme::PANEL_SUNK);
+        if frac > 0.0 {
+            let color = if audio::is_peak_level(db) {
+                theme::ACCENT
+            } else {
+                theme::TEAL
+            };
+            draw_rounded_rect(
+                &draw,
+                win,
+                mixer::Rect {
+                    w: meter.w * frac,
+                    ..meter
+                },
+                3.0,
+                color,
+            );
+        }
+        let db_label = if db.is_finite() {
+            format!("{db:.1} dB")
+        } else {
+            "-inf dB".to_string()
+        };
+        draw.text(&db_label)
+            .x_y(745.0 - win.w() / 2.0, win.h() / 2.0 - (top + 34.0))
+            .font_size(11)
+            .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        draw.text(&format!(
+            "{:.1} / {:.1} s",
+            model.playhead_ms as f32 / 1000.0,
+            end_ms as f32 / 1000.0
+        ))
+        .x_y(880.0 - win.w() / 2.0, win.h() / 2.0 - (top + 17.0))
+        .font_size(11)
+        .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
     }
 
     // ピッチ表示（Issue #18）: 再生ヘッド位置の音声クリップのピッチ。
