@@ -20,3 +20,5 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #14 DAW タイムライン UI とクリップ操作・波形表示 | [issue-0014-daw-timeline-ui.md](issue-0014-daw-timeline-ui.md) |
 | 2026-11-21 | #16 DAW の MCP 編集受け入れ | [issue-0016-daw-mcp-acceptance.md](issue-0016-daw-mcp-acceptance.md) |
 | 2026-11-21 | #18 クリップのピッチ変更（性質を保つ） | [issue-0018-clip-pitch.md](issue-0018-clip-pitch.md) |
+| 2026-11-21 | #11 MCP 編集受け入れ（video-editor） | [issue-0011-mcp-acceptance.md](issue-0011-mcp-acceptance.md) |
+| 2026-11-21 | #15 ミキサー（トラック音量・パン） | [issue-0015-mixer.md](issue-0015-mixer.md) |
