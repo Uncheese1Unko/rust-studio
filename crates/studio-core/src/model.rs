@@ -80,9 +80,15 @@ impl Project {
     }
 
     /// プロジェクトを JSON ファイルに保存する（Issue #3）。
+    ///
+    /// 保存はアトミックに行う（Issue #11 レビュー対応）: いったん
+    /// `<path>.tmp` に書いてから rename する。共有ファイルを GUI と MCP が
+    /// 読むため、書き込み途中の壊れた内容が読者に見えてはならない。
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), PersistenceError> {
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, json)?;
+        let tmp = std::path::PathBuf::from(format!("{}.tmp", path.display()));
+        std::fs::write(&tmp, json)?;
+        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 

@@ -317,3 +317,48 @@ fn project_file_backing_persists_across_server_instances() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn project_file_load_failure_disables_backing_and_preserves_file() {
+    // Issue #11 レビュー対応: 読み込めないファイルで起動した場合、
+    // 空プロジェクトで始めても元のファイルを上書きしてはならない
+    // （backing を無効化する。GUI 側 initial_project と同じ安全策）。
+    let path = std::env::temp_dir().join(format!(
+        "rust-studio-mcp-broken-{}.json",
+        std::process::id()
+    ));
+    let broken = "{\"name\": \"大切なプロジェクト\", \"tracks\": [";
+    std::fs::write(&path, broken).unwrap();
+
+    let server = studio_mcp::McpServer::with_project_file(path.clone());
+    let res = call_tool(
+        &server,
+        30,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    // メモリ上では操作できるが、ファイルは元のまま残る
+    assert_eq!(res["result"]["isError"], false);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn project_file_save_failure_is_reported_in_result() {
+    // 保存できない場所を backing にした場合、結果に persisted: false が
+    // 含まれ、成功と偽らないこと。
+    let path = std::env::temp_dir()
+        .join("rust-studio-no-such-dir-xyz")
+        .join("project.json");
+    let server = studio_mcp::McpServer::with_project_file(path);
+    let res = call_tool(
+        &server,
+        31,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let text = res["result"]["content"][0]["text"].as_str().unwrap();
+    let payload: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(payload["persisted"], false);
+}

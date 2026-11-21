@@ -85,3 +85,18 @@ fn load_of_missing_file_errors() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn save_is_atomic_and_leaves_no_temp_file() {
+    // Issue #11 レビュー対応: 保存は tmp + rename で行い、書き込み途中の
+    // 壊れたファイルが読者に見えないこと。tmp ファイルも残らない。
+    let project = sample_project();
+    let path = temp_path("atomic");
+    project.save_to_path(&path).unwrap();
+    assert!(path.exists());
+    let tmp = PathBuf::from(format!("{}.tmp", path.display()));
+    assert!(!tmp.exists(), "temp file must be renamed away");
+    let loaded = Project::load_from_path(&path).unwrap();
+    assert_eq!(loaded, project);
+    let _ = std::fs::remove_file(&path);
+}

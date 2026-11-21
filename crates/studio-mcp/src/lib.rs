@@ -39,27 +39,34 @@ impl McpServer {
     }
 
     /// プロジェクトファイルに backing されたサーバーを作る。
-    /// ファイルがあれば読み込む。読めない場合は警告を出して空の
-    /// プロジェクトから始める（壊れた内容を上書きで隠さないため、
-    /// 読み込み失敗そのものは保存を止めない）。
+    /// ファイルがあれば読み込む。**読み込みに失敗した場合は backing を
+    /// 無効化する**（Issue #11 レビュー対応）: 空プロジェクトで始めて
+    /// そのまま保存すると、元のファイルを消してしまうため。GUI 側の
+    /// `initial_project` と同じ安全策。
     pub fn with_project_file(path: std::path::PathBuf) -> Self {
-        let project = if path.exists() {
+        if path.exists() {
             match Project::load_from_path(&path) {
-                Ok(p) => p,
+                Ok(project) => McpServer {
+                    project: Mutex::new(project),
+                    project_file: Some(path),
+                },
                 Err(e) => {
                     eprintln!(
-                        "warning: cannot load project file {}: {e}; starting empty",
+                        "warning: cannot load project file {}: {e}; \
+                         starting empty with file backing DISABLED (the file is left untouched)",
                         path.display()
                     );
-                    Project::new("untitled")
+                    McpServer {
+                        project: Mutex::new(Project::new("untitled")),
+                        project_file: None,
+                    }
                 }
             }
         } else {
-            Project::new("untitled")
-        };
-        McpServer {
-            project: Mutex::new(project),
-            project_file: Some(path),
+            McpServer {
+                project: Mutex::new(Project::new("untitled")),
+                project_file: Some(path),
+            }
         }
     }
 
@@ -134,18 +141,23 @@ impl McpServer {
         match studio_core::apply(&mut project, &command) {
             Ok(created_id) => {
                 // プロジェクトファイル backing 時は、適用の成功をファイルへ
-                // 反映する（ADR-0010）。保存失敗は適用自体を取り消せないため、
-                // 結果は成功のまま警告だけ出す。
-                if let Some(path) = &self.project_file {
-                    if let Err(e) = project.save_to_path(path) {
-                        eprintln!("warning: cannot save project file {}: {e}", path.display());
-                    }
-                }
-                Ok(serde_json::to_string(&json!({
+                // 反映する（ADR-0010）。保存に失敗しても適用自体は取り消せ
+                // ないが、結果に `persisted: false` を含めて黙って成功と
+                // 偽らない（Issue #11 レビュー対応）。
+                let mut payload = json!({
                     "ok": true,
                     "created_id": created_id,
-                }))
-                .unwrap())
+                });
+                if let Some(path) = &self.project_file {
+                    match project.save_to_path(path) {
+                        Ok(()) => payload["persisted"] = json!(true),
+                        Err(e) => {
+                            eprintln!("warning: cannot save project file {}: {e}", path.display());
+                            payload["persisted"] = json!(false);
+                        }
+                    }
+                }
+                Ok(serde_json::to_string(&payload).unwrap())
             }
             Err(e) => Err(e.to_string()),
         }

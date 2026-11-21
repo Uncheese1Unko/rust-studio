@@ -203,6 +203,11 @@ fn watch_project_file(app: &App, model: &mut Model) {
     match Project::load_from_path(&path) {
         Ok(new_project) => {
             model.file_stamp = stamp;
+            // 外部変更で状態が差し替わるため、旧状態前提のドラッグは
+            // 打ち切る（Issue #11 レビュー対応）。
+            model.drag = None;
+            model.last_drag_cmd = None;
+            model.last_rejection = None;
             // ソース集合が変わったらメディアも準備し直す
             let mut new_sources: Vec<String> = new_project
                 .tracks
