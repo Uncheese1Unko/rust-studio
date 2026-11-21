@@ -162,6 +162,51 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
+/// プロジェクトのクリップが参照するソース一覧（ソート・重複なし）。
+/// 波形マップのキーとは別物で、配置用素材は含まない（Issue #16 の
+/// レビュー指摘: 再読込時の比較はこの一覧同士で行う）。
+fn project_sources(project: &Project) -> Vec<String> {
+    let mut sources: Vec<String> = project
+        .tracks
+        .iter()
+        .flat_map(|t| t.clips.iter().map(|c| c.source.clone()))
+        .collect();
+    sources.sort();
+    sources.dedup();
+    sources
+}
+
+/// 2つのプロジェクトでソース集合が変わったか。
+fn sources_changed(old: &Project, new: &Project) -> bool {
+    project_sources(old) != project_sources(new)
+}
+
+/// 波形と長さを再計算し、配置用素材（プロジェクトに現れないソース）
+/// の分も保持する。
+fn refresh_waveforms(
+    project: &Project,
+    dropped_source: &str,
+    waveforms: &mut HashMap<String, Vec<f32>>,
+    durations: &mut HashMap<String, i64>,
+) {
+    let (mut new_waveforms, mut new_durations) = compute_waveforms(project);
+    if !new_waveforms.contains_key(dropped_source) {
+        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(dropped_source)) {
+            new_waveforms.insert(
+                dropped_source.to_string(),
+                timeline::waveform_peaks(
+                    &decoded.samples,
+                    decoded.channels as usize,
+                    WAVEFORM_COLUMNS,
+                ),
+            );
+            new_durations.insert(dropped_source.to_string(), decoded.duration_ms());
+        }
+    }
+    *waveforms = new_waveforms;
+    *durations = new_durations;
+}
+
 /// プロジェクトのソース集合に対する波形と長さを計算する。
 fn compute_waveforms(project: &Project) -> (HashMap<String, Vec<f32>>, HashMap<String, i64>) {
     let mut waveforms = HashMap::new();
@@ -195,19 +240,9 @@ fn model(app: &App) -> Model {
     println!("daw (issue #14: timeline UI)");
     println!("{}", project.dump_json());
     println!("elements: {}", timeline::element_ids(&project).join(", "));
-    let (mut waveforms, mut source_durations) = compute_waveforms(&project);
+    let (mut waveforms, mut source_durations) = (HashMap::new(), HashMap::new());
     // 配置用素材も波形を用意しておく（配置直後から波形が出るように）
-    if let Ok(decoded) = audio::decode_audio(std::path::Path::new(&dropped)) {
-        waveforms.insert(
-            dropped.clone(),
-            timeline::waveform_peaks(
-                &decoded.samples,
-                decoded.channels as usize,
-                WAVEFORM_COLUMNS,
-            ),
-        );
-        source_durations.insert(dropped.clone(), decoded.duration_ms());
-    }
+    refresh_waveforms(&project, &dropped, &mut waveforms, &mut source_durations);
     let window = app
         .new_window()
         .size(960, 540)
@@ -344,20 +379,17 @@ fn watch_project_file(app: &App, model: &mut Model) {
             model.last_rejection = None;
             model.mixer_active = None;
             model.last_mixer_cmd = None;
-            let mut new_sources: Vec<String> = new_project
-                .tracks
-                .iter()
-                .flat_map(|t| t.clips.iter().map(|c| c.source.clone()))
-                .collect();
-            new_sources.sort();
-            new_sources.dedup();
-            let mut old_sources: Vec<String> = model.waveforms.keys().cloned().collect();
-            old_sources.sort();
+            // ソース集合の比較はプロジェクトのクリップ同士で行い、
+            // 再計算では配置用素材の波形を保持する（Issue #16 レビュー指摘）。
+            let changed = sources_changed(&model.project, &new_project);
             model.project = new_project;
-            if new_sources != old_sources {
-                let (waveforms, durations) = compute_waveforms(&model.project);
-                model.waveforms = waveforms;
-                model.source_durations = durations;
+            if changed {
+                refresh_waveforms(
+                    &model.project,
+                    &model.dropped_source,
+                    &mut model.waveforms,
+                    &mut model.source_durations,
+                );
             }
             println!("project reloaded: {}", model.project.dump_json());
         }
@@ -931,5 +963,91 @@ mod tests {
         let file_bytes = std::fs::read(&path).unwrap();
         assert_eq!(fnv1a(&file_bytes), fnv1a(project.dump_json().as_bytes()));
         let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::*;
+    use studio_core::TrackKind;
+
+    fn project_with_sources(sources: &[&str]) -> Project {
+        let mut p = Project::new("watch test");
+        let track = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        for (i, source) in sources.iter().enumerate() {
+            apply(
+                &mut p,
+                &Command::AddClip {
+                    track_id: track,
+                    name: format!("clip-{i}"),
+                    start_ms: i as i64 * 1000,
+                    duration_ms: 500,
+                    source: source.to_string(),
+                },
+            )
+            .unwrap();
+        }
+        p
+    }
+
+    #[test]
+    fn project_sources_lists_only_clip_sources_sorted() {
+        // Issue #16 レビュー指摘: 再読込時のソース比較は、波形マップの
+        // キー（配置用素材を含む）ではなくプロジェクトのクリップ
+        // ソース同士で行う。
+        let p = project_with_sources(&["b.wav", "a.wav", "b.wav"]);
+        assert_eq!(project_sources(&p), vec!["a.wav", "b.wav"]);
+    }
+
+    #[test]
+    fn sources_changed_detects_only_source_set_changes() {
+        let a = project_with_sources(&["a.wav"]);
+        let mut b = project_with_sources(&["a.wav"]);
+        // 配置が変わっただけでは変わらない
+        let clip_id = b.tracks[0].clips[0].id;
+        apply(
+            &mut b,
+            &Command::MoveClip {
+                clip_id,
+                new_start_ms: 300,
+            },
+        )
+        .unwrap();
+        assert!(!sources_changed(&a, &b));
+        // ソースが増えたら変わる
+        let c = project_with_sources(&["a.wav", "c.wav"]);
+        assert!(sources_changed(&a, &c));
+    }
+
+    #[test]
+    fn refresh_waveforms_keeps_the_dropped_source() {
+        // 再計算しても配置用素材の波形が消えないこと。
+        let dir = std::env::temp_dir().join(format!("daw-watch-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tone = dir.join("tone.wav");
+        let dropped = dir.join("dropped.wav");
+        write_tone(&tone, 440.0, 200);
+        write_tone(&dropped, 330.0, 200);
+        let tone_s = tone.to_string_lossy().to_string();
+        let dropped_s = dropped.to_string_lossy().to_string();
+        let p = project_with_sources(&[&tone_s]);
+        let mut waveforms = HashMap::new();
+        let mut durations = HashMap::new();
+        refresh_waveforms(&p, &dropped_s, &mut waveforms, &mut durations);
+        assert!(waveforms.contains_key(&tone_s), "clip source waveform");
+        assert!(
+            waveforms.contains_key(&dropped_s),
+            "dropped source waveform must be kept"
+        );
+        assert!(durations.contains_key(&dropped_s));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
