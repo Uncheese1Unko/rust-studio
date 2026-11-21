@@ -1,0 +1,11 @@
+target window: 0x200001
+selection served: text/uri-list
+XdndStatus: accepted=True
+XdndFinished received
+Traceback (most recent call last):
+  File "/home/hatch/workspace/dnd-probe/xdnd_source.py", line 225, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/hatch/workspace/dnd-probe/xdnd_source.py", line 219, in main
+    send_client(dpy, target, src, atom(dpy, "XdndLeave"), src, 0, 0, 0)
+TypeError: send_client() missing 1 required positional argument: 'l4'

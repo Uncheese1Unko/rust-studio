@@ -38,3 +38,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #58 DAW トラック／クリップの色付け（固定パレット） | [issue-0058-daw-track-clip-colors.md](issue-0058-daw-track-clip-colors.md) |
 | 2026-11-22 | #60 バグ修正: トラック追加・削除・リネームの境界ケース | [issue-0060-track-ops-edge-cases.md](issue-0060-track-ops-edge-cases.md) |
 | 2026-11-22 | #59 動画編集 GUI トラック／クリップの色付け（固定パレット） | [issue-0059-video-track-clip-colors.md](issue-0059-video-track-clip-colors.md) |
+| 2026-11-22 | #30 調査: ドラッグ＆ドロップ取り込みの可否と検証方法 | [issue-0030-drag-drop-investigation.md](issue-0030-drag-drop-investigation.md) |
