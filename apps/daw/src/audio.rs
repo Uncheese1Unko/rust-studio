@@ -651,8 +651,7 @@ mod review_fix_tests {
     fn decode_24bit_wav_normalizes_by_bit_depth() {
         // Issue #13 レビュー指摘: 正規化はビット深度依存なので、
         // 16bit 以外（24bit）でも振幅が保たれることを固定する。
-        let path =
-            std::env::temp_dir().join(format!("daw-decode24-{}.wav", std::process::id()));
+        let path = std::env::temp_dir().join(format!("daw-decode24-{}.wav", std::process::id()));
         let spec = hound::WavSpec {
             channels: 1,
             sample_rate: RATE,
