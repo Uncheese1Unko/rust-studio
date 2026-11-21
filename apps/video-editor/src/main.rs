@@ -9,6 +9,7 @@
 //! 要素識別子の一覧を標準出力に出す（ADR-0005 の観測経路）。
 
 mod edit;
+mod media;
 mod timeline;
 
 use nannou::prelude::*;
@@ -24,7 +25,18 @@ struct Model {
     last_rejection: Option<String>,
     prev_left_down: bool,
     clicks: edit::ClickTracker,
+    // Issue #10: プレビュー再生の状態。
+    frames: media::FrameStore,
+    textures: std::collections::HashMap<std::path::PathBuf, wgpu::Texture>,
+    last_preview: Option<(String, i64, usize)>,
 }
+
+/// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
+const PREVIEW_X: f32 = 500.0;
+const PREVIEW_Y: f32 = 150.0;
+const PREVIEW_W: f32 = 440.0;
+const PREVIEW_H: f32 = 248.0;
+const PREVIEW_ID: &str = "preview";
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -77,7 +89,12 @@ fn model(app: &App) -> Model {
     // 観測経路（ADR-0005）: 画面に描かれる状態と同一のダンプを出す。
     println!("video-editor (issue #8: timeline UI)");
     println!("{}", project.dump_json());
-    println!("elements: {}", timeline::element_ids(&project).join(", "));
+    println!(
+        "elements: {}, {PREVIEW_ID}",
+        timeline::element_ids(&project).join(", ")
+    );
+    // メディア層（Issue #10）: フレーム列を準備し、テクスチャを読み込む。
+    let frames = media::prepare_media(&project);
     let window = app
         .new_window()
         .size(960, 540)
@@ -85,6 +102,26 @@ fn model(app: &App) -> Model {
         .view(view)
         .build()
         .unwrap();
+    let mut textures = std::collections::HashMap::new();
+    for track in &project.tracks {
+        for clip in &track.clips {
+            let count = frames.frame_count(&clip.source);
+            for i in 0..count {
+                if let Some(path) = frames.frame_path(&clip.source, (i * 100) as i64) {
+                    if textures.contains_key(path) {
+                        continue;
+                    }
+                    match wgpu::Texture::from_path(app, path) {
+                        Ok(texture) => {
+                            textures.insert(path.to_path_buf(), texture);
+                        }
+                        Err(e) => println!("warning: cannot load texture {}: {e}", path.display()),
+                    }
+                }
+            }
+        }
+    }
+    println!("preview textures loaded: {}", textures.len());
     Model {
         _window: window,
         project,
@@ -94,6 +131,9 @@ fn model(app: &App) -> Model {
         last_rejection: None,
         prev_left_down: false,
         clicks: edit::ClickTracker::new(),
+        frames,
+        textures,
+        last_preview: None,
     }
 }
 
@@ -103,6 +143,22 @@ fn update(app: &App, model: &mut Model, update: Update) {
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(&model.project);
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end_ms);
+
+    // プレビューの表示フレームが変わったら観測用に記録する（Issue #10）。
+    let current = media::active_video_clip(&model.project, model.playhead_ms).and_then(|clip| {
+        let source_time = media::source_time_ms(clip, model.playhead_ms)?;
+        let frame = media::frame_index(source_time, model.frames.fps);
+        Some((clip.source.clone(), source_time, frame))
+    });
+    if current != model.last_preview {
+        if let Some((source, source_time, frame)) = &current {
+            println!(
+                "preview: source={source} playhead={} source_time={source_time} frame={frame}",
+                model.playhead_ms
+            );
+        }
+        model.last_preview = current;
+    }
 }
 
 /// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #9）。
@@ -229,6 +285,35 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .x_y(cx, cy)
                 .font_size(11)
                 .color(rgb(0.05, 0.05, 0.08));
+        }
+    }
+
+    // プレビュー（preview）: 再生ヘッド位置の映像クリップのフレームを表示する。
+    let (pvx, pvy) = rect_center(win, PREVIEW_X, PREVIEW_Y, PREVIEW_W, PREVIEW_H);
+    draw.rect()
+        .x_y(pvx, pvy)
+        .w_h(PREVIEW_W, PREVIEW_H)
+        .color(rgb(0.04, 0.04, 0.05));
+    match media::active_video_clip(&model.project, model.playhead_ms) {
+        Some(clip) => {
+            let source_time = media::source_time_ms(clip, model.playhead_ms).unwrap_or(0);
+            if let Some(path) = model.frames.frame_path(&clip.source, source_time) {
+                if let Some(texture) = model.textures.get(path) {
+                    draw.texture(texture)
+                        .x_y(pvx, pvy)
+                        .w_h(PREVIEW_W, PREVIEW_H);
+                }
+            }
+            draw.text(&format!("{} @ {}ms", clip.name, source_time))
+                .x_y(pvx, pvy + PREVIEW_H / 2.0 + 14.0)
+                .font_size(11)
+                .color(rgb(0.65, 0.65, 0.70));
+        }
+        None => {
+            draw.text("preview: no video clip")
+                .x_y(pvx, pvy)
+                .font_size(12)
+                .color(rgb(0.45, 0.45, 0.50));
         }
     }
 
