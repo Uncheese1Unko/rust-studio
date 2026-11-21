@@ -32,3 +32,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #27 再生状態のライブ表示（トランスポート） | [issue-0027-transport-live-display.md](issue-0027-transport-live-display.md) |
 | 2026-11-21 | #20 DAW ビジュアルデザイン（参照動画基準、#23〜#27 の締め） | [issue-0020-daw-visual-design.md](issue-0020-daw-visual-design.md) |
 | 2026-11-21 | #28 DAW ピッチ表示のテーマ色統一（金色リテラル → TEXT_SUB） | [issue-0028-pitch-label-theme-color.md](issue-0028-pitch-label-theme-color.md) |
+| 2026-11-22 | #55 トラック名を後から変更できる（RenameTrack コマンドと MCP 公開） | [issue-0055-rename-track.md](issue-0055-rename-track.md) |
