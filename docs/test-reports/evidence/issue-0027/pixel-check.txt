@@ -1,0 +1,2 @@
+shot1-normal.png meter teal: 2777 meter accent: 0 progress accent: 923
+shot2-peak.png meter teal: 0 meter accent: 3089 progress accent: 2445

@@ -29,3 +29,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #24 タイムライン画面へのテーマ適用 | [issue-0024-timeline-theme.md](issue-0024-timeline-theme.md) |
 | 2026-11-21 | #25 ミキサー画面へのテーマ適用 | [issue-0025-mixer-theme.md](issue-0025-mixer-theme.md) |
 | 2026-11-21 | #26 サンプラー画面へのテーマ適用 | [issue-0026-sampler-theme.md](issue-0026-sampler-theme.md) |
+| 2026-11-21 | #27 再生状態のライブ表示（トランスポート） | [issue-0027-transport-live-display.md](issue-0027-transport-live-display.md) |
