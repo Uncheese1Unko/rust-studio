@@ -15,6 +15,11 @@ mod audio;
 mod edit;
 mod mixer;
 mod sampler;
+// theme は配色表の全色を先に定義する土台（Issue #23）。アクセント系と
+// トランスポート系の定数は後続 PBI（#24〜#27）で使うため、未使用の
+// 警告をモジュール単位で抑止する。
+#[allow(dead_code)]
+mod theme;
 mod timeline;
 
 use std::collections::HashMap;
@@ -635,40 +640,78 @@ fn rect_center(win: Rect, x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
     (x + w / 2.0 - win.w() / 2.0, win.h() / 2.0 - (y + h / 2.0))
 }
 
+/// パネルラベル（連番＋大文字の小ラベル）を、左上原点ピクセル座標の
+/// 点を中心に描く（デザイン文書「タイポグラフィとパネルラベル」、
+/// Issue #23）。色はグレージュ、サイズは theme の定数。
+fn draw_panel_label(draw: &Draw, win: Rect, label: &str, cx: f32, cy: f32) {
+    let (r, g, b) = theme::TEXT_SUB;
+    draw.text(label)
+        .x_y(cx - win.w() / 2.0, win.h() / 2.0 - cy)
+        .font_size(theme::LABEL_FONT_SIZE)
+        .color(rgb(r, g, b));
+}
+
+/// 1px の横線（区切り線）を左上原点ピクセル座標で描く。
+fn draw_hline(draw: &Draw, win: Rect, y: f32, color: theme::Rgb) {
+    let (cx, cy) = rect_center(win, 0.0, y, win.w(), 1.0);
+    draw.rect()
+        .x_y(cx, cy)
+        .w_h(win.w(), 1.0)
+        .color(rgb(color.0, color.1, color.2));
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     let win = app.window_rect();
-    draw.background().color(rgb(0.09, 0.09, 0.11));
+    let (bg_r, bg_g, bg_b) = theme::BACKGROUND;
+    draw.background().color(rgb(bg_r, bg_g, bg_b));
 
     // ルーラー（timeline.ruler）: 帯＋1秒ごとの目盛りと秒ラベル。
     let (rx, ry) = rect_center(win, 0.0, 0.0, win.w(), timeline::RULER_HEIGHT_PX);
+    let (r, g, b) = theme::PANEL_SUNK;
     draw.rect()
         .x_y(rx, ry)
         .w_h(win.w(), timeline::RULER_HEIGHT_PX)
-        .color(rgb(0.13, 0.13, 0.16));
+        .color(rgb(r, g, b));
+    draw_hline(&draw, win, timeline::RULER_HEIGHT_PX - 1.0, theme::LINE);
+    draw_panel_label(
+        &draw,
+        win,
+        theme::TIMELINE_LABEL,
+        44.0,
+        timeline::RULER_HEIGHT_PX / 2.0,
+    );
     for sec in 0..=(timeline::VIEW_DURATION_MS / 1_000) {
         let x = timeline::time_to_x(sec * 1_000, win.w());
         let nx = x - win.w() / 2.0;
+        let (r, g, b) = theme::LINE;
         draw.line()
             .start(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX))
             .end(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX + 6.0))
             .weight(1.0)
-            .color(rgb(0.55, 0.55, 0.60));
+            .color(rgb(r, g, b));
+        let (r, g, b) = theme::TEXT_SUB;
         draw.text(&format!("{sec}s"))
             .x_y(nx + 10.0, win.h() / 2.0 - timeline::RULER_HEIGHT_PX / 2.0)
             .font_size(10)
-            .color(rgb(0.65, 0.65, 0.70));
+            .color(rgb(r, g, b));
     }
 
     // トラック行（timeline.track.<id>）。
     for (index, track) in model.project.tracks.iter().enumerate() {
         let top = timeline::track_top_y(index);
         let (bx, by) = rect_center(win, 0.0, top, win.w(), timeline::TRACK_HEIGHT_PX);
-        let shade = if index % 2 == 0 { 0.11 } else { 0.14 };
+        let (r, g, b) = theme::PANEL;
         draw.rect()
             .x_y(bx, by)
             .w_h(win.w(), timeline::TRACK_HEIGHT_PX)
-            .color(rgb(shade, shade, shade + 0.02));
+            .color(rgb(r, g, b));
+        draw_hline(
+            &draw,
+            win,
+            top + timeline::TRACK_HEIGHT_PX - 1.0,
+            theme::LINE,
+        );
         let (hx, hy) = rect_center(
             win,
             0.0,
@@ -676,14 +719,16 @@ fn view(app: &App, model: &Model, frame: Frame) {
             timeline::HEADER_WIDTH_PX,
             timeline::TRACK_HEIGHT_PX,
         );
+        let (r, g, b) = theme::PANEL_SUNK;
         draw.rect()
             .x_y(hx, hy)
             .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
-            .color(rgb(0.17, 0.17, 0.20));
+            .color(rgb(r, g, b));
+        let (r, g, b) = theme::TEXT;
         draw.text(&track.name)
             .x_y(hx, hy)
             .font_size(13)
-            .color(rgb(0.85, 0.85, 0.88));
+            .color(rgb(r, g, b));
     }
 
     // クリップ（timeline.clip.<id>）＋波形の概形。
@@ -719,10 +764,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
                     }
                 }
             }
-            draw.text(&clip.name)
-                .x_y(cx, cy)
-                .font_size(11)
-                .color(rgb(0.05, 0.05, 0.08));
+            draw.text(&clip.name).x_y(cx, cy).font_size(11).color(rgb(
+                theme::TEXT.0,
+                theme::TEXT.1,
+                theme::TEXT.2,
+            ));
         }
     }
 
@@ -733,10 +779,15 @@ fn view(app: &App, model: &Model, frame: Frame) {
         let p = mixer::pan_rect(count, index);
         let top = mixer::mixer_top_y(count) + index as f32 * mixer::STRIP_HEIGHT_PX;
         let (sx, sy) = rect_center(win, 0.0, top, win.w(), mixer::STRIP_HEIGHT_PX);
+        let (r, g, b) = theme::PANEL;
         draw.rect()
             .x_y(sx, sy)
             .w_h(win.w(), mixer::STRIP_HEIGHT_PX)
-            .color(rgb(0.10, 0.10, 0.12));
+            .color(rgb(r, g, b));
+        draw_hline(&draw, win, top, theme::LINE);
+        if index == 0 {
+            draw_panel_label(&draw, win, theme::MIXER_LABEL, 40.0, top + 7.0);
+        }
         // ラベルと現在値
         draw.text(&format!("{} VOL {:.2}", track.name, track.volume))
             .x_y(
@@ -790,6 +841,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     // サンプラーの鍵盤（Issue #19）: 13 鍵を下部に描き、発音中を灯す。
     {
+        draw_panel_label(&draw, win, theme::SAMPLER_LABEL, 40.0, win.h() - 100.0);
         let active: Vec<i32> = model
             .sampler
             .as_ref()
