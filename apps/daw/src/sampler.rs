@@ -29,6 +29,29 @@ pub fn key_to_semitone(key: char) -> Option<i32> {
     }
 }
 
+/// 半音数→音名（Issue #26）。鍵盤の黒鍵位置（1,3,6,8,10）が
+/// C 始まりのピアノ配置なので、ルート（0 半音）を C として音名を
+/// 付ける。オクターブ番号は付けない（素材の実音高は素材依存のため）。
+pub fn note_name(semitones: i32) -> &'static str {
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+    NAMES[semitones.rem_euclid(12) as usize]
+}
+
+/// 大きなピッチ表示に出す音（Issue #26）: 最後に鳴らした音が
+/// 発音中ならそれを、終わっていれば発音中の最高音を、発音中の
+/// 音が無ければ None を返す（和音で最後の音だけ離したときの
+/// フォールバック）。
+pub fn display_note(last: Option<i32>, active: &[i32]) -> Option<i32> {
+    if let Some(s) = last {
+        if active.contains(&s) {
+            return Some(s);
+        }
+    }
+    active.iter().max().copied()
+}
+
 /// 発音中の1音。ピッチ変更済みの音声を持ち、再生位置が進む。
 #[derive(Debug, Clone)]
 pub struct Voice {
@@ -179,6 +202,31 @@ mod tests {
 
     fn sampler_220() -> Sampler {
         Sampler::new("tone.wav".into(), sine(220.0, 1000, 0.4))
+    }
+
+    #[test]
+    fn note_names_follow_the_keyboard_layout() {
+        // Issue #26: 現在のピッチを音名でも出すための変換。鍵盤の
+        // 黒鍵位置（1,3,6,8,10）が C 始まりの配置なので、ルートを
+        // C として音名を付ける。
+        assert_eq!(note_name(0), "C");
+        assert_eq!(note_name(1), "C#");
+        assert_eq!(note_name(4), "E");
+        assert_eq!(note_name(7), "G");
+        assert_eq!(note_name(11), "B");
+        assert_eq!(note_name(12), "C");
+        assert_eq!(note_name(13), "C#");
+    }
+
+    #[test]
+    fn display_note_prefers_last_played_then_highest_active() {
+        // Issue #26 レビュー指摘: 最後に鳴らした音が終わっても、
+        // 他の音が発音中なら大きなピッチ表示は残る音を出す。
+        assert_eq!(display_note(Some(5), &[5, 7]), Some(5));
+        assert_eq!(display_note(Some(5), &[0, 7]), Some(7));
+        assert_eq!(display_note(None, &[3]), Some(3));
+        assert_eq!(display_note(Some(5), &[]), None);
+        assert_eq!(display_note(None, &[]), None);
     }
 
     #[test]

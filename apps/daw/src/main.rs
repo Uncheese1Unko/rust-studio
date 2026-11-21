@@ -124,6 +124,9 @@ struct Model {
     /// 選択中トラック（GUI の表示状態。プロジェクト状態ではない、
     /// Issue #25）。現在値を大きく出す対象。
     selected_track: Option<u64>,
+    /// 最後にノートオンした半音数（GUI の表示状態、Issue #26）。
+    /// 現在のピッチの大きな表示に使う。
+    sampler_last: Option<i32>,
     last_mixer_cmd: Option<Command>,
     // Issue #16: プロジェクトファイル共有モードの状態（#11 と同じ方式）。
     project_file: Option<std::path::PathBuf>,
@@ -272,6 +275,7 @@ fn model(app: &App) -> Model {
         source_durations,
         dropped_source: dropped,
         mixer_active: None,
+        sampler_last: None,
         last_mixer_cmd: None,
         project_file,
         file_stamp,
@@ -487,6 +491,7 @@ fn handle_sampler_keys(app: &App, model: &mut Model) {
             }
             if let Some(sampler) = &mut model.sampler {
                 sampler.note_on(semitones);
+                model.sampler_last = Some(semitones);
                 println!(
                     "note on: {:+}, active: {:?}",
                     semitones,
@@ -958,19 +963,36 @@ fn view(app: &App, model: &Model, frame: Frame) {
         let x0 = -win.w() / 2.0 + 24.0;
         let y = -win.h() / 2.0 + 52.0;
         for i in 0..13i32 {
-            let cx = x0 + (i as f32 + 0.5) * key_w;
             let is_active = active.contains(&i);
-            let (r, g, b) = if is_active {
-                (0.95, 0.75, 0.35)
+            // 鍵は角丸チップ（Issue #26）: 白鍵はペールクリーム面＋
+            // グレージュの縁、黒鍵はウォームブラック、発音中だけ
+            // ホットピンク（デザイン文書の強調原則）。
+            let (edge, face) = if is_active {
+                (theme::ACCENT, theme::ACCENT)
             } else if [1, 3, 6, 8, 10].contains(&i) {
-                (0.16, 0.16, 0.20)
+                (theme::TEXT, theme::TEXT)
             } else {
-                (0.55, 0.55, 0.60)
+                (theme::LINE, theme::PANEL)
             };
-            draw.rect()
-                .x_y(cx, y)
-                .w_h(key_w - 3.0, key_h)
-                .color(rgb(r, g, b));
+            let chip = mixer::Rect {
+                x: 24.0 + i as f32 * key_w + 1.5,
+                y: win.h() - 69.0,
+                w: key_w - 3.0,
+                h: key_h,
+            };
+            draw_rounded_rect(&draw, win, chip, theme::CHIP_CORNER_RADIUS, edge);
+            draw_rounded_rect(
+                &draw,
+                win,
+                mixer::Rect {
+                    x: chip.x + 1.5,
+                    y: chip.y + 1.5,
+                    w: chip.w - 3.0,
+                    h: chip.h - 3.0,
+                },
+                2.5,
+                face,
+            );
         }
         let sampler_label = match &model.sampler {
             Some(s) => format!(
@@ -983,7 +1005,16 @@ fn view(app: &App, model: &Model, frame: Frame) {
         draw.text(&sampler_label)
             .x_y(x0 + 13.0 * key_w / 2.0, y + key_h / 2.0 + 12.0)
             .font_size(11)
-            .color(rgb(0.80, 0.80, 0.85));
+            .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        // 現在のピッチ: 発音中の音（最後に鳴らした音を優先）を、
+        // 半音数と音名で大きく出す（Issue #26、デザイン文書の
+        // ライブ感の要素）。
+        if let Some(semi) = sampler::display_note(model.sampler_last, &active) {
+            draw.text(&format!("{:+} st · {}", semi, sampler::note_name(semi)))
+                .x_y(700.0 - win.w() / 2.0, y)
+                .font_size(theme::VALUE_FONT_SIZE)
+                .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+        }
     }
 
     // 再生ヘッド（timeline.playhead）: 黒の細線＋現在の小節チップ
