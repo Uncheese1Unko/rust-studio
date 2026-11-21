@@ -34,3 +34,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #28 DAW ピッチ表示のテーマ色統一（金色リテラル → TEXT_SUB） | [issue-0028-pitch-label-theme-color.md](issue-0028-pitch-label-theme-color.md) |
 | 2026-11-22 | #55 トラック名を後から変更できる（RenameTrack コマンドと MCP 公開） | [issue-0055-rename-track.md](issue-0055-rename-track.md) |
 | 2026-11-22 | #56 DAW GUI トラックの追加・削除・リネーム | [issue-0056-daw-track-add-remove-rename.md](issue-0056-daw-track-add-remove-rename.md) |
+| 2026-11-22 | #57 動画編集 GUI トラック（レイヤー）の追加・削除・リネーム | [issue-0057-video-track-add-remove-rename.md](issue-0057-video-track-add-remove-rename.md) |
