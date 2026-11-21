@@ -37,3 +37,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #57 動画編集 GUI トラック（レイヤー）の追加・削除・リネーム | [issue-0057-video-track-add-remove-rename.md](issue-0057-video-track-add-remove-rename.md) |
 | 2026-11-22 | #58 DAW トラック／クリップの色付け（固定パレット） | [issue-0058-daw-track-clip-colors.md](issue-0058-daw-track-clip-colors.md) |
 | 2026-11-22 | #60 バグ修正: トラック追加・削除・リネームの境界ケース | [issue-0060-track-ops-edge-cases.md](issue-0060-track-ops-edge-cases.md) |
+| 2026-11-22 | #59 動画編集 GUI トラック／クリップの色付け（固定パレット） | [issue-0059-video-track-clip-colors.md](issue-0059-video-track-clip-colors.md) |
