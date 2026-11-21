@@ -17,3 +17,6 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-21 | #9 クリップの配置・移動・トリミング（コマンド経由） | [issue-0009-clip-editing.md](issue-0009-clip-editing.md) |
 | 2026-11-21 | #10 プレビュー再生（映像の最小経路） | [issue-0010-preview-playback.md](issue-0010-preview-playback.md) |
 | 2026-11-21 | #21 人物切り抜き方式の調査 | [issue-0021-person-cutout-investigation.md](issue-0021-person-cutout-investigation.md) |
+| 2026-11-21 | #14 DAW タイムライン UI とクリップ操作・波形表示 | [issue-0014-daw-timeline-ui.md](issue-0014-daw-timeline-ui.md) |
+| 2026-11-21 | #16 DAW の MCP 編集受け入れ | [issue-0016-daw-mcp-acceptance.md](issue-0016-daw-mcp-acceptance.md) |
+| 2026-11-21 | #18 クリップのピッチ変更（性質を保つ） | [issue-0018-clip-pitch.md](issue-0018-clip-pitch.md) |
