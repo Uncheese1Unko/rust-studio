@@ -1,21 +1,37 @@
-//! daw: Reaper 風の DAW。
+//! daw: Reaper 風の DAW（nannou）。
 //!
-//! Issue #13 で音声再生エンジン（`audio` モジュール）を実装した。
-//! このバイナリはデモプロジェクトをコマンド経由で組み立て、デモ音源を
-//! デコードし、ミックスを WAV に書き出し、再生状態機械の遷移を表示する。
-//! GUI は #14、実デバイスへの音声出力は実機確認のうえ別途行う
-//! （本環境に音声デバイスはなく、実音は未検証）。
+//! Issue #13 で音声再生エンジン（`audio`）、Issue #14 でタイムライン UI と
+//! クリップ配置・移動・トリム、波形表示を実装した。操作の意味論は
+//! video-editor と同じ（コアのコマンドに揃える）。
 //! 状態の変更は studio-core のコマンド層経由でのみ行う（ADR-0004）。
+//! 実デバイスへの音声出力は実機未検証（エンジンのレンダリングと状態は
+//! テストで固定済み）。
+//!
+//! 起動モード:
+//! - 既定: GUI（タイムライン）
+//! - `--engine-demo`: #13 のコンソールデモ（ミックス書き出しと再生遷移）
 
 mod audio;
+mod edit;
+mod timeline;
 
 use std::collections::HashMap;
 
+use nannou::prelude::*;
 use studio_core::{apply, Command, Project, TrackKind};
 
 const RATE: u32 = 44100;
+/// 波形ピークの事前計算本数（ソース全体に対して）。
+const WAVEFORM_COLUMNS: usize = 1024;
+
+fn media_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("rust-studio-daw-media")
+}
 
 fn write_tone(path: &std::path::Path, freq: f32, ms: i64) {
+    if path.exists() {
+        return;
+    }
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: RATE,
@@ -31,7 +47,302 @@ fn write_tone(path: &std::path::Path, freq: f32, ms: i64) {
     writer.finalize().unwrap();
 }
 
-fn demo_project(dir: &std::path::Path) -> Project {
+/// デモ素材を用意し、パスを返す（220Hz / 440Hz / 配置用 330Hz）。
+fn prepare_demo_media() -> (String, String, String) {
+    let dir = media_dir();
+    std::fs::create_dir_all(&dir).unwrap();
+    write_tone(&dir.join("tone220.wav"), 220.0, 2500);
+    write_tone(&dir.join("tone440.wav"), 440.0, 2500);
+    write_tone(&dir.join("demo-dropped.wav"), 330.0, 2500);
+    (
+        dir.join("tone220.wav").to_string_lossy().into_owned(),
+        dir.join("tone440.wav").to_string_lossy().into_owned(),
+        dir.join("demo-dropped.wav").to_string_lossy().into_owned(),
+    )
+}
+
+/// デモプロジェクトはコマンド経由でのみ組み立てる（ADR-0004）。
+fn demo_project(tone220: &str, tone440: &str) -> Project {
+    let mut project = Project::new("daw demo session");
+    let track = apply(
+        &mut project,
+        &Command::AddTrack {
+            name: "A1".into(),
+            kind: TrackKind::Audio,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    apply(
+        &mut project,
+        &Command::AddClip {
+            track_id: track,
+            name: "tone-220".into(),
+            start_ms: 0,
+            duration_ms: 2000,
+            source: tone220.into(),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut project,
+        &Command::AddClip {
+            track_id: track,
+            name: "tone-440".into(),
+            start_ms: 2500,
+            duration_ms: 2000,
+            source: tone440.into(),
+        },
+    )
+    .unwrap();
+    project
+}
+
+struct Model {
+    _window: WindowId,
+    project: Project,
+    playhead_ms: i64,
+    drag: Option<edit::Drag>,
+    last_drag_cmd: Option<Command>,
+    last_rejection: Option<String>,
+    prev_left_down: bool,
+    clicks: edit::ClickTracker,
+    /// ソースごとの波形ピーク（全体を WAVEFORM_COLUMNS 本で事前計算）。
+    waveforms: HashMap<String, Vec<f32>>,
+    /// ソースごとの長さ（ms）。波形の切り出しに使う。
+    source_durations: HashMap<String, i64>,
+    dropped_source: String,
+}
+
+fn model(app: &App) -> Model {
+    let (tone220, tone440, dropped) = prepare_demo_media();
+    let project = demo_project(&tone220, &tone440);
+    println!("daw (issue #14: timeline UI)");
+    println!("{}", project.dump_json());
+    println!("elements: {}", timeline::element_ids(&project).join(", "));
+    // 波形の事前計算（デコードは audio エンジン経由）
+    let mut waveforms = HashMap::new();
+    let mut source_durations = HashMap::new();
+    for source in [tone220, tone440, dropped.clone()] {
+        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(&source)) {
+            waveforms.insert(
+                source.clone(),
+                timeline::waveform_peaks(
+                    &decoded.samples,
+                    decoded.channels as usize,
+                    WAVEFORM_COLUMNS,
+                ),
+            );
+            source_durations.insert(source, decoded.duration_ms());
+        }
+    }
+    let window = app
+        .new_window()
+        .size(960, 540)
+        .title("daw")
+        .view(view)
+        .build()
+        .unwrap();
+    Model {
+        _window: window,
+        project,
+        playhead_ms: 0,
+        drag: None,
+        last_drag_cmd: None,
+        last_rejection: None,
+        prev_left_down: false,
+        clicks: edit::ClickTracker::new(),
+        waveforms,
+        source_durations,
+        dropped_source: dropped,
+    }
+}
+
+fn main() {
+    if std::env::args().any(|a| a == "--engine-demo") {
+        engine_demo();
+        return;
+    }
+    nannou::app(model).update(update).run();
+}
+
+fn update(app: &App, model: &mut Model, update: Update) {
+    handle_pointer(app, model);
+    let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
+    let end = timeline::project_end_ms(&model.project);
+    model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end);
+}
+
+/// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #14、
+/// video-editor と同じ意味論）。押下でドラッグ開始（またはダブルクリック
+/// で配置）、ドラッグ中は候補コマンドが変わるたびに適用し、解放時に
+/// 状態ダンプを出す。範囲外の候補はコマンド層が弾く。
+fn handle_pointer(app: &App, model: &mut Model) {
+    let win = app.window_rect();
+    // nannou の中心原点座標を、レイアウトの左上原点ピクセルへ変換する。
+    let lx = app.mouse.x + win.w() / 2.0;
+    let ly = win.h() / 2.0 - app.mouse.y;
+    let left_down = app.mouse.buttons.left().is_down();
+    let pointer_ms = edit::x_to_ms(lx, win.w());
+
+    if left_down && !model.prev_left_down {
+        let target = edit::hit_test(&model.project, win.w(), lx, ly);
+        if let Some(drag) = edit::Drag::begin(&model.project, &target, pointer_ms) {
+            model.drag = Some(drag);
+            model.last_drag_cmd = None;
+            model.last_rejection = None;
+        } else if let edit::HitTarget::Empty { track_index } = target {
+            let now_ms = (app.time * 1_000.0) as u64;
+            if model.clicks.register(now_ms, lx, ly) {
+                if let Some(cmd) = edit::place_clip_command(
+                    &model.project,
+                    track_index,
+                    pointer_ms,
+                    &model.dropped_source,
+                ) {
+                    match apply(&mut model.project, &cmd) {
+                        Ok(_) => println!("placed: {}", model.project.dump_json()),
+                        Err(e) => println!("command rejected: {e}"),
+                    }
+                }
+            }
+        }
+    }
+
+    if left_down {
+        if let Some(drag) = &model.drag {
+            let cmd = drag.command_for(pointer_ms);
+            if model.last_drag_cmd.as_ref() != Some(&cmd) {
+                match apply(&mut model.project, &cmd) {
+                    Ok(_) => model.last_drag_cmd = Some(cmd),
+                    Err(e) => model.last_rejection = Some(e.to_string()),
+                }
+            }
+        }
+    }
+
+    if !left_down && model.prev_left_down && model.drag.take().is_some() {
+        println!("after drag: {}", model.project.dump_json());
+        if let Some(rejection) = model.last_rejection.take() {
+            println!("command rejected during drag: {rejection}");
+        }
+        model.last_drag_cmd = None;
+    }
+
+    model.prev_left_down = left_down;
+}
+
+/// 左上原点ピクセル（x, y, w, h）を nannou の中心原点の矩形中心に変換する。
+fn rect_center(win: Rect, x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
+    (x + w / 2.0 - win.w() / 2.0, win.h() / 2.0 - (y + h / 2.0))
+}
+
+fn view(app: &App, model: &Model, frame: Frame) {
+    let draw = app.draw();
+    let win = app.window_rect();
+    draw.background().color(rgb(0.09, 0.09, 0.11));
+
+    // ルーラー（timeline.ruler）: 帯＋1秒ごとの目盛りと秒ラベル。
+    let (rx, ry) = rect_center(win, 0.0, 0.0, win.w(), timeline::RULER_HEIGHT_PX);
+    draw.rect()
+        .x_y(rx, ry)
+        .w_h(win.w(), timeline::RULER_HEIGHT_PX)
+        .color(rgb(0.13, 0.13, 0.16));
+    for sec in 0..=(timeline::VIEW_DURATION_MS / 1_000) {
+        let x = timeline::time_to_x(sec * 1_000, win.w());
+        let nx = x - win.w() / 2.0;
+        draw.line()
+            .start(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX))
+            .end(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX + 6.0))
+            .weight(1.0)
+            .color(rgb(0.55, 0.55, 0.60));
+        draw.text(&format!("{sec}s"))
+            .x_y(nx + 10.0, win.h() / 2.0 - timeline::RULER_HEIGHT_PX / 2.0)
+            .font_size(10)
+            .color(rgb(0.65, 0.65, 0.70));
+    }
+
+    // トラック行（timeline.track.<id>）。
+    for (index, track) in model.project.tracks.iter().enumerate() {
+        let top = timeline::track_top_y(index);
+        let (bx, by) = rect_center(win, 0.0, top, win.w(), timeline::TRACK_HEIGHT_PX);
+        let shade = if index % 2 == 0 { 0.11 } else { 0.14 };
+        draw.rect()
+            .x_y(bx, by)
+            .w_h(win.w(), timeline::TRACK_HEIGHT_PX)
+            .color(rgb(shade, shade, shade + 0.02));
+        let (hx, hy) = rect_center(
+            win,
+            0.0,
+            top,
+            timeline::HEADER_WIDTH_PX,
+            timeline::TRACK_HEIGHT_PX,
+        );
+        draw.rect()
+            .x_y(hx, hy)
+            .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
+            .color(rgb(0.17, 0.17, 0.20));
+        draw.text(&track.name)
+            .x_y(hx, hy)
+            .font_size(13)
+            .color(rgb(0.85, 0.85, 0.88));
+    }
+
+    // クリップ（timeline.clip.<id>）＋波形の概形。
+    for rect in timeline::layout_clips(&model.project, win.w()) {
+        let (r, g, b) = timeline::clip_color(rect.kind);
+        let inner_y = rect.y + 4.0;
+        let inner_h = rect.h - 8.0;
+        let (cx, cy) = rect_center(win, rect.x, inner_y, rect.w, inner_h);
+        draw.rect()
+            .x_y(cx, cy)
+            .w_h(rect.w, inner_h)
+            .color(rgb(r, g, b));
+        if let Some((_, clip)) = model.project.clip(rect.clip_id) {
+            // 波形: クリップの表示範囲に対応するピークを縦線で描く。
+            if let (Some(peaks), Some(&src_ms)) = (
+                model.waveforms.get(&clip.source),
+                model.source_durations.get(&clip.source),
+            ) {
+                if src_ms > 0 && rect.w >= 1.0 {
+                    let mid_y = win.h() / 2.0 - (inner_y + inner_h / 2.0);
+                    let cols = rect.w as usize;
+                    for col in 0..cols {
+                        let offset_ms = (col as f32 / rect.w) * clip.duration_ms as f32;
+                        let frac = offset_ms / src_ms as f32;
+                        let idx = (frac.clamp(0.0, 1.0) * (peaks.len() - 1) as f32) as usize;
+                        let half = (peaks[idx] * inner_h / 2.0).max(0.5);
+                        let nx = rect.x + col as f32 + 0.5 - win.w() / 2.0;
+                        draw.line()
+                            .start(pt2(nx, mid_y - half))
+                            .end(pt2(nx, mid_y + half))
+                            .weight(1.0)
+                            .color(rgb(0.06, 0.10, 0.06));
+                    }
+                }
+            }
+            draw.text(&clip.name)
+                .x_y(cx, cy)
+                .font_size(11)
+                .color(rgb(0.05, 0.05, 0.08));
+        }
+    }
+
+    // 再生ヘッド（timeline.playhead）。
+    let (pr, pg, pb) = timeline::PLAYHEAD_COLOR;
+    let px = timeline::playhead_x(model.playhead_ms, win.w()) - win.w() / 2.0;
+    draw.line()
+        .start(pt2(px, win.h() / 2.0))
+        .end(pt2(px, -win.h() / 2.0))
+        .weight(2.0)
+        .color(rgb(pr, pg, pb));
+
+    draw.to_frame(app, &frame).unwrap();
+}
+
+/// Issue #13 のコンソールデモ（エンジンの動作確認用に残す）。
+fn engine_demo() {
+    let (tone220, tone440, _) = prepare_demo_media();
     let mut project = Project::new("daw demo session");
     let track = apply(
         &mut project,
@@ -49,7 +360,7 @@ fn demo_project(dir: &std::path::Path) -> Project {
             name: "tone-220".into(),
             start_ms: 0,
             duration_ms: 2000,
-            source: dir.join("tone220.wav").to_string_lossy().into_owned(),
+            source: tone220.clone(),
         },
     )
     .unwrap()
@@ -61,10 +372,9 @@ fn demo_project(dir: &std::path::Path) -> Project {
             name: "tone-440".into(),
             start_ms: 1000,
             duration_ms: 2000,
-            source: dir.join("tone440.wav").to_string_lossy().into_owned(),
+            source: tone440.clone(),
         },
     )
-    .unwrap()
     .unwrap();
     apply(
         &mut project,
@@ -74,20 +384,9 @@ fn demo_project(dir: &std::path::Path) -> Project {
         },
     )
     .unwrap();
-    project
-}
-
-fn main() {
-    let dir = std::env::temp_dir().join("rust-studio-daw-media");
-    std::fs::create_dir_all(&dir).unwrap();
-    write_tone(&dir.join("tone220.wav"), 220.0, 2500);
-    write_tone(&dir.join("tone440.wav"), 440.0, 2500);
-
-    let project = demo_project(&dir);
     println!("daw (issue #13: audio engine)");
     println!("{}", project.dump_json());
 
-    // 素材をデコードし、ミックスを書き出す
     let mut audio_map = HashMap::new();
     for track in &project.tracks {
         for clip in &track.clips {
@@ -105,7 +404,7 @@ fn main() {
     }
     let end_ms = 3000;
     let mix = audio::render_mix(&project, &audio_map, 0, end_ms, RATE);
-    let mix_path = dir.join("mixdown.wav");
+    let mix_path = media_dir().join("mixdown.wav");
     let spec = hound::WavSpec {
         channels: 2,
         sample_rate: RATE,
@@ -124,25 +423,28 @@ fn main() {
         let rms = (mix[a..b].iter().map(|s| s * s).sum::<f32>() / (b - a) as f32).sqrt();
         println!("mix rms {sec}s-{}s: {rms:.4}", sec + 1);
     }
-
-    // 再生状態機械の遷移（実時間出力は実機未検証）
     let mut player = audio::Player::new(end_ms);
-    let report = |p: &audio::Player| {
-        println!("player: position={}ms playing={}", p.position_ms, p.playing);
-    };
     player.play();
     for _ in 0..3 {
         player.advance(500);
-        report(&player);
+        println!(
+            "player: position={}ms playing={}",
+            player.position_ms, player.playing
+        );
     }
     player.pause();
     player.advance(500);
-    println!("player: paused, advance is ignored");
-    report(&player);
+    println!(
+        "player: paused, advance ignored: position={}ms playing={}",
+        player.position_ms, player.playing
+    );
     player.seek(0);
     player.play();
     for _ in 0..6 {
         player.advance(500);
-        report(&player);
+        println!(
+            "player: position={}ms playing={}",
+            player.position_ms, player.playing
+        );
     }
 }

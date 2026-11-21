@@ -1,0 +1,340 @@
+//! ポインタ操作 → コマンド変換（Issue #14）。
+//!
+//! GUI のマウス操作を、studio-core のコマンドに変換する純粋ロジック。
+//! 状態変更はここでは行わず、コマンドを返すだけ（適用はコマンド層、
+//! ADR-0004）。ドラッグ中は「開始時点のクリップ状態＋ポインタの総移動量」
+//! から候補コマンドを作る。範囲外の候補（負の位置など）もそのまま返し、
+//! 弾くのはコマンド層の責任とする（受け入れ条件2の分担）。
+
+use studio_core::{Command, Project};
+
+use crate::timeline;
+
+/// クリップ端とみなす掴み幅（px）。
+pub const EDGE_GRAB_PX: f32 = 6.0;
+/// ダブルクリックで配置するクリップの長さ（ms）。
+pub const NEW_CLIP_DURATION_MS: i64 = 2_000;
+/// ダブルクリックと判定する間隔（ms）と距離（px）。
+pub const DOUBLE_CLICK_MS: u64 = 400;
+pub const DOUBLE_CLICK_PX: f32 = 5.0;
+
+/// ヒットテストの結果。
+#[derive(Debug, Clone, PartialEq)]
+pub enum HitTarget {
+    ClipBody {
+        clip_id: u64,
+    },
+    ClipLeftEdge {
+        clip_id: u64,
+    },
+    ClipRightEdge {
+        clip_id: u64,
+    },
+    /// トラック行の何もない場所（配置先）。
+    Empty {
+        track_index: usize,
+    },
+    /// タイムライン領域の外（ルーラー、ヘッダー、トラック行より下）。
+    Outside,
+}
+
+/// x ピクセルを時刻（ms）に変換する。ヘッダーより左では負になる。
+pub fn x_to_ms(x: f32, view_width_px: f32) -> i64 {
+    ((x - timeline::HEADER_WIDTH_PX) / timeline::px_per_ms(view_width_px)).round() as i64
+}
+
+/// 座標（左上原点ピクセル）に対するヒットテスト。
+pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTarget {
+    if y < timeline::RULER_HEIGHT_PX || x < timeline::HEADER_WIDTH_PX {
+        return HitTarget::Outside;
+    }
+    let track_index = ((y - timeline::RULER_HEIGHT_PX) / timeline::TRACK_HEIGHT_PX) as usize;
+    if track_index >= project.tracks.len() {
+        return HitTarget::Outside;
+    }
+    for rect in timeline::layout_clips(project, view_width_px) {
+        if rect.track_id != project.tracks[track_index].id {
+            continue;
+        }
+        if (x - rect.x).abs() <= EDGE_GRAB_PX {
+            return HitTarget::ClipLeftEdge {
+                clip_id: rect.clip_id,
+            };
+        }
+        if (x - (rect.x + rect.w)).abs() <= EDGE_GRAB_PX {
+            return HitTarget::ClipRightEdge {
+                clip_id: rect.clip_id,
+            };
+        }
+        if x > rect.x && x < rect.x + rect.w {
+            return HitTarget::ClipBody {
+                clip_id: rect.clip_id,
+            };
+        }
+    }
+    HitTarget::Empty { track_index }
+}
+
+/// ドラッグの種類。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DragKind {
+    Move,
+    TrimLeft,
+    TrimRight,
+}
+
+/// ドラッグ中の状態。開始時点のスナップショットを持つ。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Drag {
+    pub clip_id: u64,
+    pub kind: DragKind,
+    pub start_pointer_ms: i64,
+    pub orig_start_ms: i64,
+    pub orig_duration_ms: i64,
+}
+
+impl Drag {
+    /// ヒット結果とプロジェクトからドラッグを開始する。
+    /// クリップ対象でなければ None。
+    pub fn begin(project: &Project, target: &HitTarget, pointer_ms: i64) -> Option<Drag> {
+        let (clip_id, kind) = match target {
+            HitTarget::ClipBody { clip_id } => (*clip_id, DragKind::Move),
+            HitTarget::ClipLeftEdge { clip_id } => (*clip_id, DragKind::TrimLeft),
+            HitTarget::ClipRightEdge { clip_id } => (*clip_id, DragKind::TrimRight),
+            _ => return None,
+        };
+        let (_, clip) = project.clip(clip_id)?;
+        Some(Drag {
+            clip_id,
+            kind,
+            start_pointer_ms: pointer_ms,
+            orig_start_ms: clip.start_ms,
+            orig_duration_ms: clip.duration_ms,
+        })
+    }
+
+    /// 現在のポインタ位置に対する候補コマンド。
+    pub fn command_for(&self, pointer_ms: i64) -> Command {
+        let delta = pointer_ms - self.start_pointer_ms;
+        match self.kind {
+            DragKind::Move => Command::MoveClip {
+                clip_id: self.clip_id,
+                new_start_ms: self.orig_start_ms + delta,
+            },
+            DragKind::TrimLeft => Command::TrimClip {
+                clip_id: self.clip_id,
+                new_start_ms: self.orig_start_ms + delta,
+                new_duration_ms: self.orig_duration_ms - delta,
+            },
+            DragKind::TrimRight => Command::TrimClip {
+                clip_id: self.clip_id,
+                new_start_ms: self.orig_start_ms,
+                new_duration_ms: self.orig_duration_ms + delta,
+            },
+        }
+    }
+}
+
+/// ダブルクリック判定。前回のクリック時刻と位置を保持する。
+#[derive(Debug, Default)]
+pub struct ClickTracker {
+    last: Option<(u64, f32, f32)>,
+}
+
+impl ClickTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// クリックを登録し、ダブルクリックなら true を返す。
+    pub fn register(&mut self, now_ms: u64, x: f32, y: f32) -> bool {
+        let is_double = match self.last {
+            Some((t, lx, ly)) => {
+                now_ms.saturating_sub(t) <= DOUBLE_CLICK_MS
+                    && (x - lx).abs() <= DOUBLE_CLICK_PX
+                    && (y - ly).abs() <= DOUBLE_CLICK_PX
+            }
+            None => false,
+        };
+        // ダブルクリック成立後はリセットし、3連クリックを再度の
+        // ダブルクリックと誤判定しない。
+        self.last = if is_double {
+            None
+        } else {
+            Some((now_ms, x, y))
+        };
+        is_double
+    }
+}
+
+/// 空き場所への配置コマンドを作る。トラックが無ければ None。
+/// 配置先のソースは呼び出し側が渡す（DAW ではデモ素材の実パス）。
+pub fn place_clip_command(
+    project: &Project,
+    track_index: usize,
+    at_ms: i64,
+    source: &str,
+) -> Option<Command> {
+    let track = project.tracks.get(track_index)?;
+    Some(Command::AddClip {
+        track_id: track.id,
+        name: format!("clip-{}", track.clips.len() + 1),
+        start_ms: at_ms,
+        duration_ms: NEW_CLIP_DURATION_MS,
+        source: source.into(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use studio_core::{apply, TrackKind};
+
+    fn sample_project() -> Project {
+        let mut project = Project::new("test");
+        let v = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::AddClip {
+                track_id: v,
+                name: "opening".into(),
+                start_ms: 1_000,
+                duration_ms: 2_000,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap();
+        project
+    }
+
+    fn clip_id(project: &Project) -> u64 {
+        project.tracks[0].clips[0].id
+    }
+
+    // opening の矩形: x = 120 + 1000*0.084 = 204, w = 168, y = 24..72（幅 960）
+    #[test]
+    fn hit_test_distinguishes_body_edges_and_empty() {
+        let p = sample_project();
+        let id = clip_id(&p);
+        assert_eq!(
+            hit_test(&p, 960.0, 280.0, 48.0),
+            HitTarget::ClipBody { clip_id: id }
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, 206.0, 48.0),
+            HitTarget::ClipLeftEdge { clip_id: id }
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, 370.0, 48.0),
+            HitTarget::ClipRightEdge { clip_id: id }
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, 700.0, 48.0),
+            HitTarget::Empty { track_index: 0 }
+        );
+        assert_eq!(hit_test(&p, 960.0, 280.0, 10.0), HitTarget::Outside);
+        assert_eq!(hit_test(&p, 960.0, 60.0, 48.0), HitTarget::Outside);
+        assert_eq!(hit_test(&p, 960.0, 280.0, 200.0), HitTarget::Outside);
+    }
+
+    #[test]
+    fn drag_move_uses_total_delta() {
+        let p = sample_project();
+        let id = clip_id(&p);
+        let drag = Drag::begin(&p, &HitTarget::ClipBody { clip_id: id }, 1_500).unwrap();
+        assert_eq!(
+            drag.command_for(2_000),
+            Command::MoveClip {
+                clip_id: id,
+                new_start_ms: 1_500
+            }
+        );
+    }
+
+    #[test]
+    fn drag_trim_left_keeps_end_fixed() {
+        let p = sample_project();
+        let id = clip_id(&p);
+        let drag = Drag::begin(&p, &HitTarget::ClipLeftEdge { clip_id: id }, 1_000).unwrap();
+        // +300ms 動かす: start 1000→1300, duration 2000→1700, end は 3000 のまま
+        assert_eq!(
+            drag.command_for(1_300),
+            Command::TrimClip {
+                clip_id: id,
+                new_start_ms: 1_300,
+                new_duration_ms: 1_700
+            }
+        );
+    }
+
+    #[test]
+    fn drag_trim_right_changes_duration_only() {
+        let p = sample_project();
+        let id = clip_id(&p);
+        let drag = Drag::begin(&p, &HitTarget::ClipRightEdge { clip_id: id }, 3_000).unwrap();
+        assert_eq!(
+            drag.command_for(2_500),
+            Command::TrimClip {
+                clip_id: id,
+                new_start_ms: 1_000,
+                new_duration_ms: 1_500
+            }
+        );
+    }
+
+    #[test]
+    fn drag_beyond_zero_produces_negative_candidate() {
+        let p = sample_project();
+        let id = clip_id(&p);
+        let drag = Drag::begin(&p, &HitTarget::ClipBody { clip_id: id }, 1_500).unwrap();
+        // 開始位置 1000ms のクリップを -2000ms 分動かすと候補は負になる。
+        // 弾くのはコマンド層の責任（このモジュールは候補を返すだけ）。
+        assert_eq!(
+            drag.command_for(-500),
+            Command::MoveClip {
+                clip_id: id,
+                new_start_ms: -1_000
+            }
+        );
+    }
+
+    #[test]
+    fn double_click_detection() {
+        let mut tracker = ClickTracker::new();
+        assert!(!tracker.register(1_000, 300.0, 48.0));
+        assert!(tracker.register(1_300, 302.0, 49.0));
+        // 間隔が空けばダブルクリックではない
+        let mut tracker = ClickTracker::new();
+        assert!(!tracker.register(1_000, 300.0, 48.0));
+        assert!(!tracker.register(1_600, 300.0, 48.0));
+    }
+
+    #[test]
+    fn place_clip_command_builds_add_clip() {
+        let p = sample_project();
+        let track_id = p.tracks[0].id;
+        let cmd = place_clip_command(&p, 0, 3_000, "demo/dropped.wav").unwrap();
+        match cmd {
+            Command::AddClip {
+                track_id: t,
+                start_ms,
+                duration_ms,
+                ..
+            } => {
+                assert_eq!(t, track_id);
+                assert_eq!(start_ms, 3_000);
+                assert_eq!(duration_ms, NEW_CLIP_DURATION_MS);
+            }
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        assert!(place_clip_command(&p, 9, 0, "demo/dropped.wav").is_none());
+    }
+}

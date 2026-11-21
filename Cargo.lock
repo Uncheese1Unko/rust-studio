@@ -422,6 +422,7 @@ name = "daw"
 version = "0.1.0"
 dependencies = [
  "hound",
+ "nannou",
  "studio-core",
 ]
 
