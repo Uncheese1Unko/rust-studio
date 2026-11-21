@@ -160,6 +160,30 @@ pub fn hit_with_x(project: &Project, track_id: u64, param: Param, x: f32) -> Opt
     })
 }
 
+/// 音量の表示用フォーマット（dB、Issue #25）。1.0 を 0dB とし、
+/// 0 以下は無音として `-inf dB` と表示する。
+pub fn format_volume_db(volume: f32) -> String {
+    if volume <= 0.0 {
+        "-inf dB".to_string()
+    } else {
+        format!("{:+.1} dB", 20.0 * volume.log10())
+    }
+}
+
+/// パンの表示用フォーマット（Issue #25）。中央は `C`、左右は
+/// `L50` / `R100` のように百分率で示す。
+pub fn format_pan(pan: f32) -> String {
+    let pan = pan.clamp(-1.0, 1.0);
+    let percent = (pan.abs() * 100.0).round() as i32;
+    if percent == 0 {
+        "C".to_string()
+    } else if pan < 0.0 {
+        format!("L{percent}")
+    } else {
+        format!("R{percent}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +214,22 @@ mod tests {
         assert_eq!(pan_at(p, p.x), -1.0);
         assert_eq!(pan_at(p, p.x + p.w), 1.0);
         assert!((pan_at(p, x_for_pan(p, 0.25)) - 0.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn value_formats_for_display() {
+        // Issue #25: 選択中トラックの現在値を大きく出すための表示
+        // フォーマット。音量は dB、パンは L-C-R 表記。
+        assert_eq!(format_volume_db(1.0), "+0.0 dB");
+        assert_eq!(format_volume_db(0.5), "-6.0 dB");
+        assert_eq!(format_volume_db(2.0), "+6.0 dB");
+        assert_eq!(format_volume_db(0.25), "-12.0 dB");
+        assert_eq!(format_volume_db(0.0), "-inf dB");
+        assert_eq!(format_pan(0.0), "C");
+        assert_eq!(format_pan(-1.0), "L100");
+        assert_eq!(format_pan(1.0), "R100");
+        assert_eq!(format_pan(-0.25), "L25");
+        assert_eq!(format_pan(0.5), "R50");
     }
 
     #[test]

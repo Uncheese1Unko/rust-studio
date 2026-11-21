@@ -75,6 +75,21 @@ pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTar
     HitTarget::Empty { track_index }
 }
 
+/// トラックヘッダー（名前のセル）のヒットテスト（Issue #25）。
+/// 選択は GUI の表示状態であり、プロジェクト状態ではないため
+/// コマンドには変換しない。
+pub fn hit_track_header(project: &Project, x: f32, y: f32) -> Option<usize> {
+    if x >= timeline::HEADER_WIDTH_PX || y < timeline::RULER_HEIGHT_PX {
+        return None;
+    }
+    let track_index = ((y - timeline::RULER_HEIGHT_PX) / timeline::TRACK_HEIGHT_PX) as usize;
+    if track_index < project.tracks.len() {
+        Some(track_index)
+    } else {
+        None
+    }
+}
+
 /// ドラッグの種類。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DragKind {
@@ -243,6 +258,18 @@ mod tests {
         assert_eq!(hit_test(&p, 960.0, 280.0, 10.0), HitTarget::Outside);
         assert_eq!(hit_test(&p, 960.0, 60.0, 48.0), HitTarget::Outside);
         assert_eq!(hit_test(&p, 960.0, 280.0, 200.0), HitTarget::Outside);
+    }
+
+    #[test]
+    fn hit_track_header_selects_track_rows() {
+        // Issue #25: トラックヘッダー（名前セル）のクリックで選択する。
+        let p = sample_project();
+        assert_eq!(hit_track_header(&p, 60.0, 48.0), Some(0));
+        // ヘッダーより右（タイムライン本体）やルーラーは対象外
+        assert_eq!(hit_track_header(&p, 300.0, 48.0), None);
+        assert_eq!(hit_track_header(&p, 60.0, 10.0), None);
+        // トラック行より下は対象外
+        assert_eq!(hit_track_header(&p, 60.0, 200.0), None);
     }
 
     #[test]

@@ -121,6 +121,9 @@ struct Model {
     dropped_source: String,
     /// 操作中のミキサースライダー（トラック ID とパラメータ）。
     mixer_active: Option<(u64, mixer::Param)>,
+    /// 選択中トラック（GUI の表示状態。プロジェクト状態ではない、
+    /// Issue #25）。現在値を大きく出す対象。
+    selected_track: Option<u64>,
     last_mixer_cmd: Option<Command>,
     // Issue #16: プロジェクトファイル共有モードの状態（#11 と同じ方式）。
     project_file: Option<std::path::PathBuf>,
@@ -257,6 +260,7 @@ fn model(app: &App) -> Model {
         .unwrap();
     Model {
         _window: window,
+        selected_track: project.tracks.first().map(|t| t.id),
         project,
         playhead_ms: 0,
         drag: None,
@@ -585,6 +589,10 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down && !model.prev_left_down {
+        // トラックヘッダーのクリックで選択（Issue #25、表示状態のみ）
+        if let Some(index) = edit::hit_track_header(&model.project, lx, ly) {
+            model.selected_track = Some(model.project.tracks[index].id);
+        }
         let target = edit::hit_test(&model.project, win.w(), lx, ly);
         if let Some(drag) = edit::Drag::begin(&model.project, &target, pointer_ms) {
             model.drag = Some(drag);
@@ -819,6 +827,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     // ミキサー（mixer）: トラックごとの音量・パンスライダー（Issue #15）。
+    // 選択中トラック（無効な ID なら先頭トラックにフォールバック）。
+    let selected_id = model
+        .selected_track
+        .filter(|id| model.project.tracks.iter().any(|t| t.id == *id))
+        .or_else(|| model.project.tracks.first().map(|t| t.id));
     for (index, track) in model.project.tracks.iter().enumerate() {
         let count = model.project.tracks.len();
         let v = mixer::volume_rect(count, index);
@@ -834,30 +847,61 @@ fn view(app: &App, model: &Model, frame: Frame) {
         if index == 0 {
             draw_panel_label(&draw, win, theme::MIXER_LABEL, 40.0, top + 7.0);
         }
-        // ラベルと現在値
+        // ラベルと現在値（補助文字はグレージュ、Issue #25）
         draw.text(&format!("{} VOL {:.2}", track.name, track.volume))
             .x_y(
                 timeline::HEADER_WIDTH_PX / 2.0 - win.w() / 2.0,
                 win.h() / 2.0 - (top + mixer::STRIP_HEIGHT_PX / 2.0),
             )
             .font_size(11)
-            .color(rgb(0.80, 0.80, 0.85));
-        for (rect, value_x, label) in [
-            (v, mixer::x_for_volume(v, track.volume), "VOL"),
-            (p, mixer::x_for_pan(p, track.pan), "PAN"),
+            .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        for (rect, value_x, param) in [
+            (
+                v,
+                mixer::x_for_volume(v, track.volume),
+                mixer::Param::Volume,
+            ),
+            (p, mixer::x_for_pan(p, track.pan), mixer::Param::Pan),
         ] {
-            let _ = label;
+            // スライダーの溝（バー背景はサンド）
             let (bx, by) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
-            draw.rect()
-                .x_y(bx, by)
-                .w_h(rect.w, 4.0)
-                .color(rgb(0.30, 0.30, 0.35));
-            // つまみ
-            let (kx, ky) = rect_center(win, value_x - 3.0, rect.y, 6.0, rect.h);
-            draw.rect()
-                .x_y(kx, ky)
-                .w_h(6.0, rect.h)
-                .color(rgb(0.90, 0.75, 0.25));
+            draw.rect().x_y(bx, by).w_h(rect.w, 4.0).color(rgb(
+                theme::PANEL_SUNK.0,
+                theme::PANEL_SUNK.1,
+                theme::PANEL_SUNK.2,
+            ));
+            // つまみ: 通常はペールクリーム面＋グレージュ線の縁、
+            // ドラッグ中だけホットピンク（デザイン文書の強調原則）。
+            let dragging = model.mixer_active == Some((track.id, param));
+            let knob_face = if dragging {
+                theme::ACCENT
+            } else {
+                theme::PANEL
+            };
+            draw_rounded_rect(
+                &draw,
+                win,
+                mixer::Rect {
+                    x: value_x - 5.0,
+                    y: rect.y,
+                    w: 10.0,
+                    h: rect.h,
+                },
+                3.0,
+                theme::LINE,
+            );
+            draw_rounded_rect(
+                &draw,
+                win,
+                mixer::Rect {
+                    x: value_x - 3.5,
+                    y: rect.y + 1.5,
+                    w: 7.0,
+                    h: rect.h - 3.0,
+                },
+                2.0,
+                knob_face,
+            );
         }
         draw.text(&format!("PAN {:+.2}", track.pan))
             .x_y(
@@ -865,7 +909,23 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 win.h() / 2.0 - (top + mixer::STRIP_HEIGHT_PX / 2.0),
             )
             .font_size(11)
-            .color(rgb(0.80, 0.80, 0.85));
+            .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        // 選択中トラックの現在値は大きく出す（Issue #25、デザイン
+        // 文書「タイポグラフィとパネルラベル」: 階層はサイズで作る）。
+        if selected_id == Some(track.id) {
+            let readout = format!(
+                "{} · {}",
+                mixer::format_volume_db(track.volume),
+                mixer::format_pan(track.pan)
+            );
+            draw.text(&readout)
+                .x_y(
+                    872.0 - win.w() / 2.0,
+                    win.h() / 2.0 - (top + mixer::STRIP_HEIGHT_PX / 2.0),
+                )
+                .font_size(theme::VALUE_FONT_SIZE)
+                .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+        }
     }
 
     // ピッチ表示（Issue #18）: 再生ヘッド位置の音声クリップのピッチ。
