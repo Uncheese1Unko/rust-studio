@@ -26,6 +26,12 @@ struct Model {
     last_rejection: Option<String>,
     prev_left_down: bool,
     clicks: edit::ClickTracker,
+    // Issue #57: トラック操作の GUI 状態（ヘッダーのダブルクリック判定、
+    // リネーム編集セッション、選択中トラック）。いずれも表示状態で、
+    // プロジェクト状態には含めない。
+    header_clicks: edit::ClickTracker,
+    rename: Option<edit::RenameSession>,
+    selected_track: Option<u64>,
     // Issue #10: プレビュー再生の状態。
     frames: media::FrameStore,
     textures: std::collections::HashMap<std::path::PathBuf, wgpu::Texture>,
@@ -49,7 +55,7 @@ const PREVIEW_H: f32 = 248.0;
 const PREVIEW_ID: &str = "preview";
 
 fn main() {
-    nannou::app(model).update(update).run();
+    nannou::app(model).event(event).update(update).run();
 }
 
 /// デモプロジェクトをコマンド経由で構築する。
@@ -180,6 +186,7 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
     let textures = load_textures(app, &project, &frames);
+    let initial_selected = project.tracks.first().map(|t| t.id);
     Model {
         _window: window,
         project,
@@ -189,6 +196,9 @@ fn model(app: &App) -> Model {
         last_rejection: None,
         prev_left_down: false,
         clicks: edit::ClickTracker::new(),
+        header_clicks: edit::ClickTracker::new(),
+        rename: None,
+        selected_track: initial_selected,
         frames,
         textures,
         last_preview: None,
@@ -264,10 +274,55 @@ fn save_project_file(model: &mut Model) {
     }
 }
 
+/// リネーム編集中のキー・文字イベント（Issue #57）。確定は
+/// RenameTrack コマンド経由でのみ行い、コアが拒否した場合は編集を
+/// 継続して理由を標準出力に残す（DAW #56 と同じ意味論）。
+fn event(_app: &App, model: &mut Model, event: Event) {
+    if model.rename.is_none() {
+        return;
+    }
+    let Event::WindowEvent {
+        simple: Some(window_event),
+        ..
+    } = event
+    else {
+        return;
+    };
+    let input = match window_event {
+        WindowEvent::ReceivedCharacter(c) => edit::RenameInput::Char(c),
+        WindowEvent::KeyPressed(Key::Back) => edit::RenameInput::Backspace,
+        WindowEvent::KeyPressed(Key::Return) => edit::RenameInput::Enter,
+        WindowEvent::KeyPressed(Key::Escape) => edit::RenameInput::Escape,
+        _ => return,
+    };
+    let action = model.rename.as_mut().expect("checked above").handle(input);
+    match action {
+        edit::RenameAction::Continue => {}
+        edit::RenameAction::Cancel => {
+            model.rename = None;
+            println!("rename cancelled");
+        }
+        edit::RenameAction::Commit(cmd) => match apply(&mut model.project, &cmd) {
+            Ok(_) => {
+                model.rename = None;
+                println!("after rename: {}", model.project.dump_json());
+                save_project_file(model);
+            }
+            Err(e) => println!("rename rejected: {e}"),
+        },
+    }
+}
+
 fn update(app: &App, model: &mut Model, update: Update) {
-    handle_pointer(app, model);
+    if model.rename.is_some() {
+        // リネーム編集中はポインタ操作と切り抜きキーを受け付けない
+        // （Issue #57）。再生ヘッドとプレビューは進み続ける。
+        model.prev_left_down = app.mouse.buttons.left().is_down();
+    } else {
+        handle_pointer(app, model);
+        handle_cutout(app, model);
+    }
     watch_project_file(app, model);
-    handle_cutout(app, model);
 
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(&model.project);
@@ -432,6 +487,58 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let pointer_ms = edit::x_to_ms(lx, win.w());
 
     if left_down && !model.prev_left_down {
+        // トラック削除（Issue #57）: ヘッダー右端の帯。コマンド経由で
+        // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
+        // 選択を移す。
+        if let Some(index) = edit::hit_track_delete(&model.project, lx, ly) {
+            let track_id = model.project.tracks[index].id;
+            let cmd = Command::RemoveTrack { track_id };
+            match apply(&mut model.project, &cmd) {
+                Ok(_) => {
+                    if model.selected_track == Some(track_id) {
+                        model.selected_track = model
+                            .project
+                            .tracks
+                            .get(index)
+                            .or_else(|| model.project.tracks.last())
+                            .map(|t| t.id);
+                    }
+                    model.drag = None;
+                    model.last_drag_cmd = None;
+                    println!("after track remove: {}", model.project.dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
+        // トラック追加（Issue #57）: 最終行直下のヘッダー列。
+        // 上半分が映像、下半分が音声。追加したトラックを選択する。
+        if let Some(kind) = edit::hit_track_add_area(&model.project, lx, ly) {
+            let cmd = edit::add_track_command(&model.project, kind);
+            match apply(&mut model.project, &cmd) {
+                Ok(created) => {
+                    model.selected_track = created;
+                    println!("after track add: {}", model.project.dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
+        // トラックヘッダーのクリックで選択（Issue #57、表示状態のみ）。
+        // ダブルクリックでリネーム編集に入る。
+        if let Some(index) = edit::hit_track_header(&model.project, lx, ly) {
+            model.selected_track = Some(model.project.tracks[index].id);
+            let now_ms = (app.time * 1_000.0) as u64;
+            if model.header_clicks.register(now_ms, lx, ly) {
+                let track = &model.project.tracks[index];
+                model.rename = Some(edit::RenameSession::begin(track.id, &track.name));
+                println!("rename begin: track {}", track.id);
+            }
+        }
         let target = edit::hit_test(&model.project, win.w(), lx, ly);
         if let Some(drag) = edit::Drag::begin(&model.project, &target, pointer_ms) {
             model.drag = Some(drag);
@@ -524,14 +631,70 @@ fn view(app: &App, model: &Model, frame: Frame) {
             timeline::HEADER_WIDTH_PX,
             timeline::TRACK_HEIGHT_PX,
         );
+        // 選択中トラックのヘッダーは少し明るくする（Issue #57）。
+        let header_shade = if model.selected_track == Some(track.id) {
+            0.26
+        } else {
+            0.17
+        };
         draw.rect()
             .x_y(hx, hy)
             .w_h(timeline::HEADER_WIDTH_PX, timeline::TRACK_HEIGHT_PX)
-            .color(rgb(0.17, 0.17, 0.20));
-        draw.text(&track.name)
-            .x_y(hx, hy)
+            .color(rgb(header_shade, header_shade, header_shade + 0.03));
+        // リネーム編集中のトラックは編集中文字列＋キャレットを出す
+        // （Issue #57）。名前は削除帯を除いた範囲の中央に置く。
+        let renaming_this = model.rename.as_ref().filter(|s| s.track_id == track.id);
+        let name_text = match renaming_this {
+            Some(session) => format!("{}_", session.text),
+            None => track.name.clone(),
+        };
+        let (nx, ny) = rect_center(
+            win,
+            0.0,
+            top,
+            timeline::HEADER_WIDTH_PX - edit::DELETE_STRIP_PX,
+            timeline::TRACK_HEIGHT_PX,
+        );
+        draw.text(&name_text)
+            .x_y(nx, ny)
             .font_size(13)
             .color(rgb(0.85, 0.85, 0.88));
+        // 削除ボタン（Issue #57）: ヘッダー右端の帯に「×」。
+        let (xx, xy) = rect_center(
+            win,
+            timeline::HEADER_WIDTH_PX - edit::DELETE_STRIP_PX,
+            top,
+            edit::DELETE_STRIP_PX,
+            timeline::TRACK_HEIGHT_PX,
+        );
+        draw.text("×")
+            .x_y(xx, xy)
+            .font_size(12)
+            .color(rgb(0.55, 0.55, 0.60));
+    }
+
+    // トラック追加エリア（Issue #57）: 最終行直下のヘッダー列を
+    // 上下に分け、上に「+ VIDEO」、下に「+ AUDIO」。
+    {
+        let top = timeline::track_top_y(model.project.tracks.len());
+        let half = timeline::TRACK_HEIGHT_PX / 2.0;
+        for (i, label) in ["+ VIDEO", "+ AUDIO"].iter().enumerate() {
+            let (cx, cy) = rect_center(
+                win,
+                0.0,
+                top + half * i as f32,
+                timeline::HEADER_WIDTH_PX,
+                half,
+            );
+            draw.rect()
+                .x_y(cx, cy)
+                .w_h(timeline::HEADER_WIDTH_PX, half)
+                .color(rgb(0.13, 0.13, 0.16));
+            draw.text(label)
+                .x_y(cx, cy)
+                .font_size(10)
+                .color(rgb(0.65, 0.65, 0.70));
+        }
     }
 
     // クリップ（timeline.clip.<id>）: コアの start/duration をそのまま矩形にする。

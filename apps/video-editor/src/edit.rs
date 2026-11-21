@@ -6,7 +6,7 @@
 //! から候補コマンドを作る。範囲外の候補（負の位置など）もそのまま返し、
 //! 弾くのはコマンド層の責任とする（受け入れ条件2の分担）。
 
-use studio_core::{Command, Project};
+use studio_core::{Command, Project, TrackKind};
 
 use crate::timeline;
 
@@ -164,6 +164,133 @@ impl ClickTracker {
             Some((now_ms, x, y))
         };
         is_double
+    }
+}
+
+/// ヘッダー右端の削除帯の幅（px、Issue #57。DAW #56 と同じ）。
+pub const DELETE_STRIP_PX: f32 = 18.0;
+
+/// トラックヘッダー（名前のセル）のヒットテスト（Issue #57）。
+/// 選択は GUI の表示状態であり、プロジェクト状態ではないため
+/// コマンドには変換しない。
+pub fn hit_track_header(project: &Project, x: f32, y: f32) -> Option<usize> {
+    if x >= timeline::HEADER_WIDTH_PX || y < timeline::RULER_HEIGHT_PX {
+        return None;
+    }
+    let track_index = ((y - timeline::RULER_HEIGHT_PX) / timeline::TRACK_HEIGHT_PX) as usize;
+    if track_index < project.tracks.len() {
+        Some(track_index)
+    } else {
+        None
+    }
+}
+
+/// 「追加」領域のヒットテスト（Issue #57）。最終トラック行の直下の
+/// ヘッダー列を上下に分け、上半分が映像、下半分が音声の追加。
+/// 追加はコマンド経由で行い、ここは判定だけをする。
+pub fn hit_track_add_area(project: &Project, x: f32, y: f32) -> Option<TrackKind> {
+    if x >= timeline::HEADER_WIDTH_PX {
+        return None;
+    }
+    let top = timeline::track_top_y(project.tracks.len());
+    if y < top || y >= top + timeline::TRACK_HEIGHT_PX {
+        return None;
+    }
+    if y < top + timeline::TRACK_HEIGHT_PX / 2.0 {
+        Some(TrackKind::Video)
+    } else {
+        Some(TrackKind::Audio)
+    }
+}
+
+/// ヘッダー右端の削除帯のヒットテスト（Issue #57）。
+/// 当たったトラックの行インデックスを返す。
+pub fn hit_track_delete(project: &Project, x: f32, y: f32) -> Option<usize> {
+    if x < timeline::HEADER_WIDTH_PX - DELETE_STRIP_PX || x >= timeline::HEADER_WIDTH_PX {
+        return None;
+    }
+    if y < timeline::RULER_HEIGHT_PX {
+        return None;
+    }
+    let track_index = ((y - timeline::RULER_HEIGHT_PX) / timeline::TRACK_HEIGHT_PX) as usize;
+    if track_index < project.tracks.len() {
+        Some(track_index)
+    } else {
+        None
+    }
+}
+
+/// トラック追加のコマンド（Issue #57）。名前は同じ種別の既存数 +1 で
+/// 映像は「V1」「V2」…、音声は「A1」「A2」… と付ける。
+pub fn add_track_command(project: &Project, kind: TrackKind) -> Command {
+    let count = project.tracks.iter().filter(|t| t.kind == kind).count();
+    let prefix = match kind {
+        TrackKind::Video => "V",
+        TrackKind::Audio => "A",
+    };
+    Command::AddTrack {
+        name: format!("{prefix}{}", count + 1),
+        kind,
+    }
+}
+
+/// リネーム編集への入力（Issue #57。DAW #56 と同じ意味論）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RenameInput {
+    Char(char),
+    Backspace,
+    Enter,
+    Escape,
+}
+
+/// リネーム編集セッションの結果（Issue #57）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum RenameAction {
+    /// 継続（確定も中止もしていない）。
+    Continue,
+    /// Enter で確定。発行すべきコマンド。
+    Commit(Command),
+    /// Esc で中止。コマンドは発行しない。
+    Cancel,
+}
+
+/// リネームのインライン編集セッション（Issue #57）。GUI 側の表示状態
+/// であり、プロジェクト状態には含めない。確定時にだけ RenameTrack
+/// コマンドを返す。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenameSession {
+    pub track_id: u64,
+    pub text: String,
+}
+
+impl RenameSession {
+    pub fn begin(track_id: u64, current_name: &str) -> RenameSession {
+        RenameSession {
+            track_id,
+            text: current_name.to_string(),
+        }
+    }
+
+    pub fn handle(&mut self, input: RenameInput) -> RenameAction {
+        match input {
+            RenameInput::Char(c) => {
+                // 制御文字（Enter の '\r'、Esc、Backspace の '\u{8}' 等）は
+                // 文字として取り込まない。確定・中止は KeyPressed 側で扱う。
+                if !c.is_control() {
+                    self.text.push(c);
+                }
+                RenameAction::Continue
+            }
+            RenameInput::Backspace => {
+                self.text.pop();
+                RenameAction::Continue
+            }
+            RenameInput::Enter => RenameAction::Commit(Command::RenameTrack {
+                track_id: self.track_id,
+                name: self.text.clone(),
+            }),
+            RenameInput::Escape => RenameAction::Cancel,
+        }
     }
 }
 
@@ -334,5 +461,122 @@ mod tests {
             other => panic!("expected AddClip, got {other:?}"),
         }
         assert!(place_clip_command(&p, 9, 0).is_none());
+    }
+
+    // Issue #57: トラック追加・削除・リネームの当たり判定と変換。
+
+    fn two_track_project() -> Project {
+        let mut p = Project::new("test57");
+        for (name, kind) in [("V1", TrackKind::Video), ("A1", TrackKind::Audio)] {
+            apply(
+                &mut p,
+                &Command::AddTrack {
+                    name: name.into(),
+                    kind,
+                },
+            )
+            .unwrap();
+        }
+        p
+    }
+
+    #[test]
+    fn hit_track_add_area_returns_kind() {
+        let p = two_track_project(); // V1, A1 の2トラック
+        let add_top = timeline::track_top_y(2);
+        // 追加行ヘッダーの上半分が映像、下半分が音声
+        assert_eq!(
+            crate::edit::hit_track_add_area(&p, 60.0, add_top + 12.0),
+            Some(TrackKind::Video)
+        );
+        assert_eq!(
+            crate::edit::hit_track_add_area(&p, 60.0, add_top + 36.0),
+            Some(TrackKind::Audio)
+        );
+        // タイムライン側は対象外
+        assert_eq!(
+            crate::edit::hit_track_add_area(&p, 300.0, add_top + 12.0),
+            None
+        );
+        // トラック行やルーラーは対象外
+        assert_eq!(crate::edit::hit_track_add_area(&p, 60.0, 48.0), None);
+        assert_eq!(crate::edit::hit_track_add_area(&p, 60.0, 10.0), None);
+        // 追加行より下は対象外
+        assert_eq!(
+            crate::edit::hit_track_add_area(&p, 60.0, timeline::track_top_y(3) + 10.0),
+            None
+        );
+    }
+
+    #[test]
+    fn hit_track_delete_area() {
+        let p = two_track_project();
+        let x = timeline::HEADER_WIDTH_PX - 9.0;
+        assert_eq!(crate::edit::hit_track_delete(&p, x, 48.0), Some(0));
+        assert_eq!(crate::edit::hit_track_delete(&p, x, 96.0), Some(1));
+        // 帯より左は対象外
+        assert_eq!(
+            crate::edit::hit_track_delete(
+                &p,
+                timeline::HEADER_WIDTH_PX - DELETE_STRIP_PX - 1.0,
+                48.0
+            ),
+            None
+        );
+        // ルーラーと追加行は対象外
+        assert_eq!(crate::edit::hit_track_delete(&p, x, 10.0), None);
+        assert_eq!(
+            crate::edit::hit_track_delete(&p, x, timeline::track_top_y(2) + 10.0),
+            None
+        );
+    }
+
+    #[test]
+    fn add_track_command_names_by_kind() {
+        let p = two_track_project(); // V1, A1
+        match crate::edit::add_track_command(&p, TrackKind::Video) {
+            Command::AddTrack { name, kind } => {
+                assert_eq!(name, "V2");
+                assert_eq!(kind, TrackKind::Video);
+            }
+            other => panic!("expected AddTrack, got {other:?}"),
+        }
+        match crate::edit::add_track_command(&p, TrackKind::Audio) {
+            Command::AddTrack { name, kind } => {
+                assert_eq!(name, "A2");
+                assert_eq!(kind, TrackKind::Audio);
+            }
+            other => panic!("expected AddTrack, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rename_session_enter_commits_and_esc_cancels() {
+        let p = sample_project();
+        let track_id = p.tracks[0].id;
+        let mut session = RenameSession::begin(track_id, "V1");
+        assert_eq!(
+            session.handle(RenameInput::Char('2')),
+            RenameAction::Continue
+        );
+        assert_eq!(session.text, "V12");
+        assert_eq!(
+            session.handle(RenameInput::Backspace),
+            RenameAction::Continue
+        );
+        assert_eq!(session.text, "V1");
+        match session.handle(RenameInput::Enter) {
+            RenameAction::Commit(cmd) => assert_eq!(
+                cmd,
+                Command::RenameTrack {
+                    track_id,
+                    name: "V1".into()
+                }
+            ),
+            other => panic!("expected Commit, got {other:?}"),
+        }
+        let mut session = RenameSession::begin(track_id, "V1");
+        session.handle(RenameInput::Char('X'));
+        assert_eq!(session.handle(RenameInput::Escape), RenameAction::Cancel);
     }
 }
