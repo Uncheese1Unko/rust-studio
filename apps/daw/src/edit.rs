@@ -483,7 +483,11 @@ mod tests {
         // ルーラーは対象外
         assert!(!crate::edit::hit_track_add_area(&p, 60.0, 10.0));
         // 追加行より下は対象外
-        assert!(!crate::edit::hit_track_add_area(&p, 60.0, timeline::track_top_y(2) + 10.0));
+        assert!(!crate::edit::hit_track_add_area(
+            &p,
+            60.0,
+            timeline::track_top_y(2) + 10.0
+        ));
     }
 
     #[test]

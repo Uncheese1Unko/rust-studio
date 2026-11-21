@@ -931,10 +931,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
         // リネーム編集中のトラックは編集中の文字列＋キャレットを出す
         // （Issue #56）。それ以外はトラック名。名前は削除帯を除いた
         // 範囲の中央に置き、「×」と重ならないようにする。
-        let renaming_this = model
-            .rename
-            .as_ref()
-            .filter(|s| s.track_id == track.id);
+        let renaming_this = model.rename.as_ref().filter(|s| s.track_id == track.id);
         let name_text = match renaming_this {
             Some(session) => format!("{}_", session.text),
             None => track.name.clone(),
@@ -959,10 +956,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
             timeline::TRACK_HEIGHT_PX,
         );
         let (r, g, b) = theme::TEXT_SUB;
-        draw.text("×")
-            .x_y(xx, xy)
-            .font_size(12)
-            .color(rgb(r, g, b));
+        draw.text("×").x_y(xx, xy).font_size(12).color(rgb(r, g, b));
     }
 
     // トラック追加エリア（Issue #56）: 最終行直下のヘッダー列。
