@@ -312,4 +312,17 @@ mod waveform_tests {
         assert_eq!(waveform_peaks(&[], 1, 3), vec![0.0, 0.0, 0.0]);
         assert_eq!(waveform_peaks(&[0.9], 1, 0), Vec::<f32>::new());
     }
+
+    #[test]
+    fn peaks_read_only_the_first_channel_of_interleaved_input() {
+        // Issue #14 レビュー指摘: インターリーブ入力では先頭チャンネル
+        // だけを見ることを固定する。右チャンネル（大きな振幅）は
+        // 拾わない。
+        // フレーム列: (L=0.1, R=0.9) x2, (L=0.3, R=0.9) x2
+        let samples = vec![0.1f32, 0.9, 0.1, 0.9, 0.3, 0.9, 0.3, 0.9];
+        let peaks = waveform_peaks(&samples, 2, 2);
+        assert_eq!(peaks.len(), 2);
+        assert!((peaks[0] - 0.1).abs() < 1e-6, "got {peaks:?}");
+        assert!((peaks[1] - 0.3).abs() < 1e-6, "got {peaks:?}");
+    }
 }

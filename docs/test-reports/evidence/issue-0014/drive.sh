@@ -1,5 +1,9 @@
 #!/bin/bash
 # Issue #14 acceptance drive: DAW GUI under Xvfb.
+# 1回の起動で「ドラッグ移動 → ダブルクリック配置」を行い、その
+# stdout とスクリーンショットを証拠として残す。
+# ダブルクリックは click --repeat では速すぎてアプリのポーリングが
+# 拾えないため、明示的な down/up ペアで送る（レビュー指摘で修正）。
 set -u
 export DISPLAY=:99
 ROOT=/home/hatch/workspace/repos/rust-studio
@@ -26,8 +30,19 @@ xdotool mouseup 1
 sleep 0.6
 
 # double-click empty timeline area at (700,48) to place a clip
-xdotool mousemove 700 48 click --repeat 2 --delay 120 1
-sleep 0.8
+# (explicit down/up pairs so the app's polling observes both presses)
+xdotool mousemove 700 48
+sleep 0.2
+xdotool mousedown 1
+sleep 0.15
+xdotool mouseup 1
+sleep 0.1
+xdotool mousedown 1
+sleep 0.15
+xdotool mouseup 1
+# 配置が stdout に出るまで待つ
+for i in $(seq 1 10); do grep -q "placed:" "$OUT/gui-stdout.txt" 2>/dev/null && break; sleep 0.5; done
+sleep 0.5
 ffmpeg -y -loglevel error -f x11grab -video_size 1024x600 -i :99 -frames:v 1 "$OUT/shot2-after-ops.png"
 
 kill "$GUI_PID" 2>/dev/null
