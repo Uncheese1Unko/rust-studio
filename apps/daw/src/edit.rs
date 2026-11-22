@@ -332,12 +332,18 @@ pub enum HitTarget {
 }
 
 /// x ピクセルを時刻（ms）に変換する。ヘッダーより左では負になる。
-pub fn x_to_ms(x: f32, view_width_px: f32) -> i64 {
-    ((x - timeline::HEADER_WIDTH_PX) / timeline::px_per_ms(view_width_px)).round() as i64
+pub fn x_to_ms(x: f32, view_width_px: f32, scale: &timeline::ViewScale) -> i64 {
+    scale.x_to_ms(x, view_width_px)
 }
 
 /// 座標（左上原点ピクセル）に対するヒットテスト。
-pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTarget {
+pub fn hit_test(
+    project: &Project,
+    view_width_px: f32,
+    scale: &timeline::ViewScale,
+    x: f32,
+    y: f32,
+) -> HitTarget {
     if y < timeline::RULER_HEIGHT_PX || x < timeline::HEADER_WIDTH_PX {
         return HitTarget::Outside;
     }
@@ -345,7 +351,7 @@ pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTar
     if track_index >= project.tracks.len() {
         return HitTarget::Outside;
     }
-    for rect in timeline::layout_clips(project, view_width_px) {
+    for rect in timeline::layout_clips(project, view_width_px, scale) {
         if rect.track_id != project.tracks[track_index].id {
             continue;
         }
@@ -866,28 +872,80 @@ mod tests {
 
     // opening の矩形: x = 120 + 1000*0.084 = 204, w = 168, y = 24..72（幅 960）
     #[test]
+    fn x_to_ms_round_trips_at_any_zoom() {
+        // Issue #38: 任意の倍率・オフセットで ms→px→ms が一致する
+        // （ピクセル量子化の誤差以内）。
+        for (zoom, offset) in [(1.0, 0), (2.0, 1_500), (0.5, 0), (8.0, 3_000), (0.25, 0)] {
+            let scale = timeline::ViewScale {
+                zoom,
+                offset_ms: offset,
+            };
+            for ms in [0, 1_234, 5_000, 9_999] {
+                let x = scale.time_to_x(ms, 960.0);
+                let back = x_to_ms(x, 960.0, &scale);
+                let tol = (0.5 / scale.px_per_ms(960.0)).ceil() as i64 + 1;
+                assert!(
+                    (back - ms).abs() <= tol,
+                    "zoom {zoom} offset {offset}: {ms} -> {x} -> {back}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hit_test_uses_view_scale() {
+        // Issue #38: ヒットテストは倍率・オフセットを反映する。
+        // zoom=2・offset=1000 ではクリップ（1000..3000ms）は
+        // x=120..456 に描かれる。x=130 は既定スケールでは空きだが
+        // このスケールではクリップ本体。
+        let p = sample_project();
+        let id = clip_id(&p);
+        let scale = timeline::ViewScale {
+            zoom: 2.0,
+            offset_ms: 1_000,
+        };
+        assert_eq!(
+            hit_test(&p, 960.0, &scale, 130.0, 48.0),
+            HitTarget::ClipBody { clip_id: id }
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 130.0, 48.0),
+            HitTarget::Empty { track_index: 0 }
+        );
+    }
+
+    #[test]
     fn hit_test_distinguishes_body_edges_and_empty() {
         let p = sample_project();
         let id = clip_id(&p);
         assert_eq!(
-            hit_test(&p, 960.0, 280.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 280.0, 48.0),
             HitTarget::ClipBody { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 206.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 206.0, 48.0),
             HitTarget::ClipLeftEdge { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 370.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 370.0, 48.0),
             HitTarget::ClipRightEdge { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 700.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 700.0, 48.0),
             HitTarget::Empty { track_index: 0 }
         );
-        assert_eq!(hit_test(&p, 960.0, 280.0, 10.0), HitTarget::Outside);
-        assert_eq!(hit_test(&p, 960.0, 60.0, 48.0), HitTarget::Outside);
-        assert_eq!(hit_test(&p, 960.0, 280.0, 200.0), HitTarget::Outside);
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 280.0, 10.0),
+            HitTarget::Outside
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 60.0, 48.0),
+            HitTarget::Outside
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 280.0, 200.0),
+            HitTarget::Outside
+        );
     }
 
     #[test]
@@ -898,21 +956,21 @@ mod tests {
         let id = clip_id(&p);
         // 左上コーナー（左端 x=204、上端帯 y=28）
         assert_eq!(
-            hit_test(&p, 960.0, 206.0, 28.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 206.0, 28.0),
             HitTarget::ClipFadeInCorner { clip_id: id }
         );
         // 右上コーナー（右端 x=372、上端帯 y=28）
         assert_eq!(
-            hit_test(&p, 960.0, 370.0, 28.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 370.0, 28.0),
             HitTarget::ClipFadeOutCorner { clip_id: id }
         );
         // 上端帯より下（y=48）はトリム端のまま
         assert_eq!(
-            hit_test(&p, 960.0, 206.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 206.0, 48.0),
             HitTarget::ClipLeftEdge { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 370.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 370.0, 48.0),
             HitTarget::ClipRightEdge { clip_id: id }
         );
     }

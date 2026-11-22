@@ -81,17 +81,95 @@ pub const HEADER_WIDTH_PX: f32 = 120.0;
 pub const RULER_HEIGHT_PX: f32 = 24.0;
 /// 1トラック行の高さ（px）。
 pub const TRACK_HEIGHT_PX: f32 = 48.0;
-/// 画面に表示する時間幅（ms）。M1 では固定幅とする。
+/// 画面に表示する時間幅（ms、倍率1のとき）。M1 では固定幅とする。
 pub const VIEW_DURATION_MS: i64 = 10_000;
 
-/// 1ミリ秒あたりのピクセル数。
+/// ズーム倍率の下限・上限（Issue #38）。
+pub const ZOOM_MIN: f32 = 0.25;
+pub const ZOOM_MAX: f32 = 8.0;
+
+/// 横方向の表示スケール（Issue #38）: 倍率と左端オフセット。
+/// アプリ側の表示状態であり、プロジェクトには保存しない
+/// （再起動で既定に戻る）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewScale {
+    /// 倍率（0.25..=8.0）。1.0 で VIEW_DURATION_MS が画面幅に収まる。
+    pub zoom: f32,
+    /// 表示左端（ヘッダー右端）の時刻（ms、0 以上）。
+    pub offset_ms: i64,
+}
+
+impl Default for ViewScale {
+    fn default() -> Self {
+        ViewScale {
+            zoom: 1.0,
+            offset_ms: 0,
+        }
+    }
+}
+
+impl ViewScale {
+    /// 1ミリ秒あたりのピクセル数（倍率込み）。
+    pub fn px_per_ms(&self, view_width_px: f32) -> f32 {
+        px_per_ms(view_width_px) * self.zoom
+    }
+
+    /// 時刻（ms）を、ウィンドウ左端からの x ピクセルに変換する。
+    pub fn time_to_x(&self, ms: i64, view_width_px: f32) -> f32 {
+        HEADER_WIDTH_PX + (ms - self.offset_ms) as f32 * self.px_per_ms(view_width_px)
+    }
+
+    /// x ピクセルを時刻（ms）に変換する（time_to_x の逆）。
+    pub fn x_to_ms(&self, x: f32, view_width_px: f32) -> i64 {
+        self.offset_ms + ((x - HEADER_WIDTH_PX) / self.px_per_ms(view_width_px)).round() as i64
+    }
+
+    /// 表示右端の時刻（ms）。
+    pub fn end_ms(&self, view_width_px: f32) -> i64 {
+        self.x_to_ms(view_width_px, view_width_px)
+    }
+
+    /// アンカー（マウス位置の時刻と画面 x）を固定したまま倍率を
+    /// 変える（Issue #38）。倍率は範囲にクランプされ、オフセットは
+    /// 0 未満にならない。
+    pub fn zoom_at(
+        &self,
+        factor: f32,
+        anchor_ms: i64,
+        anchor_x: f32,
+        view_width_px: f32,
+    ) -> ViewScale {
+        let zoom = (self.zoom * factor).clamp(ZOOM_MIN, ZOOM_MAX);
+        let next = ViewScale {
+            zoom,
+            offset_ms: self.offset_ms,
+        };
+        let offset = anchor_ms
+            - ((anchor_x - HEADER_WIDTH_PX) / next.px_per_ms(view_width_px)).round() as i64;
+        ViewScale {
+            zoom,
+            offset_ms: offset.max(0),
+        }
+    }
+
+    /// 水平スクロール（オフセットは 0 未満にならない）。
+    pub fn scroll_by(&self, delta_ms: i64) -> ViewScale {
+        ViewScale {
+            offset_ms: (self.offset_ms + delta_ms).max(0),
+            ..*self
+        }
+    }
+}
+
+/// 1ミリ秒あたりのピクセル数（倍率1の基準値）。
 pub fn px_per_ms(view_width_px: f32) -> f32 {
     (view_width_px - HEADER_WIDTH_PX) / VIEW_DURATION_MS as f32
 }
 
-/// 時刻（ms）を、ウィンドウ左端からの x ピクセルに変換する。
-pub fn time_to_x(ms: i64, view_width_px: f32) -> f32 {
-    HEADER_WIDTH_PX + ms as f32 * px_per_ms(view_width_px)
+/// 時刻（ms）を、ウィンドウ左端からの x ピクセルに変換する
+/// （倍率・オフセットは ViewScale が持つ、Issue #38）。
+pub fn time_to_x(ms: i64, view_width_px: f32, scale: &ViewScale) -> f32 {
+    scale.time_to_x(ms, view_width_px)
 }
 
 /// トラック行の上端 y（ウィンドウ上端からのピクセル）。
@@ -112,7 +190,7 @@ pub struct ClipRect {
 }
 
 /// プロジェクトの全クリップの描画矩形を、トラック順・クリップ順で返す。
-pub fn layout_clips(project: &Project, view_width_px: f32) -> Vec<ClipRect> {
+pub fn layout_clips(project: &Project, view_width_px: f32, scale: &ViewScale) -> Vec<ClipRect> {
     let mut rects = Vec::new();
     for (index, track) in project.tracks.iter().enumerate() {
         for clip in &track.clips {
@@ -120,9 +198,9 @@ pub fn layout_clips(project: &Project, view_width_px: f32) -> Vec<ClipRect> {
                 clip_id: clip.id,
                 track_id: track.id,
                 kind: track.kind,
-                x: time_to_x(clip.start_ms, view_width_px),
+                x: time_to_x(clip.start_ms, view_width_px, scale),
                 y: track_top_y(index),
-                w: clip.duration_ms as f32 * px_per_ms(view_width_px),
+                w: clip.duration_ms as f32 * scale.px_per_ms(view_width_px),
                 h: TRACK_HEIGHT_PX,
             });
         }
@@ -131,8 +209,8 @@ pub fn layout_clips(project: &Project, view_width_px: f32) -> Vec<ClipRect> {
 }
 
 /// 再生ヘッドの x（ウィンドウ左端からのピクセル）。
-pub fn playhead_x(playhead_ms: i64, view_width_px: f32) -> f32 {
-    time_to_x(playhead_ms, view_width_px)
+pub fn playhead_x(playhead_ms: i64, view_width_px: f32, scale: &ViewScale) -> f32 {
+    time_to_x(playhead_ms, view_width_px, scale)
 }
 
 /// プロジェクトの終端（全クリップの end_ms の最大。空なら 0）。
@@ -254,7 +332,7 @@ mod tests {
     #[test]
     fn clip_rect_reflects_start_and_duration() {
         let project = sample_project();
-        let rects = layout_clips(&project, 960.0);
+        let rects = layout_clips(&project, 960.0, &ViewScale::default());
         let opening = &rects[0];
         // px_per_ms = (960 - 120) / 10_000 = 0.084
         assert!((opening.x - (HEADER_WIDTH_PX + 1_000.0 * 0.084)).abs() < 0.01);
@@ -267,7 +345,7 @@ mod tests {
     #[test]
     fn layout_covers_every_clip_in_project() {
         let project = sample_project();
-        let rects = layout_clips(&project, 960.0);
+        let rects = layout_clips(&project, 960.0, &ViewScale::default());
         let project_clip_ids: Vec<u64> = project
             .tracks
             .iter()
@@ -282,9 +360,40 @@ mod tests {
 
     #[test]
     fn playhead_x_matches_time() {
-        assert_eq!(playhead_x(0, 960.0), HEADER_WIDTH_PX);
+        assert_eq!(playhead_x(0, 960.0, &ViewScale::default()), HEADER_WIDTH_PX);
         let expected = HEADER_WIDTH_PX + 5_000.0 * 0.084;
-        assert!((playhead_x(5_000, 960.0) - expected).abs() < 0.01);
+        assert!((playhead_x(5_000, 960.0, &ViewScale::default()) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn view_scale_zoom_keeps_anchor_and_clamps() {
+        // Issue #38: 既定スケールは従来レイアウトと一致する。
+        let base = ViewScale::default();
+        assert_eq!(base.zoom, 1.0);
+        assert_eq!(base.offset_ms, 0);
+        assert!((base.time_to_x(5_000, 960.0) - (HEADER_WIDTH_PX + 5_000.0 * 0.084)).abs() < 0.01);
+        // アンカー（マウス位置の時刻）を固定して2倍に拡大すると、
+        // その時刻の画面位置が変わらない。
+        let anchor_x = base.time_to_x(3_000, 960.0);
+        let zoomed = base.zoom_at(2.0, 3_000, anchor_x, 960.0);
+        assert_eq!(zoomed.zoom, 2.0);
+        assert!(
+            (zoomed.time_to_x(3_000, 960.0) - anchor_x).abs() <= 1.0,
+            "anchor must stay: {} vs {anchor_x}",
+            zoomed.time_to_x(3_000, 960.0)
+        );
+        // 倍率は 0.25..=8 にクランプされる
+        assert_eq!(
+            base.zoom_at(100.0, 0, HEADER_WIDTH_PX, 960.0).zoom,
+            ZOOM_MAX
+        );
+        assert_eq!(
+            base.zoom_at(0.001, 0, HEADER_WIDTH_PX, 960.0).zoom,
+            ZOOM_MIN
+        );
+        // スクロールは 0 未満にならない
+        assert_eq!(base.scroll_by(-500).offset_ms, 0);
+        assert_eq!(base.scroll_by(700).offset_ms, 700);
     }
 
     #[test]

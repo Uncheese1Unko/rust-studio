@@ -167,6 +167,9 @@ struct Model {
     // Issue #36: メトロノームの ON/OFF（再生状態。プロジェクトには
     // 保存しない）。
     metronome_on: bool,
+    // Issue #38: タイムラインの表示スケール（倍率と左端オフセット。
+    // 表示状態で、プロジェクトには保存しない）。
+    view_scale: timeline::ViewScale,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -347,6 +350,7 @@ fn model(app: &App) -> Model {
         clipboard: None,
         bpm_edit: None,
         metronome_on: false,
+        view_scale: timeline::ViewScale::default(),
     }
 }
 
@@ -500,7 +504,47 @@ fn save_project_file(model: &mut Model) {
 /// Enter で RenameTrack コマンド（#55）を発行し、Esc で中止する。
 /// 確定がコマンド層に弾かれた場合（空白名など）は編集を続け、
 /// 理由をログに出す（イシューの実装方針）。
-fn event(_app: &App, model: &mut Model, event: Event) {
+/// ホイール操作（Issue #38）: Ctrl+ホイールでマウス位置の時刻を
+/// 中心にズーム、通常のホイールで水平スクロールする。テキスト入力中は
+/// 受け付けない。倍率とオフセットは表示状態で、保存はしない。
+fn mouse_wheel(app: &App, model: &mut Model, delta: MouseScrollDelta) {
+    if model.rename.is_some() || model.bpm_edit.is_some() {
+        return;
+    }
+    let lines = match delta {
+        MouseScrollDelta::LineDelta(_, y) => y,
+        MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 50.0,
+    };
+    if lines == 0.0 {
+        return;
+    }
+    let win = app.window_rect();
+    let mx = app.mouse.x + win.w() / 2.0;
+    if ctrl_down(app) {
+        let anchor_ms = model.view_scale.x_to_ms(mx, win.w());
+        let factor = if lines > 0.0 { 1.25 } else { 0.8 };
+        model.view_scale = model.view_scale.zoom_at(factor, anchor_ms, mx, win.w());
+        println!(
+            "zoom: {:.2} offset: {}",
+            model.view_scale.zoom, model.view_scale.offset_ms
+        );
+    } else {
+        model.view_scale = model.view_scale.scroll_by(-(lines * 100.0) as i64);
+        println!("scroll offset: {}", model.view_scale.offset_ms);
+    }
+}
+
+fn event(app: &App, model: &mut Model, event: Event) {
+    // ホイール（Issue #38）はテキスト入力の有無によらず先に捌く
+    // （入力中は mouse_wheel 側で無視する）。
+    if let Event::WindowEvent {
+        simple: Some(WindowEvent::MouseWheel(delta, _)),
+        ..
+    } = event
+    {
+        mouse_wheel(app, model, delta);
+        return;
+    }
     if model.rename.is_none() && model.bpm_edit.is_none() {
         return;
     }
@@ -1005,7 +1049,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let lx = app.mouse.x + win.w() / 2.0;
     let ly = win.h() / 2.0 - app.mouse.y;
     let left_down = app.mouse.buttons.left().is_down();
-    let pointer_ms = edit::x_to_ms(lx, win.w());
+    let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
 
     // ミキサー（Issue #15）: スライダーの押下・ドラッグで音量／パンを
     // コマンド経由で変える。タイムライン領域とは重ならない。
@@ -1133,7 +1177,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 println!("rename begin: track {}", track.id);
             }
         }
-        let target = edit::hit_test(model.history.project(), win.w(), lx, ly);
+        let target = edit::hit_test(model.history.project(), win.w(), &model.view_scale, lx, ly);
         if let Some(drag) = edit::Drag::begin(model.history.project(), &target, pointer_ms) {
             model.drag = Some(drag);
             model.last_drag_cmd = None;
@@ -1165,7 +1209,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
             // スナップ（Issue #37）: しきい値は画面の 8px を ms に換算し、
             // Alt 押下中は無効化する。
             let threshold_ms =
-                (edit::SNAP_THRESHOLD_PX / timeline::px_per_ms(win.w())).round() as i64;
+                (edit::SNAP_THRESHOLD_PX / model.view_scale.px_per_ms(win.w())).round() as i64;
             let ctx = edit::SnapContext::from_project(
                 model.history.project(),
                 drag.clip_id,
@@ -1301,8 +1345,10 @@ fn view(app: &App, model: &Model, frame: Frame) {
         44.0,
         timeline::RULER_HEIGHT_PX / 2.0,
     );
-    for sec in 0..=(timeline::VIEW_DURATION_MS / 1_000) {
-        let x = timeline::time_to_x(sec * 1_000, win.w());
+    for sec in
+        (model.view_scale.offset_ms / 1_000).max(0)..=(model.view_scale.end_ms(win.w()) / 1_000 + 1)
+    {
+        let x = timeline::time_to_x(sec * 1_000, win.w(), &model.view_scale);
         let nx = x - win.w() / 2.0;
         let (r, g, b) = theme::LINE;
         draw.line()
@@ -1407,7 +1453,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     // クリップ（timeline.clip.<id>）＋波形の概形。
-    for rect in timeline::layout_clips(model.history.project(), win.w()) {
+    for rect in timeline::layout_clips(model.history.project(), win.w(), &model.view_scale) {
         let clip = model.history.project().clip(rect.clip_id).map(|(_, c)| c);
         let playing = clip
             .map(|c| timeline::clip_is_playing(c, model.playhead_ms))
@@ -1468,7 +1514,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
             }
             // フェードの傾斜（Issue #34）: フェードインは左下→上、
             // フェードアウトは上→右下の直線で包絡を示す。
-            let ppm = timeline::px_per_ms(win.w());
+            let ppm = model.view_scale.px_per_ms(win.w());
             let face_x0 = rect.x + 1.5;
             let face_x1 = rect.x + rect.w - 1.5;
             let face_top = inner_y + 1.5;
@@ -1505,13 +1551,18 @@ fn view(app: &App, model: &Model, frame: Frame) {
         let tracks_bottom = timeline::RULER_HEIGHT_PX
             + model.history.project().tracks.len() as f32 * timeline::TRACK_HEIGHT_PX;
         let (lr, lg, lb) = theme::LINE;
-        let mut bar = 0i64;
+        let bar_ms = timeline::bar_duration_ms(bpm);
+        let mut bar = if bar_ms > 0.0 {
+            (model.view_scale.offset_ms as f64 / bar_ms).floor() as i64
+        } else {
+            0
+        };
         loop {
             let start = timeline::bar_start_ms(bpm, bar);
-            if start > timeline::VIEW_DURATION_MS {
+            if start > model.view_scale.end_ms(win.w()) {
                 break;
             }
-            let x = timeline::time_to_x(start, win.w());
+            let x = timeline::time_to_x(start, win.w(), &model.view_scale);
             let nx = x - win.w() / 2.0;
             draw.line()
                 .start(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX))
@@ -1965,7 +2016,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     // 再生ヘッド（timeline.playhead）: 黒の細線＋現在の小節チップ
     // （Issue #24、デザイン文書「ライブ感の要素」）。
-    let px = timeline::playhead_x(model.playhead_ms, win.w()) - win.w() / 2.0;
+    let px = timeline::playhead_x(model.playhead_ms, win.w(), &model.view_scale) - win.w() / 2.0;
     draw.line()
         .start(pt2(px, win.h() / 2.0))
         .end(pt2(px, -win.h() / 2.0))
@@ -1973,7 +2024,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
     let chip_w = 48.0;
     let chip_h = 18.0;
-    let chip_x = timeline::playhead_x(model.playhead_ms, win.w())
+    let chip_x = timeline::playhead_x(model.playhead_ms, win.w(), &model.view_scale)
         .clamp(timeline::HEADER_WIDTH_PX, win.w() - chip_w);
     draw_rounded_rect(
         &draw,
