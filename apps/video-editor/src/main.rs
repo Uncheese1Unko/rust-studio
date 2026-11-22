@@ -43,6 +43,9 @@ struct Model {
     prev_s_down: bool,
     // Issue #51: ゲインスライダーのドラッグ中かどうか。
     gain_drag: bool,
+    // Issue #54: mp4 書き出しの進捗（バックグラウンドスレッドと共有）。
+    export_state: Option<std::sync::Arc<std::sync::Mutex<ExportProgress>>>,
+    export_reported: bool,
     // Issue #49: X キー（トランジション付け外し）の前回状態と、
     // 現在の再生ヘッド用に用意したブレンド済みフレーム。
     prev_x_down: bool,
@@ -86,6 +89,18 @@ const PREVIEW_H: f32 = 248.0;
 const PREVIEW_ID: &str = "preview";
 /// ゲインスライダー（Issue #51）: プレビュー下の帯の上端 y と高さ。
 const GAIN_SLIDER_Y: f32 = PREVIEW_Y + PREVIEW_H + 42.0;
+
+/// Issue #54: 書き出しボタンの位置（ゲインスライダーの下）。
+const EXPORT_BUTTON_Y: f32 = GAIN_SLIDER_Y + 34.0;
+const EXPORT_BUTTON_W: f32 = 170.0;
+const EXPORT_BUTTON_H: f32 = 24.0;
+
+/// Issue #54: 書き出しスレッドと共有する進捗。
+struct ExportProgress {
+    done: usize,
+    total: usize,
+    finished: Option<Result<String, String>>,
+}
 const GAIN_SLIDER_H: f32 = 16.0;
 
 /// メディアビンのパネル領域（左上原点ピクセル、Issue #47）。
@@ -129,7 +144,118 @@ fn bin_header_at(model: &Model, lx: f32, ly: f32) -> bool {
 }
 
 fn main() {
+    // Issue #54: CLI 書き出し（ADR-0015 の受け入れ条件）。
+    //   video-editor --export-mp4 <project.json> <out.mp4>
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 4 && args[1] == "--export-mp4" {
+        std::process::exit(run_export_cli(&args[2], &args[3]));
+    }
     nannou::app(model).event(event).update(update).run();
+}
+
+/// CLI 書き出し本体。進捗を標準出力へ出し、成否を終了コードで返す。
+fn run_export_cli(project_path: &str, out_path: &str) -> i32 {
+    let project = match Project::load_from_path(std::path::Path::new(project_path)) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("export failed: cannot load project: {e}");
+            return 1;
+        }
+    };
+    let mut last_pct = 0usize;
+    let result = media::export_mp4(
+        &project,
+        std::path::Path::new(out_path),
+        media::ExportSettings::default(),
+        &mut |done, total| {
+            let pct = done * 100 / total.max(1);
+            if pct >= last_pct + 10 || done == total {
+                last_pct = pct;
+                println!("export progress: {done}/{total} ({pct}%)");
+            }
+        },
+    );
+    match result {
+        Ok(report) => {
+            println!(
+                "export done: {} ({} frames, {} ms)",
+                report.out_path.display(),
+                report.frame_count,
+                report.duration_ms
+            );
+            0
+        }
+        Err(e) => {
+            eprintln!("export failed: {e}");
+            1
+        }
+    }
+}
+
+/// 書き出しボタンの当たり判定。
+fn export_button_at(lx: f32, ly: f32) -> bool {
+    (PREVIEW_X..=PREVIEW_X + EXPORT_BUTTON_W).contains(&lx)
+        && (EXPORT_BUTTON_Y..=EXPORT_BUTTON_Y + EXPORT_BUTTON_H).contains(&ly)
+}
+
+/// 書き出し先: プロジェクトファイルと同じ場所の export.mp4。
+/// ファイル未指定ならメディアディレクトリ。
+fn export_out_path(model: &Model) -> std::path::PathBuf {
+    match &model.project_file {
+        Some(p) => p
+            .parent()
+            .map(|d| d.join("export.mp4"))
+            .unwrap_or_else(|| std::path::PathBuf::from("export.mp4")),
+        None => media::media_dir().join("export.mp4"),
+    }
+}
+
+/// 書き出しをバックグラウンドスレッドで始める。
+fn start_export(model: &mut Model) {
+    if let Some(state) = &model.export_state {
+        if state
+            .lock()
+            .map(|st| st.finished.is_none())
+            .unwrap_or(false)
+        {
+            return; // 書き出し中は二重に始めない
+        }
+    }
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ExportProgress {
+        done: 0,
+        total: 0,
+        finished: None,
+    }));
+    let thread_state = state.clone();
+    let project = model.history.project().clone();
+    let out = export_out_path(model);
+    std::thread::spawn(move || {
+        let result = media::export_mp4(
+            &project,
+            &out,
+            media::ExportSettings::default(),
+            &mut |done, total| {
+                if let Ok(mut st) = thread_state.lock() {
+                    st.done = done;
+                    st.total = total;
+                }
+            },
+        );
+        let finished = match result {
+            Ok(report) => Ok(format!(
+                "{} ({} frames)",
+                report.out_path.display(),
+                report.frame_count
+            )),
+            Err(e) => Err(e),
+        };
+        if let Ok(mut st) = thread_state.lock() {
+            st.finished = Some(finished);
+        }
+    });
+    model.export_state = Some(state);
+    model.export_reported = false;
+    println!("export started");
 }
 
 /// デモプロジェクトをコマンド経由で構築する。
@@ -289,6 +415,8 @@ fn model(app: &App) -> Model {
         prev_x_down: false,
         blend_frame: None,
         gain_drag: false,
+        export_state: None,
+        export_reported: false,
         last_drop_at: None,
         selected_track: initial_selected,
         frames,
@@ -710,6 +838,20 @@ fn event(app: &App, model: &mut Model, event: Event) {
 }
 
 fn update(app: &App, model: &mut Model, update: Update) {
+    // Issue #54: 書き出しの完了を一度だけログに出す。
+    if let Some(state) = &model.export_state {
+        if !model.export_reported {
+            if let Ok(st) = state.lock() {
+                if let Some(finished) = &st.finished {
+                    match finished {
+                        Ok(msg) => println!("export done: {msg}"),
+                        Err(e) => println!("export failed: {e}"),
+                    }
+                    model.export_reported = true;
+                }
+            }
+        }
+    }
     if model.rename.is_some() || model.title_input.is_some() {
         // リネーム／タイトル編集中はポインタ操作と切り抜きキーを受け
         // 付けない（Issue #57 / #50）。再生ヘッドとプレビューは進み続ける。
@@ -1223,6 +1365,10 @@ fn handle_pointer(app: &App, model: &mut Model) {
     if left_down && !model.prev_left_down {
         // ゲインスライダー（Issue #51）: プレビュー下の帯。
         // 対象クリップがあるときだけドラッグを開始する。
+        if export_button_at(lx, ly) {
+            start_export(model);
+            return;
+        }
         if gain_slider_at(lx, ly) && gain_target(model).is_some() {
             model.gain_drag = true;
             model.drag_before = Some(model.history.project().clone());
@@ -1796,6 +1942,55 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(sx, sy + GAIN_SLIDER_H / 2.0 + 10.0)
             .font_size(11)
             .color(rgb(0.65, 0.65, 0.70));
+    }
+
+    // Issue #54: 書き出しボタンと進捗表示。
+    {
+        let (bx, by) = rect_center(
+            win,
+            PREVIEW_X,
+            EXPORT_BUTTON_Y,
+            EXPORT_BUTTON_W,
+            EXPORT_BUTTON_H,
+        );
+        draw.rect()
+            .x_y(bx, by)
+            .w_h(EXPORT_BUTTON_W, EXPORT_BUTTON_H)
+            .color(rgb(0.16, 0.16, 0.18));
+        draw.text("EXPORT MP4")
+            .x_y(bx, by)
+            .w_h(EXPORT_BUTTON_W, EXPORT_BUTTON_H)
+            .font_size(13)
+            .align_text_middle_y()
+            .center_justify()
+            .color(rgb(0.95, 0.93, 0.90));
+        let status = match &model.export_state {
+            None => String::new(),
+            Some(state) => match state.lock() {
+                Ok(st) => match &st.finished {
+                    Some(Ok(msg)) => format!("EXPORTED: {msg}"),
+                    Some(Err(e)) => format!("EXPORT FAILED: {e}"),
+                    None => format!("EXPORTING {}/{}", st.done, st.total),
+                },
+                Err(_) => String::new(),
+            },
+        };
+        if !status.is_empty() {
+            let (tx, ty) = rect_center(
+                win,
+                PREVIEW_X + EXPORT_BUTTON_W + 10.0,
+                EXPORT_BUTTON_Y,
+                PREVIEW_W - EXPORT_BUTTON_W - 10.0,
+                EXPORT_BUTTON_H,
+            );
+            draw.text(&status)
+                .x_y(tx, ty)
+                .w_h(PREVIEW_W - EXPORT_BUTTON_W - 10.0, EXPORT_BUTTON_H)
+                .font_size(11)
+                .align_text_middle_y()
+                .left_justify()
+                .color(rgb(0.85, 0.85, 0.88));
+        }
     }
 
     // タイトル（Issue #50）: 再生区間のクリップにタイトルがあれば、

@@ -417,6 +417,16 @@ pub fn clear_frame_files(dir: &Path) {
 
 /// 映像ファイルをフレーム PNG 列に展開し、時刻順のパス一覧を返す。
 fn extract_frames(media_file: &Path, out_dir: &Path) -> Vec<PathBuf> {
+    extract_frames_sized(media_file, out_dir, FRAME_FPS, FRAME_WIDTH, FRAME_HEIGHT)
+}
+
+fn extract_frames_sized(
+    media_file: &Path,
+    out_dir: &Path,
+    fps: u32,
+    width: u32,
+    height: u32,
+) -> Vec<PathBuf> {
     if !out_dir.exists() {
         if let Err(e) = std::fs::create_dir_all(out_dir) {
             println!(
@@ -435,9 +445,7 @@ fn extract_frames(media_file: &Path, out_dir: &Path) -> Vec<PathBuf> {
         .arg("-i")
         .arg(media_file)
         .arg("-vf")
-        .arg(format!(
-            "fps={FRAME_FPS},scale={FRAME_WIDTH}:{FRAME_HEIGHT}"
-        ))
+        .arg(format!("fps={fps},scale={width}:{height}"))
         .arg(&pattern)
         .status();
     match status {
@@ -497,6 +505,474 @@ pub fn prepare_media(project: &Project) -> FrameStore {
         }
     }
     FrameStore::from_frames(FRAME_FPS, map)
+}
+
+// ---------- Issue #54: mp4 書き出し（ADR-0015） ----------
+//
+// 方式は ADR-0015 のとおり: アプリ側で PNG フレーム列とミックス済み
+// WAV を作り、外部 ffmpeg で H.264/AAC の mp4 にエンコードする。
+// 書き出し設定はパラメータで、既定は 1280x720 / 30fps（プレビュー
+// の 320x180 / 10fps とは別）。映像の選択規則はプレビューと同じ
+// （トラック順で最初に覆う映像クリップ、トランジションは
+// ADR-0014 の α ブレンド、覆われない時刻は黒）。音声は音声
+// トラックを DAW の render_mix と同じ規則でステレオ 48kHz に
+// ミックスする（ゲイン×トラック音量、パン、フェード、offset。
+// ピッチシフトは ADR-0015 の規則に含まれないため行わない）。
+// 映像ソースに埋め込まれた音声は対象外（ADR-0015 の明記どおり）。
+
+/// 書き出し音声のサンプルレート（ADR-0015: ステレオ 48kHz）。
+pub const EXPORT_SAMPLE_RATE: u32 = 48_000;
+
+/// 書き出し設定（ADR-0015 のパラメータ）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExportSettings {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        Self {
+            width: 1280,
+            height: 720,
+            fps: 30,
+        }
+    }
+}
+
+/// 書き出し計画: 全長とフレーム数。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportPlan {
+    pub settings: ExportSettings,
+    pub duration_ms: i64,
+    pub frame_count: usize,
+}
+
+/// 全長は全トラックを通じたクリップ終端の最大値（ADR-0015）。
+pub fn export_plan(project: &Project, settings: ExportSettings) -> ExportPlan {
+    let duration_ms = project
+        .tracks
+        .iter()
+        .flat_map(|t| t.clips.iter().map(|c| c.start_ms + c.duration_ms))
+        .max()
+        .unwrap_or(0)
+        .max(0);
+    let frame_count = if duration_ms <= 0 || settings.fps == 0 {
+        0
+    } else {
+        ((duration_ms as u64 * settings.fps as u64).div_ceil(1000)) as usize
+    };
+    ExportPlan {
+        settings,
+        duration_ms,
+        frame_count,
+    }
+}
+
+/// 書き出し時刻のフレーム選択（プレビューと同じ規則）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExportFrame {
+    /// どの映像クリップにも覆われていない（黒フレーム）。
+    Black,
+    Clip {
+        source: String,
+        source_time_ms: i64,
+    },
+    Blend(TransitionBlend),
+    Cutout {
+        source: String,
+        source_time_ms: i64,
+    },
+}
+
+pub fn export_frame_at(project: &Project, t_ms: i64) -> ExportFrame {
+    let Some(clip) = active_video_clip(project, t_ms) else {
+        return ExportFrame::Black;
+    };
+    if let Some(blend) = transition_blend(project, t_ms) {
+        return ExportFrame::Blend(blend);
+    }
+    let source_time_ms =
+        source_time_ms(clip, t_ms).unwrap_or_else(|| clip.offset_ms + (t_ms - clip.start_ms));
+    if clip.cutout {
+        ExportFrame::Cutout {
+            source: clip.source.clone(),
+            source_time_ms,
+        }
+    } else {
+        ExportFrame::Clip {
+            source: clip.source.clone(),
+            source_time_ms,
+        }
+    }
+}
+
+struct DecodedAudio {
+    channels: u16,
+    sample_rate: u32,
+    samples: Vec<f32>,
+}
+
+fn decode_wav(path: &Path) -> Result<DecodedAudio, String> {
+    let mut reader = hound::WavReader::open(path).map_err(|e| e.to_string())?;
+    let spec = reader.spec();
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?,
+        hound::SampleFormat::Int => {
+            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|r| r.map(|v| v as f32 / max))
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?
+        }
+    };
+    Ok(DecodedAudio {
+        channels: spec.channels.max(1),
+        sample_rate: spec.sample_rate,
+        samples,
+    })
+}
+
+/// DAW の fade_envelope と同じ線形ランプ。
+fn fade_envelope(clip: &Clip, within_ms: f64) -> f32 {
+    let mut env = 1.0f64;
+    if clip.fade_in_ms > 0 {
+        env = env.min((within_ms / clip.fade_in_ms as f64).clamp(0.0, 1.0));
+    }
+    if clip.fade_out_ms > 0 {
+        let rest = clip.duration_ms as f64 - within_ms;
+        env = env.min((rest / clip.fade_out_ms as f64).clamp(0.0, 1.0));
+    }
+    env as f32
+}
+
+fn sample_at(audio: &DecodedAudio, pos: f64, out_ch: usize) -> f32 {
+    let channels = audio.channels as usize;
+    if channels == 0 || audio.samples.is_empty() {
+        return 0.0;
+    }
+    let frames = audio.samples.len() / channels;
+    if frames == 0 {
+        return 0.0;
+    }
+    let i0 = pos.floor().max(0.0) as usize;
+    let frac = (pos - pos.floor()) as f32;
+    let pick = |frame: usize| -> f32 {
+        let frame = frame.min(frames - 1);
+        let src_ch = if channels == 1 {
+            0
+        } else {
+            out_ch.min(channels - 1)
+        };
+        audio.samples[frame * channels + src_ch]
+    };
+    let a = pick(i0);
+    let b = pick(i0 + 1);
+    a + (b - a) * frac
+}
+
+/// 音声トラックをステレオ 48kHz にミックスする（インターリーブ）。
+/// DAW の render_mix と同じ規則（ミュート／ソロ、クリップゲイン×
+/// トラック音量、パン、フェード、offset）。デコード
+/// できない素材は理由を出して飛ばす。全体は ±1 にクランプする。
+pub fn mix_audio(project: &Project, duration_ms: i64) -> Vec<f32> {
+    let total_frames = ((duration_ms.max(0) as u64 * EXPORT_SAMPLE_RATE as u64) / 1000) as usize;
+    let mut out = vec![0.0f32; total_frames * 2];
+    let any_solo = project.tracks.iter().any(|t| t.solo);
+    let dir = media_dir();
+    let mut decoded: BTreeMap<String, Option<DecodedAudio>> = BTreeMap::new();
+    for track in &project.tracks {
+        if track.kind != TrackKind::Audio {
+            continue;
+        }
+        if track.muted || (any_solo && !track.solo) {
+            continue;
+        }
+        let channel_factor = [
+            track.volume * (1.0 - track.pan.max(0.0)),
+            track.volume * (1.0 + track.pan.min(0.0)),
+        ];
+        for clip in &track.clips {
+            let entry = decoded.entry(clip.source.clone()).or_insert_with(|| {
+                let file = resolve_source(&dir, &clip.source);
+                match decode_wav(&file) {
+                    Ok(a) => Some(a),
+                    Err(e) => {
+                        println!("export: skipping undecodable audio {}: {e}", clip.source);
+                        None
+                    }
+                }
+            });
+            let Some(audio) = entry.as_ref() else {
+                continue;
+            };
+            let start_frame =
+                (clip.start_ms.max(0) as u64 * EXPORT_SAMPLE_RATE as u64 / 1000) as usize;
+            let clip_frames =
+                (clip.duration_ms.max(0) as u64 * EXPORT_SAMPLE_RATE as u64 / 1000) as usize;
+            for i in 0..clip_frames {
+                let out_idx = start_frame + i;
+                if out_idx >= total_frames {
+                    break;
+                }
+                let within_ms = i as f64 * 1000.0 / EXPORT_SAMPLE_RATE as f64;
+                let src_pos =
+                    (within_ms + clip.offset_ms as f64) * audio.sample_rate as f64 / 1000.0;
+                let env = fade_envelope(clip, within_ms) * clip.gain;
+                for ch in 0..2 {
+                    out[out_idx * 2 + ch] +=
+                        sample_at(audio, src_pos, ch) * env * channel_factor[ch];
+                }
+            }
+        }
+    }
+    for v in &mut out {
+        *v = v.clamp(-1.0, 1.0);
+    }
+    out
+}
+
+fn write_mix_wav(path: &Path, samples: &[f32]) -> Result<(), String> {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: EXPORT_SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?;
+    for s in samples {
+        writer
+            .write_sample((s.clamp(-1.0, 1.0) * 32_767.0) as i16)
+            .map_err(|e| e.to_string())?;
+    }
+    writer.finalize().map_err(|e| e.to_string())
+}
+
+/// 書き出し解像度・fps で映像ソースのフレームを展開する。
+fn prepare_export_frames(project: &Project, settings: &ExportSettings, work: &Path) -> FrameStore {
+    let dir = media_dir();
+    let mut map: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    for track in &project.tracks {
+        if track.kind != TrackKind::Video {
+            continue;
+        }
+        for clip in &track.clips {
+            if map.contains_key(&clip.source) {
+                continue;
+            }
+            let file = resolve_source(&dir, &clip.source);
+            let out_dir = work.join("src-frames").join(frames_dir_name(&clip.source));
+            let frames = if file.exists() {
+                extract_frames_sized(
+                    &file,
+                    &out_dir,
+                    settings.fps,
+                    settings.width,
+                    settings.height,
+                )
+            } else {
+                println!("export: media file not found: {}", file.display());
+                Vec::new()
+            };
+            map.insert(clip.source.clone(), frames);
+        }
+    }
+    FrameStore::from_frames(settings.fps, map)
+}
+
+/// 書き出し1フレーム分の PNG ファイルを決める。
+#[allow(clippy::too_many_arguments)]
+fn compose_export_frame(
+    project: &Project,
+    store: &FrameStore,
+    preview_store: &FrameStore,
+    t_ms: i64,
+    settings: &ExportSettings,
+    work: &Path,
+    black: &Path,
+) -> PathBuf {
+    match export_frame_at(project, t_ms) {
+        ExportFrame::Black => black.to_path_buf(),
+        ExportFrame::Clip {
+            source,
+            source_time_ms,
+        } => store
+            .frame_path(&source, source_time_ms)
+            .map_or_else(|| black.to_path_buf(), Path::to_path_buf),
+        ExportFrame::Blend(b) => {
+            let (Some(prev), Some(next)) = (
+                store.frame_path(&b.prev_source, b.prev_source_time_ms),
+                store.frame_path(&b.next_source, b.next_source_time_ms),
+            ) else {
+                return black.to_path_buf();
+            };
+            let alpha_q = (b.alpha * 20.0).round() / 20.0;
+            let hash = fnv1a(
+                format!(
+                    "{}|{}|{}|{}",
+                    prev.display(),
+                    next.display(),
+                    (alpha_q * 100.0) as i32,
+                    settings.width
+                )
+                .as_bytes(),
+            );
+            let out = work.join("blend").join(format!("b{hash:016x}.png"));
+            match blend_frame_files(prev, next, b.alpha, &out) {
+                Ok(()) => out,
+                Err(_) => black.to_path_buf(),
+            }
+        }
+        ExportFrame::Cutout {
+            source,
+            source_time_ms,
+        } => {
+            // プレビューが作った合成済みフレーム（320x180）を書き出し
+            // サイズへ拡大して使う。合成がまだ無い場合は素のフレーム
+            // で代替する（記録: 書き出し側で合成は再実行しない）。
+            let dir = media_dir().join(crate::cutout::composite_dir_name(&source));
+            let idx = frame_index(source_time_ms, FRAME_FPS);
+            let composite = dir.join(format!("f{idx:03}.png"));
+            let base = if composite.exists() {
+                Some(composite)
+            } else {
+                preview_store
+                    .frame_path(&source, source_time_ms)
+                    .map(Path::to_path_buf)
+            };
+            let Some(base) = base else {
+                return black.to_path_buf();
+            };
+            let out = work.join("cutout").join(format!(
+                "c{:016x}.png",
+                fnv1a(base.to_string_lossy().as_bytes())
+            ));
+            if !out.exists() {
+                if let Some(parent) = out.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let resized = image::open(&base).map(|img| {
+                    img.resize_exact(
+                        settings.width,
+                        settings.height,
+                        image::imageops::FilterType::Triangle,
+                    )
+                });
+                match resized {
+                    Ok(img) => {
+                        let _ = img.save(&out);
+                    }
+                    Err(_) => return base,
+                }
+            }
+            out
+        }
+    }
+}
+
+/// 書き出し結果。
+#[derive(Debug)]
+pub struct ExportReport {
+    pub duration_ms: i64,
+    pub frame_count: usize,
+    pub out_path: PathBuf,
+}
+
+/// タイムライン全体を mp4 に書き出す（ADR-0015）。進捗は
+/// （済みフレーム数, 全フレーム数）でコールバックへ知らせる。
+/// 出力は一時ファイルへ書いてからリネームする。
+pub fn export_mp4(
+    project: &Project,
+    out_path: &Path,
+    settings: ExportSettings,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<ExportReport, String> {
+    let plan = export_plan(project, settings);
+    if plan.frame_count == 0 {
+        return Err("書き出す内容がありません（タイムラインが空です）".into());
+    }
+    let work = media_dir().join(format!(
+        "export-{:016x}",
+        fnv1a(
+            format!(
+                "{}-{}x{}@{}",
+                out_path.display(),
+                settings.width,
+                settings.height,
+                settings.fps
+            )
+            .as_bytes()
+        )
+    ));
+    std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    let store = prepare_export_frames(project, &settings, &work);
+    let preview_store = prepare_media(project);
+    let black = work.join("black.png");
+    image::RgbImage::new(settings.width, settings.height)
+        .save(&black)
+        .map_err(|e| e.to_string())?;
+    let frames_dir = work.join("frames");
+    std::fs::create_dir_all(&frames_dir).map_err(|e| e.to_string())?;
+    for i in 0..plan.frame_count {
+        let t_ms = (i as i64 * 1000) / settings.fps as i64;
+        let src = compose_export_frame(
+            project,
+            &store,
+            &preview_store,
+            t_ms,
+            &settings,
+            &work,
+            &black,
+        );
+        let dst = frames_dir.join(format!("f{i:05}.png"));
+        std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
+        progress(i + 1, plan.frame_count);
+    }
+    let mix = mix_audio(project, plan.duration_ms);
+    let wav = work.join("mix.wav");
+    write_mix_wav(&wav, &mix)?;
+    let tmp_out = work.join("encoded.mp4");
+    let pattern = frames_dir.join("f%05d.png");
+    let status = ProcCommand::new("ffmpeg")
+        .arg("-y")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-framerate")
+        .arg(settings.fps.to_string())
+        .arg("-i")
+        .arg(&pattern)
+        .arg("-i")
+        .arg(&wav)
+        .arg("-c:v")
+        .arg("libx264")
+        .arg("-pix_fmt")
+        .arg("yuv420p")
+        .arg("-c:a")
+        .arg("aac")
+        .arg("-movflags")
+        .arg("+faststart")
+        .arg(&tmp_out)
+        .status()
+        .map_err(|e| format!("ffmpeg を起動できません: {e}"))?;
+    if !status.success() {
+        return Err(format!("ffmpeg が失敗しました（{status}）"));
+    }
+    if let Some(parent) = out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    std::fs::rename(&tmp_out, out_path).map_err(|e| e.to_string())?;
+    Ok(ExportReport {
+        duration_ms: plan.duration_ms,
+        frame_count: plan.frame_count,
+        out_path: out_path.to_path_buf(),
+    })
 }
 
 #[cfg(test)]
@@ -709,6 +1185,134 @@ mod tests {
         );
         assert_eq!(store.frame_path("demo/unknown.mp4", 0), None);
         assert_eq!(store.frame_count("demo/opening.mp4"), 40);
+    }
+
+    #[test]
+    fn export_plan_covers_timeline_length() {
+        // Issue #54（イシュー指定のテスト、ADR-0015）: 書き出し計画は
+        // 全トラックを通じたクリップ終端の最大値までを覆う。
+        let mut p = project();
+        // project(): opening 0..2000（映像）、interview 2500..6500
+        // （映像）、bgm 0..8000（音声）。全長は音声の 8000。
+        let plan = export_plan(&p, ExportSettings::default());
+        assert_eq!(plan.duration_ms, 8_000);
+        assert_eq!(plan.frame_count, 240); // 8000ms * 30fps
+        assert_eq!(plan.settings.width, 1280);
+        assert_eq!(plan.settings.height, 720);
+        assert_eq!(plan.settings.fps, 30);
+        // 空のプロジェクトは長さ 0
+        let empty = Project::new("empty");
+        let plan = export_plan(&empty, ExportSettings::default());
+        assert_eq!(plan.duration_ms, 0);
+        assert_eq!(plan.frame_count, 0);
+        let _ = &mut p;
+    }
+
+    #[test]
+    fn export_frame_at_follows_preview_rules() {
+        // Issue #54（ADR-0015）: 書き出しフレームの選択はプレビューと
+        // 同じ規則（覆われない時刻は黒、素材時刻は offset 込み、
+        // トランジション窓ではブレンド）。
+        let p = project();
+        // 隙間（2200）は黒フレーム
+        assert_eq!(export_frame_at(&p, 2_200), ExportFrame::Black);
+        // opening の中は通常フレーム
+        assert_eq!(
+            export_frame_at(&p, 500),
+            ExportFrame::Clip {
+                source: "demo/opening.mp4".into(),
+                source_time_ms: 500,
+            }
+        );
+        // interview にトランジションを付けると窓内はブレンドになる
+        let mut p2 = project();
+        let interview = active_video_clip(&p2, 3_000).unwrap().clone();
+        apply(
+            &mut p2,
+            &Command::MoveClip {
+                clip_id: interview.id,
+                new_start_ms: 2_000,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut p2,
+            &Command::SetClipTransition {
+                clip_id: interview.id,
+                kind: studio_core::TransitionKind::CrossDissolve,
+                duration_ms: 500,
+            },
+        )
+        .unwrap();
+        match export_frame_at(&p2, 2_250) {
+            ExportFrame::Blend(b) => assert_eq!(b.alpha, 0.5),
+            other => panic!("expected Blend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mix_audio_applies_gain_fade_and_track_settings() {
+        // Issue #54（ADR-0015）: 音声ミックスは DAW の render_mix と
+        // 同じ規則（クリップゲイン×トラック音量、パン、フェード、
+        // offset）。一定振幅の WAV で数値を確認する。
+        let dir = std::env::temp_dir().join(format!("rust-studio-test-mix-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav_path = dir.join("tone.wav");
+        {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::create(&wav_path, spec).unwrap();
+            for _ in 0..48_000 * 2 {
+                writer.write_sample((0.8f32 * 32_767.0) as i16).unwrap();
+            }
+            writer.finalize().unwrap();
+        }
+        let mut p = Project::new("mix");
+        let a = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let clip_id = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: a,
+                name: "tone".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: wav_path.to_string_lossy().into_owned(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(&mut p, &Command::SetClipGain { clip_id, gain: 0.5 }).unwrap();
+        apply(
+            &mut p,
+            &Command::SetClipFade {
+                clip_id,
+                fade_in_ms: 1_000,
+                fade_out_ms: 0,
+            },
+        )
+        .unwrap();
+        let mix = mix_audio(&p, 2_000);
+        assert_eq!(mix.len(), 48_000 * 2 * 2); // 2秒 * 48kHz * ステレオ
+        let at = |ms: i64| mix[(ms as usize * 48) * 2];
+        // フェードイン中点（500ms）: 0.8 * 0.5(gain) * 0.5(fade) = 0.2
+        assert!((at(500) - 0.2).abs() < 0.01, "at 500ms: {}", at(500));
+        // フェード後（1500ms）: 0.8 * 0.5 = 0.4
+        assert!((at(1500) - 0.4).abs() < 0.01, "at 1500ms: {}", at(1500));
+        // 左チャンネルと右チャンネルは同じ（パン中央、モノラル素材）
+        assert_eq!(mix[(500 * 48) * 2], mix[(500 * 48) * 2 + 1]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
 

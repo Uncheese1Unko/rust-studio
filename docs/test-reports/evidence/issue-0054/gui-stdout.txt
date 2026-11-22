@@ -1,0 +1,723 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/export54b/gui-project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue49",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "sceneA",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/tmp/trans49/sceneA.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 4,
+          "name": "sceneB",
+          "start_ms": 2000,
+          "duration_ms": 2000,
+          "source": "/tmp/trans49/sceneB.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "cross_dissolve",
+          "transition_in_ms": 1000
+        },
+        {
+          "id": 103,
+          "name": "sceneC",
+          "start_ms": 5000,
+          "duration_ms": 1000,
+          "source": "/tmp/trans49/sceneA.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.clip.4, timeline.clip.103, timeline.track.2, preview, media-bin
+media prepared: /tmp/trans49/sceneA.mp4 -> 30 frames
+media prepared: /tmp/trans49/sceneB.mp4 -> 30 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 60
+preview: source=/tmp/trans49/sceneA.mp4 playhead=0 source_time=0 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=193 source_time=193 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=224 source_time=224 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=319 source_time=319 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=401 source_time=401 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=514 source_time=514 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=621 source_time=621 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=717 source_time=717 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=818 source_time=818 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=922 source_time=922 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1017 source_time=1017 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1107 source_time=1107 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1211 source_time=1211 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1380 source_time=1380 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1407 source_time=1407 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1518 source_time=1518 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1610 source_time=1610 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1703 source_time=1703 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1806 source_time=1806 frame=18
+export started
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1900 source_time=1900 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2004 source_time=4 frame=0
+transition blend: alpha=0.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2402 source_time=402 frame=4
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2688 source_time=688 frame=6
+transition blend: alpha=0.70 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2880 source_time=880 frame=8
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3072 source_time=1072 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3186 source_time=1186 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3371 source_time=1371 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3484 source_time=1484 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3591 source_time=1591 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3700 source_time=1700 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3887 source_time=1887 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5198 source_time=198 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5298 source_time=298 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5388 source_time=388 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5475 source_time=475 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5567 source_time=567 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5671 source_time=671 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5786 source_time=786 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5958 source_time=958 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=78 source_time=78 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=258 source_time=258 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=371 source_time=371 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=570 source_time=570 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=857 source_time=857 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1066 source_time=1066 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1268 source_time=1268 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1385 source_time=1385 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1579 source_time=1579 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1861 source_time=1861 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2077 source_time=77 frame=0
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2261 source_time=261 frame=2
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2381 source_time=381 frame=3
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2481 source_time=481 frame=4
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2577 source_time=577 frame=5
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+media prepared: /tmp/trans49/sceneA.mp4 -> 30 frames
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2672 source_time=672 frame=6
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2765 source_time=765 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+media prepared: /tmp/trans49/sceneB.mp4 -> 30 frames
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2869 source_time=869 frame=8
+transition blend: alpha=0.85 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2968 source_time=968 frame=9
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3059 source_time=1059 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3164 source_time=1164 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3266 source_time=1266 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3355 source_time=1355 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3467 source_time=1467 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3549 source_time=1549 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3653 source_time=1653 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3756 source_time=1756 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3848 source_time=1848 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3947 source_time=1947 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5042 source_time=42 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5160 source_time=160 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5253 source_time=253 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5345 source_time=345 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5431 source_time=431 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5541 source_time=541 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5631 source_time=631 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5746 source_time=746 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5835 source_time=835 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5936 source_time=936 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=41 source_time=41 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=132 source_time=132 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=239 source_time=239 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=329 source_time=329 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=429 source_time=429 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=547 source_time=547 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=637 source_time=637 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=727 source_time=727 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=834 source_time=834 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=918 source_time=918 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1018 source_time=1018 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1129 source_time=1129 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1232 source_time=1232 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1341 source_time=1341 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1416 source_time=1416 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1529 source_time=1529 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1617 source_time=1617 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1723 source_time=1723 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1826 source_time=1826 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1909 source_time=1909 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2028 source_time=28 frame=0
+transition blend: alpha=0.05 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2122 source_time=122 frame=1
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2224 source_time=224 frame=2
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2322 source_time=322 frame=3
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2431 source_time=431 frame=4
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2520 source_time=520 frame=5
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2612 source_time=612 frame=6
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2725 source_time=725 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2814 source_time=814 frame=8
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2908 source_time=908 frame=9
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3001 source_time=1001 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3119 source_time=1119 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3214 source_time=1214 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3332 source_time=1332 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3425 source_time=1425 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3505 source_time=1505 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3631 source_time=1631 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3710 source_time=1710 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3814 source_time=1814 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3931 source_time=1931 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5013 source_time=13 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5119 source_time=119 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5219 source_time=219 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5315 source_time=315 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5401 source_time=401 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5592 source_time=592 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5681 source_time=681 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5711 source_time=711 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5882 source_time=882 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5920 source_time=920 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=7 source_time=7 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=185 source_time=185 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=213 source_time=213 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=380 source_time=380 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=478 source_time=478 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=505 source_time=505 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=671 source_time=671 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=777 source_time=777 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=800 source_time=800 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=990 source_time=990 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1074 source_time=1074 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1197 source_time=1197 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1284 source_time=1284 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1377 source_time=1377 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1488 source_time=1488 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1587 source_time=1587 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1673 source_time=1673 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1768 source_time=1768 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1872 source_time=1872 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1905 source_time=1905 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2074 source_time=74 frame=0
+transition blend: alpha=0.05 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2174 source_time=174 frame=1
+transition blend: alpha=0.15 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2265 source_time=265 frame=2
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2394 source_time=394 frame=3
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2471 source_time=471 frame=4
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2584 source_time=584 frame=5
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2667 source_time=667 frame=6
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2760 source_time=760 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2855 source_time=855 frame=8
+transition blend: alpha=0.85 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2963 source_time=963 frame=9
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=1.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3076 source_time=1076 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3158 source_time=1158 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3280 source_time=1280 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3370 source_time=1370 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3400 source_time=1400 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3565 source_time=1565 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3603 source_time=1603 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3757 source_time=1757 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3871 source_time=1871 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3952 source_time=1952 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5058 source_time=58 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5142 source_time=142 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5242 source_time=242 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5357 source_time=357 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5458 source_time=458 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5544 source_time=544 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5644 source_time=644 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5746 source_time=746 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5853 source_time=853 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5939 source_time=939 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=44 source_time=44 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=142 source_time=142 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=244 source_time=244 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=332 source_time=332 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=438 source_time=438 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=545 source_time=545 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=628 source_time=628 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=740 source_time=740 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=827 source_time=827 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=928 source_time=928 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1035 source_time=1035 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1133 source_time=1133 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1224 source_time=1224 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1351 source_time=1351 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1436 source_time=1436 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1526 source_time=1526 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1643 source_time=1643 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1728 source_time=1728 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1833 source_time=1833 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1940 source_time=1940 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2026 source_time=26 frame=0
+transition blend: alpha=0.05 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2134 source_time=134 frame=1
+transition blend: alpha=0.15 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2217 source_time=217 frame=2
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2317 source_time=317 frame=3
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.35 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2430 source_time=430 frame=4
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2522 source_time=522 frame=5
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2648 source_time=648 frame=6
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2723 source_time=723 frame=7
+transition blend: alpha=0.70 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2818 source_time=818 frame=8
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2913 source_time=913 frame=9
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3044 source_time=1044 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3125 source_time=1125 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3212 source_time=1212 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3318 source_time=1318 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3441 source_time=1441 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3543 source_time=1543 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3637 source_time=1637 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3719 source_time=1719 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3824 source_time=1824 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3909 source_time=1909 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5004 source_time=4 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5105 source_time=105 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5206 source_time=206 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5327 source_time=327 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5405 source_time=405 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5509 source_time=509 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5616 source_time=616 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5702 source_time=702 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5810 source_time=810 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5913 source_time=913 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=11 source_time=11 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=113 source_time=113 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=286 source_time=286 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=315 source_time=315 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=416 source_time=416 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=519 source_time=519 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=604 source_time=604 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=719 source_time=719 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=879 source_time=879 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=902 source_time=902 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1008 source_time=1008 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1179 source_time=1179 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1209 source_time=1209 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1376 source_time=1376 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1419 source_time=1419 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1509 source_time=1509 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1676 source_time=1676 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1704 source_time=1704 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1803 source_time=1803 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1971 source_time=1971 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2003 source_time=3 frame=0
+transition blend: alpha=0.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2175 source_time=175 frame=1
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2268 source_time=268 frame=2
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2379 source_time=379 frame=3
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2481 source_time=481 frame=4
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2578 source_time=578 frame=5
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2666 source_time=666 frame=6
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.70 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2768 source_time=768 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2885 source_time=885 frame=8
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2974 source_time=974 frame=9
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3059 source_time=1059 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3167 source_time=1167 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3282 source_time=1282 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3379 source_time=1379 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3466 source_time=1466 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3574 source_time=1574 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3654 source_time=1654 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3769 source_time=1769 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3853 source_time=1853 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3953 source_time=1953 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5052 source_time=52 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5158 source_time=158 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5256 source_time=256 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5358 source_time=358 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5443 source_time=443 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5552 source_time=552 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5653 source_time=653 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5752 source_time=752 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5836 source_time=836 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5953 source_time=953 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=34 source_time=34 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=134 source_time=134 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=233 source_time=233 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=347 source_time=347 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=433 source_time=433 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=537 source_time=537 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=636 source_time=636 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=737 source_time=737 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=845 source_time=845 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=928 source_time=928 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1033 source_time=1033 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1131 source_time=1131 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1232 source_time=1232 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1350 source_time=1350 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1442 source_time=1442 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1521 source_time=1521 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1624 source_time=1624 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1725 source_time=1725 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1827 source_time=1827 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1950 source_time=1950 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2040 source_time=40 frame=0
+transition blend: alpha=0.05 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2126 source_time=126 frame=1
+transition blend: alpha=0.15 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2224 source_time=224 frame=2
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2326 source_time=326 frame=3
+transition blend: alpha=0.35 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2416 source_time=416 frame=4
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2521 source_time=521 frame=5
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2619 source_time=619 frame=6
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2720 source_time=720 frame=7
+transition blend: alpha=0.70 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2835 source_time=835 frame=8
+transition blend: alpha=0.85 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2916 source_time=916 frame=9
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3018 source_time=1018 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3106 source_time=1106 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3224 source_time=1224 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3325 source_time=1325 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3418 source_time=1418 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3516 source_time=1516 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3619 source_time=1619 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3735 source_time=1735 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3820 source_time=1820 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3903 source_time=1903 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5030 source_time=30 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5127 source_time=127 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5222 source_time=222 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5311 source_time=311 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5408 source_time=408 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5528 source_time=528 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5618 source_time=618 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5701 source_time=701 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5808 source_time=808 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5987 source_time=987 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=85 source_time=85 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=115 source_time=115 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=283 source_time=283 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=410 source_time=410 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=594 source_time=594 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=684 source_time=684 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=714 source_time=714 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=882 source_time=882 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=911 source_time=911 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1089 source_time=1089 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1184 source_time=1184 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1276 source_time=1276 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1302 source_time=1302 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1402 source_time=1402 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1510 source_time=1510 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1676 source_time=1676 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1700 source_time=1700 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1810 source_time=1810 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1902 source_time=1902 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2083 source_time=83 frame=0
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2167 source_time=167 frame=1
+transition blend: alpha=0.15 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2267 source_time=267 frame=2
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2385 source_time=385 frame=3
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2467 source_time=467 frame=4
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2567 source_time=567 frame=5
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2673 source_time=673 frame=6
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2764 source_time=764 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2890 source_time=890 frame=8
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2973 source_time=973 frame=9
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3061 source_time=1061 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3177 source_time=1177 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3271 source_time=1271 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3360 source_time=1360 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3472 source_time=1472 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3579 source_time=1579 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3662 source_time=1662 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3767 source_time=1767 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3867 source_time=1867 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3974 source_time=1974 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5052 source_time=52 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5154 source_time=154 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5245 source_time=245 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5366 source_time=366 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5458 source_time=458 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5551 source_time=551 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5641 source_time=641 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5747 source_time=747 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5863 source_time=863 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5953 source_time=953 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=51 source_time=51 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=148 source_time=148 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=238 source_time=238 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=351 source_time=351 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=435 source_time=435 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=553 source_time=553 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=636 source_time=636 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=738 source_time=738 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=847 source_time=847 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=941 source_time=941 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1030 source_time=1030 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1152 source_time=1152 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1231 source_time=1231 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1340 source_time=1340 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1448 source_time=1448 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1534 source_time=1534 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1636 source_time=1636 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1742 source_time=1742 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1824 source_time=1824 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1936 source_time=1936 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2026 source_time=26 frame=0
+transition blend: alpha=0.05 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2128 source_time=128 frame=1
+transition blend: alpha=0.15 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2231 source_time=231 frame=2
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2338 source_time=338 frame=3
+transition blend: alpha=0.35 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2426 source_time=426 frame=4
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2530 source_time=530 frame=5
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2614 source_time=614 frame=6
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2726 source_time=726 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2817 source_time=817 frame=8
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.85 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2932 source_time=932 frame=9
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3012 source_time=1012 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3117 source_time=1117 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3246 source_time=1246 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3337 source_time=1337 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3416 source_time=1416 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3521 source_time=1521 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3607 source_time=1607 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3729 source_time=1729 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3816 source_time=1816 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3925 source_time=1925 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5009 source_time=9 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5119 source_time=119 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5202 source_time=202 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5316 source_time=316 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5410 source_time=410 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5504 source_time=504 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5618 source_time=618 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5723 source_time=723 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5802 source_time=802 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5916 source_time=916 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=21 source_time=21 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=108 source_time=108 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=220 source_time=220 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=310 source_time=310 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=424 source_time=424 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=502 source_time=502 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=622 source_time=622 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=708 source_time=708 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=822 source_time=822 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=900 source_time=900 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1008 source_time=1008 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1182 source_time=1182 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1209 source_time=1209 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1377 source_time=1377 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1406 source_time=1406 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1514 source_time=1514 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1601 source_time=1601 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1779 source_time=1779 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1806 source_time=1806 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1908 source_time=1908 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2076 source_time=76 frame=0
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2112 source_time=112 frame=1
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2203 source_time=203 frame=2
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2373 source_time=373 frame=3
+transition blend: alpha=0.35 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2509 source_time=509 frame=5
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.60 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2685 source_time=685 frame=6
+transition blend: alpha=0.70 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2781 source_time=781 frame=7
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2867 source_time=867 frame=8
+transition blend: alpha=0.85 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2979 source_time=979 frame=9
+transition blend: alpha=1.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3004 source_time=1004 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3178 source_time=1178 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3286 source_time=1286 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3398 source_time=1398 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3672 source_time=1672 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3785 source_time=1785 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3975 source_time=1975 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5071 source_time=71 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5180 source_time=180 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5473 source_time=473 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5677 source_time=677 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=5880 source_time=880 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=78 source_time=78 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=264 source_time=264 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=367 source_time=367 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=471 source_time=471 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=674 source_time=674 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=887 source_time=887 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1059 source_time=1059 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1185 source_time=1185 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1299 source_time=1299 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1475 source_time=1475 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1668 source_time=1668 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1768 source_time=1768 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1979 source_time=1979 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2168 source_time=168 frame=1
+transition blend: alpha=0.15 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2396 source_time=396 frame=3
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2558 source_time=558 frame=5
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2746 source_time=746 frame=7
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2861 source_time=861 frame=8
+transition blend: alpha=0.85 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=2969 source_time=969 frame=9
+transition blend: alpha=0.95 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3070 source_time=1070 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3160 source_time=1160 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3259 source_time=1259 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3346 source_time=1346 frame=13
+export done: /tmp/export54b/export.mp4 (180 frames)
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3444 source_time=1444 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3547 source_time=1547 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3653 source_time=1653 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3741 source_time=1741 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3841 source_time=1841 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3940 source_time=1940 frame=19
