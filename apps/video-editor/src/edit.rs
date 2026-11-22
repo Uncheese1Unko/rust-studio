@@ -1575,6 +1575,15 @@ mod tests {
                 clip_id: 42,
                 offset_ms: 1_000,
             }));
+        // 貼り付けを実際に適用した最終状態でも offset が一致する
+        // （レビュー観察への対応: 追随コマンドの有無だけでなく状態で見る）。
+        let pasted_id = apply(&mut project, &paste.add).unwrap().unwrap();
+        for cmd in paste.follow_up_commands(pasted_id) {
+            apply(&mut project, &cmd).unwrap();
+        }
+        let (_, pasted) = project.clip(pasted_id).unwrap();
+        assert_eq!(pasted.offset_ms, 1_000);
+        assert_eq!(pasted.start_ms, 6_000);
     }
 
     #[test]
