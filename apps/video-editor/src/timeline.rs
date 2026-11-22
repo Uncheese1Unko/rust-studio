@@ -6,7 +6,7 @@
 //! 状態は studio-core の Project が正であり、ここは読み取り専用
 //! （状態変更はコマンド層経由のみ、ADR-0004）。
 
-use studio_core::{ColorTag, Project, TrackKind};
+use studio_core::{Clip, ColorTag, Project, TrackKind};
 
 /// トラック名を表示する左端ヘッダーの幅（px）。
 pub const HEADER_WIDTH_PX: f32 = 120.0;
@@ -150,6 +150,40 @@ impl ViewScale {
             ..*self
         }
     }
+}
+
+/// フェードの傾斜（Issue #51）。各端点は (x, y) ピクセル。
+/// フェードインは左下→上へ、フェードアウトは上→右下への対角線。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FadeSlopes {
+    pub fade_in: Option<((f32, f32), (f32, f32))>,
+    pub fade_out: Option<((f32, f32), (f32, f32))>,
+}
+
+/// クリップ矩形に対するフェード傾斜の端点（Issue #51）。
+/// 両フェードとも 0 のときは None。幅はクリップ矩形でクランプする。
+pub fn fade_slopes(
+    rect: &ClipRect,
+    clip: &Clip,
+    view_width_px: f32,
+    scale: &ViewScale,
+) -> Option<FadeSlopes> {
+    if clip.fade_in_ms <= 0 && clip.fade_out_ms <= 0 {
+        return None;
+    }
+    let ppm = scale.px_per_ms(view_width_px);
+    let fade_in = (clip.fade_in_ms > 0).then(|| {
+        let w = (clip.fade_in_ms as f32 * ppm).min(rect.w);
+        ((rect.x, rect.y + rect.h), (rect.x + w, rect.y))
+    });
+    let fade_out = (clip.fade_out_ms > 0).then(|| {
+        let w = (clip.fade_out_ms as f32 * ppm).min(rect.w);
+        (
+            (rect.x + rect.w - w, rect.y),
+            (rect.x + rect.w, rect.y + rect.h),
+        )
+    });
+    Some(FadeSlopes { fade_in, fade_out })
 }
 
 /// トラック行の上端 y（ウィンドウ上端からのピクセル）。
@@ -516,5 +550,69 @@ mod tests {
         ] {
             let _ = palette_color(tag);
         }
+    }
+
+    #[test]
+    fn fade_slopes_follow_fade_lengths() {
+        // Issue #51: フェードの傾斜は、フェードインが左下→上、
+        // フェードアウトが上→右下になる対角線。長さ 0 の側は出ない。
+        let mut p = Project::new("t");
+        let v = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let clip_id = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: v,
+                name: "c".into(),
+                start_ms: 1_000,
+                duration_ms: 2_000,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetClipFade {
+                clip_id,
+                fade_in_ms: 500,
+                fade_out_ms: 250,
+            },
+        )
+        .unwrap();
+        let scale = ViewScale::default();
+        let rects = layout_clips(&p, 960.0, &scale);
+        let rect = &rects[0];
+        let (_, clip) = p.clip(clip_id).unwrap();
+        let slopes = fade_slopes(rect, clip, 960.0, &scale).expect("slopes exist");
+        // フェードイン: 左下 (x, y+h) → (x + 500ms 幅, y)
+        let fin = slopes.fade_in.expect("fade-in slope");
+        assert_eq!(fin.0, (rect.x, rect.y + rect.h));
+        assert!((fin.1 .0 - (rect.x + 500.0 * scale.px_per_ms(960.0))).abs() < 0.01);
+        assert_eq!(fin.1 .1, rect.y);
+        // フェードアウト: (右端 - 250ms 幅, y) → 右下 (x+w, y+h)
+        let fout = slopes.fade_out.expect("fade-out slope");
+        assert!((fout.0 .0 - (rect.x + rect.w - 250.0 * scale.px_per_ms(960.0))).abs() < 0.01);
+        assert_eq!(fout.0 .1, rect.y);
+        assert_eq!(fout.1, (rect.x + rect.w, rect.y + rect.h));
+        // フェードが両方 0 のクリップには傾斜が出ない
+        apply(
+            &mut p,
+            &Command::SetClipFade {
+                clip_id,
+                fade_in_ms: 0,
+                fade_out_ms: 0,
+            },
+        )
+        .unwrap();
+        let (_, clip) = p.clip(clip_id).unwrap();
+        assert!(fade_slopes(rect, clip, 960.0, &scale).is_none());
     }
 }

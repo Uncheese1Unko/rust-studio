@@ -676,6 +676,45 @@ fn split_clip_tool_applies_via_tools_call() {
 }
 
 #[test]
+fn set_clip_gain_tool_applies_via_tools_call() {
+    // Issue #51: set_clip_gain が tools/call 経由で適用でき、ダンプで
+    // 観測できる。範囲外（コアの検証 0.0..=4.0 超）はエラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        95,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        96,
+        "add_clip",
+        json!({"track_id": 1, "name": "bgm", "start_ms": 0, "duration_ms": 4000, "source": "bgm.wav"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        97,
+        "set_clip_gain",
+        json!({"clip_id": 2, "gain": 0.5}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].clips[0].gain, 0.5);
+    let res = call_tool(
+        &server,
+        98,
+        "set_clip_gain",
+        json!({"clip_id": 2, "gain": 4.5}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+}
+
+#[test]
 fn set_clip_fade_tool_applies_via_tools_call() {
     // Issue #34: set_clip_fade が tools/call 経由で適用でき、ダンプで
     // fade_in_ms / fade_out_ms が観測できる。不正な値はエラーで状態不変。

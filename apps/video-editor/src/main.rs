@@ -41,6 +41,8 @@ struct Model {
     prev_t_down: bool,
     // Issue #43: S キー（分割）の前回状態。
     prev_s_down: bool,
+    // Issue #51: ゲインスライダーのドラッグ中かどうか。
+    gain_drag: bool,
     // Issue #49: X キー（トランジション付け外し）の前回状態と、
     // 現在の再生ヘッド用に用意したブレンド済みフレーム。
     prev_x_down: bool,
@@ -82,6 +84,9 @@ const PREVIEW_Y: f32 = 150.0;
 const PREVIEW_W: f32 = 440.0;
 const PREVIEW_H: f32 = 248.0;
 const PREVIEW_ID: &str = "preview";
+/// ゲインスライダー（Issue #51）: プレビュー下の帯の上端 y と高さ。
+const GAIN_SLIDER_Y: f32 = PREVIEW_Y + PREVIEW_H + 42.0;
+const GAIN_SLIDER_H: f32 = 16.0;
 
 /// メディアビンのパネル領域（左上原点ピクセル、Issue #47）。
 /// 要素識別子は `media-bin`。パレットパネル（#59）の下に置くため、
@@ -283,6 +288,7 @@ fn model(app: &App) -> Model {
         prev_s_down: false,
         prev_x_down: false,
         blend_frame: None,
+        gain_drag: false,
         last_drop_at: None,
         selected_track: initial_selected,
         frames,
@@ -1172,6 +1178,42 @@ fn finish_gesture_snapshot(history: &mut History, before: &mut Option<Project>) 
     *before = None;
 }
 
+/// ゲインスライダーの対象クリップ（Issue #51）。選択中トラックの
+/// 再生ヘッド位置にあるクリップ（複製・タイトル等と同じ対象規則）。
+fn gain_target(model: &Model) -> Option<(u64, String, f32)> {
+    let track_id = model.selected_track?;
+    let track = model.history.project().track(track_id)?;
+    track
+        .clips
+        .iter()
+        .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+        .map(|c| (c.id, c.name.clone(), c.gain))
+}
+
+/// 座標がゲインスライダーの帯（少し余裕を持たせた範囲）にあるか。
+fn gain_slider_at(lx: f32, ly: f32) -> bool {
+    lx >= PREVIEW_X
+        && lx <= PREVIEW_X + PREVIEW_W
+        && ly >= GAIN_SLIDER_Y - 4.0
+        && ly <= GAIN_SLIDER_Y + GAIN_SLIDER_H + 4.0
+}
+
+/// スライダー位置のゲインを対象クリップへ当てる（ドラッグ中は
+/// transient で適用し、履歴はジェスチャ終了時に1つにまとめる）。
+fn apply_gain_slider(model: &mut Model, lx: f32) {
+    let Some((clip_id, _, _)) = gain_target(model) else {
+        return;
+    };
+    let fraction = (lx - PREVIEW_X) / PREVIEW_W;
+    let cmd = edit::gain_slider_command(clip_id, fraction);
+    if model.last_drag_cmd.as_ref() != Some(&cmd) {
+        match model.history.apply_transient(&cmd) {
+            Ok(_) => model.last_drag_cmd = Some(cmd),
+            Err(e) => model.last_rejection = Some(e.to_string()),
+        }
+    }
+}
+
 fn handle_pointer(app: &App, model: &mut Model) {
     let win = app.window_rect();
     // nannou の中心原点座標を、レイアウトの左上原点ピクセルへ変換する。
@@ -1181,6 +1223,17 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
 
     if left_down && !model.prev_left_down {
+        // ゲインスライダー（Issue #51）: プレビュー下の帯。
+        // 対象クリップがあるときだけドラッグを開始する。
+        if gain_slider_at(lx, ly) && gain_target(model).is_some() {
+            model.gain_drag = true;
+            model.drag_before = Some(model.history.project().clone());
+            model.last_drag_cmd = None;
+            model.last_rejection = None;
+            apply_gain_slider(model, lx);
+            model.prev_left_down = left_down;
+            return;
+        }
         // メディアビン（Issue #47）: ヘッダーのクリックで再読み込み、
         // 行のダブルクリックで選択中トラックの再生ヘッド位置に配置。
         if bin_header_at(model, lx, ly) {
@@ -1295,6 +1348,9 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down {
+        if model.gain_drag {
+            apply_gain_slider(model, lx);
+        }
         if let Some(drag) = &model.drag {
             // Issue #45: 候補コマンドにスナップを適用する。
             // Alt 押下中はスナップ無効。
@@ -1315,6 +1371,18 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 }
             }
         }
+    }
+
+    if !left_down && model.prev_left_down && model.gain_drag {
+        // ゲインのジェスチャ終了（Issue #51、Issue #31 と同じ確定方法）。
+        model.gain_drag = false;
+        finish_gesture_snapshot(&mut model.history, &mut model.drag_before);
+        println!("after gain: {}", model.history.project().dump_json());
+        save_project_file(model);
+        if let Some(rejection) = model.last_rejection.take() {
+            println!("command rejected during gain drag: {rejection}");
+        }
+        model.last_drag_cmd = None;
     }
 
     if !left_down && model.prev_left_down && model.drag.take().is_some() {
@@ -1610,6 +1678,25 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .font_size(11)
                 .color(rgb(0.05, 0.05, 0.08));
         }
+        // フェードの傾斜（Issue #51）: 本体矩形（上下 4px 内側）に
+        // 合わせて対角線を引く。
+        if let Some(clip) = clip {
+            let body = timeline::ClipRect {
+                y: rect.y + 4.0,
+                h: rect.h - 8.0,
+                ..rect.clone()
+            };
+            if let Some(slopes) = timeline::fade_slopes(&body, clip, win.w(), &model.view_scale) {
+                for line in [slopes.fade_in, slopes.fade_out].into_iter().flatten() {
+                    let ((x1, y1), (x2, y2)) = line;
+                    draw.line()
+                        .start(pt2(x1 - win.w() / 2.0, win.h() / 2.0 - y1))
+                        .end(pt2(x2 - win.w() / 2.0, win.h() / 2.0 - y2))
+                        .weight(2.0)
+                        .color(rgb(0.10, 0.10, 0.12));
+                }
+            }
+        }
     }
 
     // プレビュー（preview）: 再生ヘッド位置の映像クリップのフレームを表示する。
@@ -1671,6 +1758,46 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .font_size(12)
                 .color(rgb(0.45, 0.45, 0.50));
         }
+    }
+
+    // ゲインスライダー（Issue #51）: プレビュー下の帯。対象は選択中
+    // トラックの再生ヘッド位置にあるクリップ。中央が等倍 1.0。
+    {
+        let (sx, sy) = rect_center(win, PREVIEW_X, GAIN_SLIDER_Y, PREVIEW_W, GAIN_SLIDER_H);
+        draw.rect()
+            .x_y(sx, sy)
+            .w_h(PREVIEW_W, GAIN_SLIDER_H)
+            .color(rgb(0.16, 0.16, 0.19));
+        let (label, gain) = match gain_target(model) {
+            Some((_, name, gain)) => (format!("CLIP GAIN {name}: {gain:.2}"), Some(gain)),
+            None => ("CLIP GAIN -".to_string(), None),
+        };
+        if let Some(gain) = gain {
+            let fill_w = (gain / 2.0).clamp(0.0, 1.0) * PREVIEW_W;
+            if fill_w > 0.5 {
+                let (fx, fy) = rect_center(win, PREVIEW_X, GAIN_SLIDER_Y, fill_w, GAIN_SLIDER_H);
+                draw.rect()
+                    .x_y(fx, fy)
+                    .w_h(fill_w, GAIN_SLIDER_H)
+                    .color(rgb(0.15, 0.55, 0.55));
+            }
+        }
+        // 等倍（中央）の目印
+        let (tx, ty) = rect_center(
+            win,
+            PREVIEW_X + PREVIEW_W / 2.0 - 0.5,
+            GAIN_SLIDER_Y,
+            1.0,
+            GAIN_SLIDER_H,
+        );
+        draw.rect()
+            .x_y(tx, ty)
+            .w_h(1.0, GAIN_SLIDER_H)
+            .color(rgb(0.85, 0.85, 0.88));
+        draw.text(&label)
+            .x_y(sx, sy + GAIN_SLIDER_H / 2.0 + 10.0)
+            .font_size(11)
+            .color(rgb(0.65, 0.65, 0.70));
     }
 
     // タイトル（Issue #50）: 再生区間のクリップにタイトルがあれば、

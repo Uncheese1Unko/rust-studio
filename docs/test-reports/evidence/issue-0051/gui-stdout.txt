@@ -1,0 +1,334 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue51/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue51",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "scene",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "bgm",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bgm.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.track.2, timeline.clip.4, preview, media-bin
+media prepared: demo/opening.mp4 -> 40 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 40
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+preview: source=demo/opening.mp4 playhead=145 source_time=145 frame=1
+preview: source=demo/opening.mp4 playhead=203 source_time=203 frame=2
+preview: source=demo/opening.mp4 playhead=300 source_time=300 frame=3
+preview: source=demo/opening.mp4 playhead=418 source_time=418 frame=4
+preview: source=demo/opening.mp4 playhead=523 source_time=523 frame=5
+preview: source=demo/opening.mp4 playhead=626 source_time=626 frame=6
+preview: source=demo/opening.mp4 playhead=720 source_time=720 frame=7
+preview: source=demo/opening.mp4 playhead=892 source_time=892 frame=8
+preview: source=demo/opening.mp4 playhead=931 source_time=931 frame=9
+preview: source=demo/opening.mp4 playhead=1006 source_time=1006 frame=10
+preview: source=demo/opening.mp4 playhead=1103 source_time=1103 frame=11
+preview: source=demo/opening.mp4 playhead=1231 source_time=1231 frame=12
+preview: source=demo/opening.mp4 playhead=1321 source_time=1321 frame=13
+preview: source=demo/opening.mp4 playhead=1411 source_time=1411 frame=14
+preview: source=demo/opening.mp4 playhead=1509 source_time=1509 frame=15
+preview: source=demo/opening.mp4 playhead=1608 source_time=1608 frame=16
+preview: source=demo/opening.mp4 playhead=1711 source_time=1711 frame=17
+preview: source=demo/opening.mp4 playhead=1807 source_time=1807 frame=18
+preview: source=demo/opening.mp4 playhead=1912 source_time=1912 frame=19
+preview: source=demo/opening.mp4 playhead=2011 source_time=2011 frame=20
+preview: source=demo/opening.mp4 playhead=2105 source_time=2105 frame=21
+preview: source=demo/opening.mp4 playhead=2211 source_time=2211 frame=22
+preview: source=demo/opening.mp4 playhead=2329 source_time=2329 frame=23
+preview: source=demo/opening.mp4 playhead=2475 source_time=2475 frame=24
+preview: source=demo/opening.mp4 playhead=2506 source_time=2506 frame=25
+after gain: {
+  "name": "issue51",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "scene",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "bgm",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bgm.wav",
+          "offset_ms": 0,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=demo/opening.mp4 playhead=2602 source_time=2602 frame=26
+preview: source=demo/opening.mp4 playhead=2770 source_time=2770 frame=27
+preview: source=demo/opening.mp4 playhead=2880 source_time=2880 frame=28
+preview: source=demo/opening.mp4 playhead=2907 source_time=2907 frame=29
+preview: source=demo/opening.mp4 playhead=3071 source_time=3071 frame=30
+preview: source=demo/opening.mp4 playhead=3103 source_time=3103 frame=31
+preview: source=demo/opening.mp4 playhead=3265 source_time=3265 frame=32
+preview: source=demo/opening.mp4 playhead=3301 source_time=3301 frame=33
+preview: source=demo/opening.mp4 playhead=3416 source_time=3416 frame=34
+preview: source=demo/opening.mp4 playhead=3507 source_time=3507 frame=35
+preview: source=demo/opening.mp4 playhead=3657 source_time=3657 frame=36
+preview: source=demo/opening.mp4 playhead=3705 source_time=3705 frame=37
+preview: source=demo/opening.mp4 playhead=3805 source_time=3805 frame=38
+preview: source=demo/opening.mp4 playhead=3912 source_time=3912 frame=39
+preview: source=demo/opening.mp4 playhead=4066 source_time=4066 frame=40
+preview: source=demo/opening.mp4 playhead=4158 source_time=4158 frame=41
+preview: source=demo/opening.mp4 playhead=4256 source_time=4256 frame=42
+after drag: {
+  "name": "issue51",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "scene",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 500,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "bgm",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bgm.wav",
+          "offset_ms": 0,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=demo/opening.mp4 playhead=4358 source_time=4358 frame=43
+preview: source=demo/opening.mp4 playhead=4453 source_time=4453 frame=44
+preview: source=demo/opening.mp4 playhead=4556 source_time=4556 frame=45
+preview: source=demo/opening.mp4 playhead=4651 source_time=4651 frame=46
+preview: source=demo/opening.mp4 playhead=4745 source_time=4745 frame=47
+preview: source=demo/opening.mp4 playhead=4847 source_time=4847 frame=48
+preview: source=demo/opening.mp4 playhead=4949 source_time=4949 frame=49
+preview: source=demo/opening.mp4 playhead=5047 source_time=5047 frame=50
+after drag: {
+  "name": "issue51",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "scene",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 500,
+          "fade_out_ms": 500,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "bgm",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bgm.wav",
+          "offset_ms": 0,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=demo/opening.mp4 playhead=5148 source_time=5148 frame=51
+preview: source=demo/opening.mp4 playhead=5242 source_time=5242 frame=52
+preview: source=demo/opening.mp4 playhead=5344 source_time=5344 frame=53
+preview: source=demo/opening.mp4 playhead=5443 source_time=5443 frame=54
+preview: source=demo/opening.mp4 playhead=5544 source_time=5544 frame=55
+preview: source=demo/opening.mp4 playhead=5643 source_time=5643 frame=56
+preview: source=demo/opening.mp4 playhead=5738 source_time=5738 frame=57
+preview: source=demo/opening.mp4 playhead=5845 source_time=5845 frame=58
+preview: source=demo/opening.mp4 playhead=5935 source_time=5935 frame=59
+preview: source=demo/opening.mp4 playhead=6031 source_time=6031 frame=60
+preview: source=demo/opening.mp4 playhead=6137 source_time=6137 frame=61
+preview: source=demo/opening.mp4 playhead=6251 source_time=6251 frame=62
+preview: source=demo/opening.mp4 playhead=6333 source_time=6333 frame=63
+preview: source=demo/opening.mp4 playhead=6434 source_time=6434 frame=64
