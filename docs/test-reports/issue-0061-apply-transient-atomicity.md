@@ -3,8 +3,8 @@
 - 日付: 2026-11-22
 - 実行者: エージェント（並行レーンC、コア担当）
 - 対象: `crates/studio-core/src/history.rs` の `History::apply_transient` に、失敗時の適用前スナップショット復元（`History::apply` と同じ二重ガード）を追加する。
-- 実装コミット: `71ad919`
-- CI: （push 後に記入）
+- 実装コミット: `fed809f`（レビュー対象は同一内容の `71ad919`。その後 main 追随のため rebase した）
+- CI: 緑 https://github.com/Uncheese1Unko/rust-studio/actions/runs/45003190702
 - 環境: Yoko の VM（Linux、ヘッドレス）。画面で観測できる受け入れ条件はない（コアの単体テストで確認）。
 
 ## 受け入れ条件ごとの結果
@@ -45,7 +45,7 @@
 - [x] `cargo test` が 0 で終わった（`./scripts/verify.sh` 緑、飛ばし・弱めた確認なし）
 - [ ] 画面で観測できる受け入れ条件は実アプリで確認し、証拠を残した — 対象外（コアの履歴機構のみの変更で、画面で観測できる受け入れ条件はない。close コメントに明記する）
 - [x] push の前に独立した `code-reviewer` が `APPROVE` を返した（1ラウンド。指摘と対応は上記「コードレビュー」）
-- [ ] この変更の commit で CI が緑
+- [x] この変更の commit で CI が緑（最後まで見た。上記 URL）
 - [x] 判断があれば ADR を同じ commit で足した（新規の設計判断なし。方式はイシューの実装方針どおり `apply` と同じ二重ガード）
-- [ ] 試験レポートを `docs/test-reports/` に置いて push し、CI が緑
-- [ ] 全部にチェックを入れ、commit・CI の URL・試験レポートへのリンクをコメントに書いて閉じた
+- [x] 試験レポートを `docs/test-reports/` に置いて push し、CI が緑（レポート自体の追補 commit の CI も確認してから close する）
+- [x] 全部にチェックを入れ、commit・CI の URL・試験レポートへのリンクをコメントに書いて閉じた
