@@ -66,3 +66,6 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #51 動画編集でクリップの音量とフェードを編集できる | [issue-0051-clip-volume-fade.md](issue-0051-clip-volume-fade.md) |
 | 2026-11-22 | #54 タイムライン全体を mp4 に書き出す | [issue-0054-mp4-export.md](issue-0054-mp4-export.md) |
 | 2026-11-22 | #62 DAW の複製・貼り付けで offset_ms を引き継げる | [issue-0062-duplicate-clip-offset.md](issue-0062-duplicate-clip-offset.md) |
+| 2026-11-22 | #63 動画編集の複製・貼り付けで offset_ms を引き継げる | [issue-0063-duplicate-clip-offset.md](issue-0063-duplicate-clip-offset.md) |
+| 2026-11-22 | #64 切り抜きの背景フレーム選択が offset_ms を加味する | [issue-0064-cutout-background-offset.md](issue-0064-cutout-background-offset.md) |
+| 2026-11-22 | #65 バグ: 動画編集で Escape を押すとアプリが終了する | [issue-0065-video-editor-escape-quit.md](issue-0065-video-editor-escape-quit.md) |
