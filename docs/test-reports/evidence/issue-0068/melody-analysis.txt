@@ -1,0 +1,17 @@
+Issue #68 実バイナリ書き出しの解析（daw --export-wav）
+========================================================
+入力: project.json（MCP の tools/call で生成。トラック Keys に
+Sampler { source: /tmp/tone220.wav (220Hz サイン), root_note: 60 }、
+ノートクリップ 4000ms にノート 60/64/72 を各 1000ms 配置）
+コマンド: target/debug/daw --export-wav project.json melody-out.wav
+（注: 初回実行時は target/debug/daw が古く無音だったため、
+cargo build -p daw で再ビルドしてから再実行した結果が以下）
+
+窓ごとのピーク周波数と RMS:
+  ノート1 (0.3–0.7s, pitch 60, シフト 0, velocity 127): 220 Hz, RMS 0.2828
+  ノート2 (1.3–1.7s, pitch 64, シフト +4, velocity 100): 277 Hz, RMS 0.1968
+  ノート3 (2.3–2.7s, pitch 72, シフト +12, velocity 127): 442 Hz, RMS 0.1077
+  ノート後 (3.3–3.9s): 無音 (RMS 0.0)
+
+期待どおり: 原音 220Hz → +4 半音で 277Hz、+12 半音で 440Hz 近傍。
+ベロシティ 100 のノート2は 127 のノート1より小さい。
