@@ -113,11 +113,9 @@ struct Model {
     drag: Option<edit::Drag>,
     last_drag_cmd: Option<Command>,
     // Issue #31: ジェスチャ（ドラッグ／ミキサー操作）開始時の
-    // スナップショットと、履歴へ積んだかどうかのフラグ。
+    // スナップショット。履歴への記録はジェスチャ終了時に行う。
     drag_before: Option<Project>,
-    drag_snapshot_recorded: bool,
     mixer_before: Option<Project>,
-    mixer_snapshot_recorded: bool,
     last_rejection: Option<String>,
     prev_left_down: bool,
     clicks: edit::ClickTracker,
@@ -312,9 +310,7 @@ fn model(app: &App) -> Model {
         drag: None,
         last_drag_cmd: None,
         drag_before: None,
-        drag_snapshot_recorded: false,
         mixer_before: None,
-        mixer_snapshot_recorded: false,
         last_rejection: None,
         prev_left_down: false,
         clicks: edit::ClickTracker::new(),
@@ -446,9 +442,7 @@ fn watch_project_file(app: &App, model: &mut Model) {
             model.mixer_active = None;
             model.last_mixer_cmd = None;
             model.drag_before = None;
-            model.drag_snapshot_recorded = false;
             model.mixer_before = None;
-            model.mixer_snapshot_recorded = false;
             // リネーム編集も打ち切る（バグ #60: 対象が消えると Enter の
             // たびに拒否され続け、残っていても外部変更後の名前を編集中
             // テキストで黙って上書きしてしまうため）。
@@ -602,7 +596,6 @@ fn shift_down(app: &App) -> bool {
     app.keys.down.contains(&Key::LShift) || app.keys.down.contains(&Key::RShift)
 }
 
-/// 現在のキー状態から見た undo/redo の押下状態（エッジ検出用）。
 /// Undo/Redo キー（Issue #31）: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y。
 /// 履歴が実際に動いたときだけ、派生状態（波形・音声マップ・選択・
 /// ドラッグ）を追従させ、プロジェクトファイルへ保存する。
@@ -624,8 +617,10 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     model.drag = None;
     model.last_drag_cmd = None;
     model.last_rejection = None;
+    model.drag_before = None;
     model.mixer_active = None;
     model.last_mixer_cmd = None;
+    model.mixer_before = None;
     if model
         .selected_track
         .is_some_and(|id| model.history.project().track(id).is_none())
@@ -802,26 +797,17 @@ fn apply_palette_click(model: &mut Model, target: palette::PaletteTarget, color:
     }
 }
 
-/// ジェスチャ（ドラッグ）の最初の成功適用で、開始時スナップショットを
-/// 履歴へ1件だけ積む（Issue #31）。逐次適用は `apply_transient` で
-/// 履歴に積まないため、ジェスチャ全体が1回の undo 単位になる。
-fn record_gesture_snapshot(
-    history: &mut History,
-    before: &mut Option<Project>,
-    recorded: &mut bool,
-) {
-    if !*recorded {
-        // 実際に状態が変わったときだけ記録する。動かさないクリックや
-        // 原位置に戻したドラッグでは積まない（幽霊 undo と redo 消去の
-        // 防止、#31 レビュー対応）。
-        let changed = before
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.dump_json() != history.project().dump_json());
-        if changed {
-            let snapshot = before.take().expect("checked above");
-            history.record_undo_snapshot(snapshot);
-            *recorded = true;
-        }
+/// ジェスチャ（ドラッグ）の終了時に、開始時スナップショットを履歴へ
+/// 1件だけ積む（Issue #31）。逐次適用は `apply_transient` で履歴に
+/// 積まないため、ジェスチャ全体が1回の undo 単位になる。記録を
+/// 終了時まで遅らせることで、最終状態と開始状態が同じなら
+/// `History::record_undo_snapshot` の同値ガードが記録自体を省く:
+/// 動かさないクリックはもちろん、一度動かして原位置へ戻した
+/// ドラッグでも「幽霊 undo」を積んだり redo を消したりしない
+/// （#31 レビュー round 2 対応）。
+fn finish_gesture_snapshot(history: &mut History, before: &mut Option<Project>) {
+    if let Some(snapshot) = before.take() {
+        history.record_undo_snapshot(snapshot);
     }
 }
 
@@ -843,14 +829,8 @@ fn handle_pointer(app: &App, model: &mut Model) {
         if let Some(hit) = mixer::hit_mixer(model.history.project(), lx, ly) {
             model.mixer_active = Some((hit.track_id, hit.param));
             model.mixer_before = Some(model.history.project().clone());
-            model.mixer_snapshot_recorded = false;
             let cmd = mixer::command_for(&hit);
             if model.history.apply_transient(&cmd).is_ok() {
-                record_gesture_snapshot(
-                    &mut model.history,
-                    &mut model.mixer_before,
-                    &mut model.mixer_snapshot_recorded,
-                );
                 model.last_mixer_cmd = Some(cmd);
             }
         }
@@ -862,11 +842,6 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 if model.last_mixer_cmd.as_ref() != Some(&cmd) {
                     match model.history.apply_transient(&cmd) {
                         Ok(_) => {
-                            record_gesture_snapshot(
-                                &mut model.history,
-                                &mut model.mixer_before,
-                                &mut model.mixer_snapshot_recorded,
-                            );
                             model.last_mixer_cmd = Some(cmd);
                         }
                         Err(e) => println!("command rejected: {e}"),
@@ -876,11 +851,11 @@ fn handle_pointer(app: &App, model: &mut Model) {
         }
     }
     if !left_down && model.prev_left_down && model.mixer_active.take().is_some() {
+        // ジェスチャ終了時にだけ履歴へ記録する（Issue #31）。
+        finish_gesture_snapshot(&mut model.history, &mut model.mixer_before);
         println!("after mixer: {}", model.history.project().dump_json());
         save_project_file(model);
         model.last_mixer_cmd = None;
-        model.mixer_before = None;
-        model.mixer_snapshot_recorded = false;
     }
 
     if left_down && !model.prev_left_down {
@@ -913,9 +888,11 @@ fn handle_pointer(app: &App, model: &mut Model) {
                     if model.mixer_active.map(|(id, _)| id) == Some(track_id) {
                         model.mixer_active = None;
                         model.last_mixer_cmd = None;
+                        model.mixer_before = None;
                     }
                     model.drag = None;
                     model.last_drag_cmd = None;
+                    model.drag_before = None;
                     println!(
                         "after track remove: {}",
                         model.history.project().dump_json()
@@ -959,7 +936,6 @@ fn handle_pointer(app: &App, model: &mut Model) {
             model.last_drag_cmd = None;
             model.last_rejection = None;
             model.drag_before = Some(model.history.project().clone());
-            model.drag_snapshot_recorded = false;
         } else if let edit::HitTarget::Empty { track_index } = target {
             let now_ms = (app.time * 1_000.0) as u64;
             if model.clicks.register(now_ms, lx, ly) {
@@ -987,11 +963,6 @@ fn handle_pointer(app: &App, model: &mut Model) {
             if model.last_drag_cmd.as_ref() != Some(&cmd) {
                 match model.history.apply_transient(&cmd) {
                     Ok(_) => {
-                        record_gesture_snapshot(
-                            &mut model.history,
-                            &mut model.drag_before,
-                            &mut model.drag_snapshot_recorded,
-                        );
                         model.last_drag_cmd = Some(cmd);
                     }
                     Err(e) => model.last_rejection = Some(e.to_string()),
@@ -1001,14 +972,14 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if !left_down && model.prev_left_down && model.drag.take().is_some() {
+        // ジェスチャ終了時にだけ履歴へ記録する（Issue #31）。
+        finish_gesture_snapshot(&mut model.history, &mut model.drag_before);
         println!("after drag: {}", model.history.project().dump_json());
         save_project_file(model);
         if let Some(rejection) = model.last_rejection.take() {
             println!("command rejected during drag: {rejection}");
         }
         model.last_drag_cmd = None;
-        model.drag_before = None;
-        model.drag_snapshot_recorded = false;
     }
 
     model.prev_left_down = left_down;
@@ -1844,30 +1815,90 @@ mod tests {
             .unwrap();
         assert!(history.undo());
         assert!(history.can_redo());
+        // 無変化の逐次適用（同じ位置への MoveClip）→ 終了時の記録は
+        // 省かれ、redo も消えない。
         let mut before = Some(history.project().clone());
-        let mut recorded = false;
-        // 無変化の逐次適用（同じ位置への MoveClip）
         history
             .apply_transient(&Command::MoveClip {
                 clip_id,
                 new_start_ms: history.project().tracks[0].clips[0].start_ms,
             })
             .unwrap();
-        record_gesture_snapshot(&mut history, &mut before, &mut recorded);
-        assert!(!recorded);
+        finish_gesture_snapshot(&mut history, &mut before);
         assert!(!history.can_undo());
         assert!(history.can_redo());
-        // 実際に動かすと記録される
+        // 実際に動かしたジェスチャは、終了時に1件だけ積まれる。
+        let mut before = Some(history.project().clone());
         history
             .apply_transient(&Command::MoveClip {
                 clip_id,
                 new_start_ms: 700,
             })
             .unwrap();
-        record_gesture_snapshot(&mut history, &mut before, &mut recorded);
-        assert!(recorded);
+        finish_gesture_snapshot(&mut history, &mut before);
         assert!(history.can_undo());
         assert!(!history.can_redo());
+        // 積まれたのは開始時スナップショット（start 0）であること。
+        assert!(history.undo());
+        assert_eq!(history.project().tracks[0].clips[0].start_ms, 0);
+    }
+
+    #[test]
+    fn gesture_returned_to_origin_records_nothing() {
+        // Issue #31 レビュー round 2 対応: 一度動かして原位置へ戻した
+        // ドラッグは、終了時の最終状態が開始状態と同じなので記録
+        // されない（幽霊 undo を積まず、redo も消さない）。
+        let mut project = Project::new("gesture return test");
+        let track_id = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::AddClip {
+                track_id,
+                name: "c".into(),
+                start_ms: 0,
+                duration_ms: 1_000,
+                source: "demo/c.wav".into(),
+            },
+        )
+        .unwrap();
+        let mut history = History::new(project);
+        let clip_id = history.project().tracks[0].clips[0].id;
+        // redo を用意する
+        history
+            .apply(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 500,
+            })
+            .unwrap();
+        assert!(history.undo());
+        assert!(history.can_redo());
+        let origin = history.project().tracks[0].clips[0].start_ms;
+        let mut before = Some(history.project().clone());
+        // 動かしてから原位置へ戻す
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 700,
+            })
+            .unwrap();
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: origin,
+            })
+            .unwrap();
+        finish_gesture_snapshot(&mut history, &mut before);
+        assert!(!history.can_undo());
+        assert!(history.can_redo());
+        assert!(!history.undo());
     }
 
     #[test]

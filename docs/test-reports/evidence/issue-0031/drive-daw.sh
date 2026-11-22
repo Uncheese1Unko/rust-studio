@@ -64,6 +64,23 @@ echo "after ctrl+z(2) start_ms: $(start_ms) (expect 1000)"
 key_hold ctrl+y
 shot 05-after-ctrl-y.png
 echo "after ctrl+y start_ms: $(start_ms) (expect 2000)"
+# 原位置へ戻すドラッグ（#31 レビュー round 2 対応）: 一度動かして
+# 同じ位置へ戻したジェスチャは履歴に積まれない。直後の Ctrl+Z は
+# 幽霊エントリではなく本物の直前エントリを消費し、1000 に戻る。
+drag_return() { # クリップ中心 (372,48) を +84px 動かして同じ位置へ戻す
+  xdotool mousemove 372 48; sleep 0.2
+  xdotool mousedown 1; sleep 0.45
+  xdotool mousemove 456 48; sleep 0.4
+  xdotool mousemove 372 48; sleep 0.4
+  xdotool mouseup 1; sleep 0.8
+}
+drag_return
+shot 06-after-return-drag.png
+echo "after return-drag start_ms: $(start_ms) (expect 2000)"
+key_hold ctrl+z
+echo "after ctrl+z after return-drag start_ms: $(start_ms) (expect 1000)"
+key_hold ctrl+shift+z
+echo "after redo after return-drag start_ms: $(start_ms) (expect 2000)"
 # Shift 先行離し（#31 レビュー対応）: Ctrl+Shift+Z の後、Z より先に
 # Shift を離しても undo が誤発しないこと。redo は空なので押下自体も無動作。
 UNDO_BEFORE=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
@@ -85,7 +102,7 @@ key_hold ctrl+z
 UNDO_AFTER=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
 echo "undo lines during rename: before=$UNDO_BEFORE after=$UNDO_AFTER (expect equal)"
 echo "start_ms during rename: $(start_ms) (expect 2000)"
-shot 06-renaming-guard.png
+shot 07-renaming-guard.png
 xdotool key Escape; sleep 0.6
 grep -o "rename cancelled" "$OUT/gui-stdout.txt" | head -1
 grep -c "after undo:" "$OUT/gui-stdout.txt" | sed 's/^/after undo count: /'

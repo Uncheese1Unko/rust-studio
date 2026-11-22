@@ -28,41 +28,35 @@ video-editor (issue #8: timeline UI)
   "next_id": 3
 }
 elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.1, preview
-sample media generated: /tmp/rust-studio-video-editor-media/opening.mp4
-sample media generated: /tmp/rust-studio-video-editor-media/interview.mp4
-sample media generated: /tmp/rust-studio-video-editor-media/bgm.wav
-sample media generated: /tmp/rust-studio-video-editor-media/bg.mp4
 media prepared: demo/opening.mp4 -> 40 frames
 preview textures loaded: 40
-preview: source=demo/opening.mp4 playhead=1032 source_time=32 frame=0
-preview: source=demo/opening.mp4 playhead=1137 source_time=137 frame=1
-preview: source=demo/opening.mp4 playhead=1224 source_time=224 frame=2
-preview: source=demo/opening.mp4 playhead=1329 source_time=329 frame=3
-preview: source=demo/opening.mp4 playhead=1418 source_time=418 frame=4
-preview: source=demo/opening.mp4 playhead=1525 source_time=525 frame=5
-preview: source=demo/opening.mp4 playhead=1616 source_time=616 frame=6
-preview: source=demo/opening.mp4 playhead=1718 source_time=718 frame=7
-preview: source=demo/opening.mp4 playhead=1822 source_time=822 frame=8
-preview: source=demo/opening.mp4 playhead=1915 source_time=915 frame=9
-preview: source=demo/opening.mp4 playhead=2030 source_time=1030 frame=10
-preview: source=demo/opening.mp4 playhead=2124 source_time=1124 frame=11
-preview: source=demo/opening.mp4 playhead=2221 source_time=1221 frame=12
-preview: source=demo/opening.mp4 playhead=2320 source_time=1320 frame=13
-preview: source=demo/opening.mp4 playhead=2410 source_time=1410 frame=14
-preview: source=demo/opening.mp4 playhead=2510 source_time=1510 frame=15
-preview: source=demo/opening.mp4 playhead=2618 source_time=1618 frame=16
-preview: source=demo/opening.mp4 playhead=2714 source_time=1714 frame=17
-preview: source=demo/opening.mp4 playhead=2831 source_time=1831 frame=18
-preview: source=demo/opening.mp4 playhead=2913 source_time=1913 frame=19
-preview: source=demo/opening.mp4 playhead=3010 source_time=1510 frame=15
-preview: source=demo/opening.mp4 playhead=3109 source_time=1609 frame=16
-preview: source=demo/opening.mp4 playhead=3219 source_time=1719 frame=17
-preview: source=demo/opening.mp4 playhead=3302 source_time=1802 frame=18
-preview: source=demo/opening.mp4 playhead=3401 source_time=1901 frame=19
-preview: source=demo/opening.mp4 playhead=3423 source_time=1423 frame=14
-preview: source=demo/opening.mp4 playhead=3515 source_time=1515 frame=15
-preview: source=demo/opening.mp4 playhead=3602 source_time=1602 frame=16
-preview: source=demo/opening.mp4 playhead=3711 source_time=1711 frame=17
+preview: source=demo/opening.mp4 playhead=1008 source_time=8 frame=0
+preview: source=demo/opening.mp4 playhead=1149 source_time=149 frame=1
+preview: source=demo/opening.mp4 playhead=1248 source_time=248 frame=2
+preview: source=demo/opening.mp4 playhead=1347 source_time=347 frame=3
+preview: source=demo/opening.mp4 playhead=1446 source_time=446 frame=4
+preview: source=demo/opening.mp4 playhead=1541 source_time=541 frame=5
+preview: source=demo/opening.mp4 playhead=1646 source_time=646 frame=6
+preview: source=demo/opening.mp4 playhead=1743 source_time=743 frame=7
+preview: source=demo/opening.mp4 playhead=1838 source_time=838 frame=8
+preview: source=demo/opening.mp4 playhead=1945 source_time=945 frame=9
+preview: source=demo/opening.mp4 playhead=2031 source_time=1031 frame=10
+preview: source=demo/opening.mp4 playhead=2143 source_time=1143 frame=11
+preview: source=demo/opening.mp4 playhead=2235 source_time=1235 frame=12
+preview: source=demo/opening.mp4 playhead=2329 source_time=1329 frame=13
+preview: source=demo/opening.mp4 playhead=2427 source_time=1427 frame=14
+preview: source=demo/opening.mp4 playhead=2530 source_time=1530 frame=15
+preview: source=demo/opening.mp4 playhead=2628 source_time=1628 frame=16
+preview: source=demo/opening.mp4 playhead=2726 source_time=1726 frame=17
+preview: source=demo/opening.mp4 playhead=2827 source_time=1327 frame=13
+preview: source=demo/opening.mp4 playhead=2925 source_time=1425 frame=14
+preview: source=demo/opening.mp4 playhead=3031 source_time=1531 frame=15
+preview: source=demo/opening.mp4 playhead=3126 source_time=1626 frame=16
+preview: source=demo/opening.mp4 playhead=3223 source_time=1223 frame=12
+preview: source=demo/opening.mp4 playhead=3319 source_time=1319 frame=13
+preview: source=demo/opening.mp4 playhead=3413 source_time=1413 frame=14
+preview: source=demo/opening.mp4 playhead=3508 source_time=1508 frame=15
+preview: source=demo/opening.mp4 playhead=3614 source_time=1614 frame=16
 after drag: {
   "name": "undo-evidence-video",
   "tracks": [
@@ -90,8 +84,9 @@ after drag: {
   ],
   "next_id": 3
 }
-preview: source=demo/opening.mp4 playhead=3812 source_time=1812 frame=18
-preview: source=demo/opening.mp4 playhead=3905 source_time=1905 frame=19
+preview: source=demo/opening.mp4 playhead=3711 source_time=1711 frame=17
+preview: source=demo/opening.mp4 playhead=3807 source_time=1807 frame=18
+preview: source=demo/opening.mp4 playhead=3911 source_time=1911 frame=19
 media prepared: demo/opening.mp4 -> 40 frames
 preview textures loaded: 40
 after undo: {
@@ -121,10 +116,13 @@ after undo: {
   ],
   "next_id": 3
 }
-preview: source=demo/opening.mp4 playhead=1278 source_time=278 frame=2
-preview: source=demo/opening.mp4 playhead=2743 source_time=1743 frame=17
-preview: source=demo/opening.mp4 playhead=2865 source_time=1865 frame=18
-preview: source=demo/opening.mp4 playhead=2962 source_time=1962 frame=19
+preview: source=demo/opening.mp4 playhead=2382 source_time=1382 frame=13
+preview: source=demo/opening.mp4 playhead=2403 source_time=1403 frame=14
+preview: source=demo/opening.mp4 playhead=2506 source_time=1506 frame=15
+preview: source=demo/opening.mp4 playhead=2605 source_time=1605 frame=16
+preview: source=demo/opening.mp4 playhead=2711 source_time=1711 frame=17
+preview: source=demo/opening.mp4 playhead=2805 source_time=1805 frame=18
+preview: source=demo/opening.mp4 playhead=2921 source_time=1921 frame=19
 media prepared: demo/opening.mp4 -> 40 frames
 preview textures loaded: 40
 after redo: {
@@ -154,30 +152,29 @@ after redo: {
   ],
   "next_id": 3
 }
-preview: source=demo/opening.mp4 playhead=2279 source_time=279 frame=2
-preview: source=demo/opening.mp4 playhead=2300 source_time=300 frame=3
-preview: source=demo/opening.mp4 playhead=2445 source_time=445 frame=4
-preview: source=demo/opening.mp4 playhead=2547 source_time=547 frame=5
-preview: source=demo/opening.mp4 playhead=2643 source_time=643 frame=6
-preview: source=demo/opening.mp4 playhead=2740 source_time=740 frame=7
-preview: source=demo/opening.mp4 playhead=2849 source_time=849 frame=8
-preview: source=demo/opening.mp4 playhead=2945 source_time=945 frame=9
-preview: source=demo/opening.mp4 playhead=3039 source_time=1039 frame=10
-preview: source=demo/opening.mp4 playhead=3143 source_time=1143 frame=11
-preview: source=demo/opening.mp4 playhead=3246 source_time=1246 frame=12
-preview: source=demo/opening.mp4 playhead=3350 source_time=1350 frame=13
-preview: source=demo/opening.mp4 playhead=3430 source_time=1430 frame=14
-preview: source=demo/opening.mp4 playhead=3534 source_time=1534 frame=15
+preview: source=demo/opening.mp4 playhead=2002 source_time=2 frame=0
+preview: source=demo/opening.mp4 playhead=2102 source_time=102 frame=1
+preview: source=demo/opening.mp4 playhead=2212 source_time=212 frame=2
+preview: source=demo/opening.mp4 playhead=2302 source_time=302 frame=3
+preview: source=demo/opening.mp4 playhead=2457 source_time=457 frame=4
+preview: source=demo/opening.mp4 playhead=2571 source_time=571 frame=5
+preview: source=demo/opening.mp4 playhead=2660 source_time=660 frame=6
+preview: source=demo/opening.mp4 playhead=2759 source_time=759 frame=7
+preview: source=demo/opening.mp4 playhead=2860 source_time=860 frame=8
+preview: source=demo/opening.mp4 playhead=2953 source_time=953 frame=9
+preview: source=demo/opening.mp4 playhead=3001 source_time=1001 frame=10
+preview: source=demo/opening.mp4 playhead=3106 source_time=1106 frame=11
+preview: source=demo/opening.mp4 playhead=3204 source_time=1204 frame=12
 rename begin: track 1
-preview: source=demo/opening.mp4 playhead=3629 source_time=1629 frame=16
-preview: source=demo/opening.mp4 playhead=3735 source_time=1735 frame=17
-preview: source=demo/opening.mp4 playhead=3832 source_time=1832 frame=18
-preview: source=demo/opening.mp4 playhead=3933 source_time=1933 frame=19
-preview: source=demo/opening.mp4 playhead=2001 source_time=1 frame=0
-preview: source=demo/opening.mp4 playhead=2104 source_time=104 frame=1
-preview: source=demo/opening.mp4 playhead=2214 source_time=214 frame=2
-preview: source=demo/opening.mp4 playhead=2308 source_time=308 frame=3
-preview: source=demo/opening.mp4 playhead=2401 source_time=401 frame=4
-preview: source=demo/opening.mp4 playhead=2507 source_time=507 frame=5
-preview: source=demo/opening.mp4 playhead=2603 source_time=603 frame=6
+preview: source=demo/opening.mp4 playhead=3348 source_time=1348 frame=13
+preview: source=demo/opening.mp4 playhead=3450 source_time=1450 frame=14
+preview: source=demo/opening.mp4 playhead=3546 source_time=1546 frame=15
+preview: source=demo/opening.mp4 playhead=3647 source_time=1647 frame=16
+preview: source=demo/opening.mp4 playhead=3746 source_time=1746 frame=17
+preview: source=demo/opening.mp4 playhead=3844 source_time=1844 frame=18
+preview: source=demo/opening.mp4 playhead=3942 source_time=1942 frame=19
+preview: source=demo/opening.mp4 playhead=2005 source_time=5 frame=0
+preview: source=demo/opening.mp4 playhead=2116 source_time=116 frame=1
+preview: source=demo/opening.mp4 playhead=2211 source_time=211 frame=2
+preview: source=demo/opening.mp4 playhead=2319 source_time=319 frame=3
 rename cancelled

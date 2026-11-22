@@ -53,9 +53,9 @@ impl History {
 
     /// 履歴に積まずにコマンドを適用する（Issue #31: GUI のドラッグの
     /// ように、1つのジェスチャで何度も適用し直す操作の逐次適用用）。
-    /// ジェスチャの開始時に控えたスナップショットを、最初の成功時に
-    /// [`History::record_undo_snapshot`] で積むこと。失敗時は状態が
-    /// 変わらない（コマンド層の契約どおり）。
+    /// ジェスチャの開始時に控えたスナップショットを、ジェスチャの
+    /// 終了時に [`History::record_undo_snapshot`] で積むこと。失敗時は
+    /// 状態が変わらない（コマンド層の契約どおり）。
     pub fn apply_transient(&mut self, command: &Command) -> Result<Option<u64>, CommandError> {
         apply(&mut self.project, command)
     }
