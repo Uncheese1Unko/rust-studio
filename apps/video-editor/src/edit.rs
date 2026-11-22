@@ -452,6 +452,149 @@ impl Drag {
             },
         }
     }
+
+    /// スナップを適用した候補コマンド（Issue #45）。
+    /// `snap_enabled` が false（Alt 押下中）なら候補をそのまま返す。
+    /// 移動は開始端・終端の両方を評価し、より近い吸着を採用する。
+    /// トリムは動かしている端だけを吸着させる。吸着後も範囲外の
+    /// 候補（負の位置など）はそのまま返し、弾くのはコマンド層。
+    pub fn snapped_command_for(
+        &self,
+        project: &Project,
+        pointer_ms: i64,
+        playhead_ms: i64,
+        view_width_px: f32,
+        snap_enabled: bool,
+    ) -> Command {
+        let base = self.command_for(pointer_ms);
+        if !snap_enabled {
+            return base;
+        }
+        match (self.kind, base) {
+            (
+                DragKind::Move,
+                Command::MoveClip {
+                    clip_id,
+                    new_start_ms,
+                },
+            ) => {
+                let by_start =
+                    snap_edge(project, clip_id, new_start_ms, playhead_ms, view_width_px);
+                let snapped_end = snap_edge(
+                    project,
+                    clip_id,
+                    new_start_ms + self.orig_duration_ms,
+                    playhead_ms,
+                    view_width_px,
+                );
+                let by_end = snapped_end - self.orig_duration_ms;
+                // 吸着した端だけを候補にし、両端とも吸着したら調整量の
+                // 小さい方を採る。吸着しなかった端は「調整量 0」として
+                // 競わせない（それだと吸着した側が常に負ける）。
+                let start_snapped = by_start != new_start_ms;
+                let end_snapped = snapped_end != new_start_ms + self.orig_duration_ms;
+                let chosen = match (start_snapped, end_snapped) {
+                    (true, true) => {
+                        if (by_end - new_start_ms).abs() < (by_start - new_start_ms).abs() {
+                            by_end
+                        } else {
+                            by_start
+                        }
+                    }
+                    (true, false) => by_start,
+                    (false, true) => by_end,
+                    (false, false) => new_start_ms,
+                };
+                Command::MoveClip {
+                    clip_id,
+                    new_start_ms: chosen,
+                }
+            }
+            (
+                DragKind::TrimLeft,
+                Command::TrimClip {
+                    clip_id,
+                    new_start_ms,
+                    ..
+                },
+            ) => {
+                let start = snap_edge(project, clip_id, new_start_ms, playhead_ms, view_width_px);
+                Command::TrimClip {
+                    clip_id,
+                    new_start_ms: start,
+                    new_duration_ms: self.orig_start_ms + self.orig_duration_ms - start,
+                }
+            }
+            (
+                DragKind::TrimRight,
+                Command::TrimClip {
+                    clip_id,
+                    new_start_ms,
+                    new_duration_ms,
+                },
+            ) => {
+                let end = snap_edge(
+                    project,
+                    clip_id,
+                    new_start_ms + new_duration_ms,
+                    playhead_ms,
+                    view_width_px,
+                );
+                Command::TrimClip {
+                    clip_id,
+                    new_start_ms,
+                    new_duration_ms: end - new_start_ms,
+                }
+            }
+            (_, other) => other,
+        }
+    }
+}
+
+/// スナップのしきい値（画面上のピクセル、Issue #45）。
+pub const SNAP_THRESHOLD_PX: f32 = 8.0;
+/// スナップのグリッド間隔（ms、Issue #45）。
+pub const SNAP_GRID_MS: i64 = 1_000;
+
+/// 端の時刻を最も近い吸着先へ寄せる（Issue #45）。吸着先は、対象
+/// クリップ以外の全クリップの開始端・終端、再生ヘッド、0ms、
+/// 1秒グリッド。しきい値（8px を px_per_ms で換算）以内に吸着先が
+/// なければ元の時刻をそのまま返す。同距離の候補が複数ある場合は
+/// 候補の列挙順（クリップ端→再生ヘッド→0→グリッド）で先のものを
+/// 採る決定的な規則にする。
+pub fn snap_edge(
+    project: &Project,
+    exclude_clip_id: u64,
+    edge_ms: i64,
+    playhead_ms: i64,
+    view_width_px: f32,
+) -> i64 {
+    let ppm = timeline::px_per_ms(view_width_px);
+    let mut targets: Vec<i64> = Vec::new();
+    for track in &project.tracks {
+        for clip in &track.clips {
+            if clip.id == exclude_clip_id {
+                continue;
+            }
+            targets.push(clip.start_ms);
+            targets.push(clip.end_ms());
+        }
+    }
+    targets.push(playhead_ms);
+    targets.push(0);
+    // グリッドは端の前後の目盛りだけを候補にする。
+    let grid_below = edge_ms.div_euclid(SNAP_GRID_MS) * SNAP_GRID_MS;
+    targets.push(grid_below);
+    targets.push(grid_below + SNAP_GRID_MS);
+
+    let mut best: Option<(f32, i64)> = None;
+    for target in targets {
+        let dist_px = ((target - edge_ms) as f32 * ppm).abs();
+        if dist_px <= SNAP_THRESHOLD_PX && best.is_none_or(|(d, _)| dist_px < d) {
+            best = Some((dist_px, target));
+        }
+    }
+    best.map(|(_, t)| t).unwrap_or(edge_ms)
 }
 
 /// ダブルクリック判定。前回のクリック時刻と位置を保持する。
@@ -1243,5 +1386,205 @@ mod tests {
         // 編集中の押下エッジは発火せず、編集を終えても持ち越さない
         assert_eq!(tracker.update(true, true, true, false, false), None);
         assert_eq!(tracker.update(false, true, true, false, false), None);
+    }
+
+    // Issue #45: スナップ（移動・トリムの吸着）。
+
+    fn project_with_neighbor() -> (Project, u64, u64) {
+        // V1: opening 1000..3000（ドラッグ対象）、interview 6000..8000（隣）
+        let mut p = sample_project();
+        let track_id = p.tracks[0].id;
+        let neighbor = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id,
+                name: "interview".into(),
+                start_ms: 6_000,
+                duration_ms: 2_000,
+                source: "demo/interview.mp4".into(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let opening = clip_id(&p);
+        (p, opening, neighbor)
+    }
+
+    #[test]
+    fn snap_picks_nearest_clip_edge_within_threshold() {
+        // Issue #45（イシュー指定のテスト）: しきい値（8px ≒ 95ms @960px）
+        // 内では最も近いクリップ端に吸着し、外では元の位置のまま。
+        let (p, opening, _neighbor) = project_with_neighbor();
+        // 隣の開始端 6000 に 50ms まで近づいた端は 6000 に吸着
+        assert_eq!(snap_edge(&p, opening, 5_950, 0, 960.0), 6_000);
+        // 隣の終端 8000 にも吸着
+        assert_eq!(snap_edge(&p, opening, 7_960, 0, 960.0), 8_000);
+        // どこにも近くない端はそのまま
+        assert_eq!(snap_edge(&p, opening, 5_500, 0, 960.0), 5_500);
+    }
+
+    #[test]
+    fn snap_excludes_the_dragged_clips_own_edges() {
+        // Issue #45: ドラッグ中クリップ自身の端は吸着先に含めない。
+        // 自分の開始端 1500（グリッド外）に 40ms まで近づいても、
+        // 他に吸着先がなければそのままになる。
+        let mut p = sample_project();
+        let track_id = p.tracks[0].id;
+        let odd = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id,
+                name: "odd".into(),
+                start_ms: 1_500,
+                duration_ms: 1_100,
+                source: "demo/odd.mp4".into(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(snap_edge(&p, odd, 1_540, 9_000, 960.0), 1_540);
+    }
+
+    #[test]
+    fn snap_targets_include_playhead_zero_and_grid() {
+        // Issue #45: 吸着先は他クリップ端・再生ヘッド・0ms・1秒グリッド。
+        let (p, opening, _neighbor) = project_with_neighbor();
+        // 再生ヘッド 4200 に吸着
+        assert_eq!(snap_edge(&p, opening, 4_160, 4_200, 960.0), 4_200);
+        // 0ms に吸着
+        assert_eq!(snap_edge(&p, opening, 60, 4_200, 960.0), 0);
+        // 1秒グリッド 4000 に吸着（再生ヘッドは遠い）
+        assert_eq!(snap_edge(&p, opening, 3_950, 9_000, 960.0), 4_000);
+        // 最も近いものを選ぶ: グリッド 4000（30ms）と再生ヘッド 4080（50ms）ならグリッド
+        assert_eq!(snap_edge(&p, opening, 4_030, 4_080, 960.0), 4_000);
+    }
+
+    #[test]
+    fn drag_move_snaps_end_to_neighbor_start() {
+        // Issue #45: 移動でクリップの終端が隣の開始端に吸着し、
+        // 隙間なく接する位置で止まる。
+        let (p, opening, _neighbor) = project_with_neighbor();
+        let drag = Drag::begin(&p, &HitTarget::ClipBody { clip_id: opening }, 1_500).unwrap();
+        // ポインタを +4450ms 動かす: 候補の終端は 7450 ではなく…
+        // 開始 1000+4450=5450、終端 7450。吸着先は隣の終端 8000 でも
+        // 開始 6000 でもないため、そのまま。
+        let cmd = drag.snapped_command_for(&p, 5_950, 0, 960.0, true);
+        assert_eq!(
+            cmd,
+            Command::MoveClip {
+                clip_id: opening,
+                new_start_ms: 5_450
+            }
+        );
+        // 終端が隣の開始（6000）に 50ms まで近づく移動: 開始候補 3950、
+        // 終端候補 5950 → 終端が吸着して開始は 4000 になる。
+        let cmd = drag.snapped_command_for(&p, 4_450, 0, 960.0, true);
+        assert_eq!(
+            cmd,
+            Command::MoveClip {
+                clip_id: opening,
+                new_start_ms: 4_000
+            }
+        );
+        // Alt（スナップ無効）では候補がそのまま返る
+        let cmd = drag.snapped_command_for(&p, 4_450, 0, 960.0, false);
+        assert_eq!(
+            cmd,
+            Command::MoveClip {
+                clip_id: opening,
+                new_start_ms: 3_950
+            }
+        );
+    }
+
+    #[test]
+    fn drag_trim_snaps_edges() {
+        // Issue #45: トリムでも同じ吸着が効く。
+        let (p, opening, _neighbor) = project_with_neighbor();
+        // 右端トリム: 終端候補 5950 → 隣の開始 6000 に吸着し、
+        // duration は 1000..6000 の 5000 になる。
+        let drag = Drag::begin(&p, &HitTarget::ClipRightEdge { clip_id: opening }, 3_000).unwrap();
+        let cmd = drag.snapped_command_for(&p, 5_950, 0, 960.0, true);
+        assert_eq!(
+            cmd,
+            Command::TrimClip {
+                clip_id: opening,
+                new_start_ms: 1_000,
+                new_duration_ms: 5_000
+            }
+        );
+        // 左端トリム: 開始候補 1050 → 1秒グリッド 1000 に吸着し、
+        // 終端 3000 は保たれる。
+        let drag = Drag::begin(&p, &HitTarget::ClipLeftEdge { clip_id: opening }, 1_000).unwrap();
+        let cmd = drag.snapped_command_for(&p, 1_050, 0, 960.0, true);
+        assert_eq!(
+            cmd,
+            Command::TrimClip {
+                clip_id: opening,
+                new_start_ms: 1_000,
+                new_duration_ms: 2_000
+            }
+        );
+        // 左端トリムで再生ヘッド（500）へ吸着
+        let cmd = drag.snapped_command_for(&p, 540, 500, 960.0, true);
+        assert_eq!(
+            cmd,
+            Command::TrimClip {
+                clip_id: opening,
+                new_start_ms: 500,
+                new_duration_ms: 2_500
+            }
+        );
+    }
+    #[test]
+    fn drag_move_snaps_end_even_when_start_has_no_target() {
+        // Issue #45 の実装中に実アプリで見つけた不具合の回帰テスト:
+        // 開始端に吸着先がなく終端だけが近い場合でも、終端の吸着が
+        // 採用されなければならない（旧実装は「開始端の調整距離 0」が
+        // 常に勝ち、終端の吸着が捨てられた）。
+        let mut p = Project::new("demo");
+        let v = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let opening = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: v,
+                name: "opening".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: v,
+                name: "interview".into(),
+                start_ms: 2_500,
+                duration_ms: 4_000,
+                source: "demo/interview.mp4".into(),
+            },
+        )
+        .unwrap();
+        let drag = Drag::begin(&p, &HitTarget::ClipBody { clip_id: opening }, 1_000).unwrap();
+        // 候補: 開始 452（吸着先なし）、終端 2452（interview の開始
+        // 2500 に 48ms まで接近）→ 終端が吸着して開始は 500。
+        let cmd = drag.snapped_command_for(&p, 1_452, 300, 960.0, true);
+        assert_eq!(
+            cmd,
+            Command::MoveClip {
+                clip_id: opening,
+                new_start_ms: 500
+            }
+        );
     }
 }

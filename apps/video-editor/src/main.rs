@@ -393,6 +393,10 @@ fn shift_down(app: &App) -> bool {
     app.keys.down.contains(&Key::LShift) || app.keys.down.contains(&Key::RShift)
 }
 
+fn alt_down(app: &App) -> bool {
+    app.keys.down.contains(&Key::LAlt) || app.keys.down.contains(&Key::RAlt)
+}
+
 /// Undo/Redo キー（Issue #31）: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y。
 /// 履歴が実際に動いたときだけ、メディア（フレーム・テクスチャ）と
 /// 選択を追従させ、プロジェクトファイルへ保存する。
@@ -805,7 +809,15 @@ fn handle_pointer(app: &App, model: &mut Model) {
 
     if left_down {
         if let Some(drag) = &model.drag {
-            let cmd = drag.command_for(pointer_ms);
+            // Issue #45: 候補コマンドにスナップを適用する。
+            // Alt 押下中はスナップ無効。
+            let cmd = drag.snapped_command_for(
+                model.history.project(),
+                pointer_ms,
+                model.playhead_ms,
+                win.w(),
+                !alt_down(app),
+            );
             if model.last_drag_cmd.as_ref() != Some(&cmd) {
                 match model.history.apply_transient(&cmd) {
                     Ok(_) => {
