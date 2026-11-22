@@ -1194,13 +1194,18 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     // 再生ヘッド（timeline.playhead）: ルーラー上端から画面下端までの縦線。
+    // ヘッダー列の内側（再生ヘッドが表示範囲より前）では描かない
+    // （Issue #46 レビュー round 2 指摘。クリップ・目盛りと同じ境界）。
     let (pr, pg, pb) = timeline::PLAYHEAD_COLOR;
-    let px = timeline::playhead_x(model.playhead_ms, win.w(), &model.view_scale) - win.w() / 2.0;
-    draw.line()
-        .start(pt2(px, win.h() / 2.0))
-        .end(pt2(px, -win.h() / 2.0))
-        .weight(2.0)
-        .color(rgb(pr, pg, pb));
+    let raw_px = timeline::playhead_x(model.playhead_ms, win.w(), &model.view_scale);
+    if raw_px >= timeline::HEADER_WIDTH_PX {
+        let px = raw_px - win.w() / 2.0;
+        draw.line()
+            .start(pt2(px, win.h() / 2.0))
+            .end(pt2(px, -win.h() / 2.0))
+            .weight(2.0)
+            .color(rgb(pr, pg, pb));
+    }
 
     draw.to_frame(app, &frame).unwrap();
 }

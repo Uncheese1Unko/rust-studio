@@ -381,7 +381,14 @@ pub fn hit_test(
         if rect.track_id != project.tracks[track_index].id {
             continue;
         }
-        if (x - rect.x).abs() <= EDGE_GRAB_PX {
+        // 幅 0 の矩形（表示範囲より完全に前のクリップ）は何にも
+        // 当たらない（Issue #46 レビュー round 2 指摘）。
+        if rect.w <= 0.0 {
+            continue;
+        }
+        // 左端が画面外に切り取られている場合、その境界は実在しない
+        // ため掴み位置にしない（同指摘）。
+        if !rect.clipped_left && (x - rect.x).abs() <= EDGE_GRAB_PX {
             return HitTarget::ClipLeftEdge {
                 clip_id: rect.clip_id,
             };
@@ -1461,6 +1468,56 @@ mod tests {
         assert_eq!(
             hit_test(&p, 960.0, &zoomed, 130.0, 48.0),
             HitTarget::ClipBody { clip_id: id }
+        );
+    }
+
+    #[test]
+    fn hit_test_ignores_phantom_edge_of_clipped_clip() {
+        // Issue #46 レビュー round 2 指摘: スクロールで左端が画面外に
+        // 出たクリップは、切り取られた矩形の左端（ヘッダー境界）に
+        // 実在しないトリム掴み位置を持たない。見えている部分は本体。
+        let p = sample_project();
+        let id = clip_id(&p);
+        let scrolled = timeline::ViewScale {
+            zoom: 1.0,
+            offset_ms: 1_500,
+        };
+        // opening は 1000..3000、可視部分は 1500..3000（x=120..246）
+        assert_eq!(
+            hit_test(&p, 960.0, &scrolled, 123.0, 48.0),
+            HitTarget::ClipBody { clip_id: id },
+            "切り取られた左端を掴み位置にしてはいけない"
+        );
+        // 本物の右端（3000ms → x=246）は従来どおり掴める
+        assert_eq!(
+            hit_test(&p, 960.0, &scrolled, 246.0, 48.0),
+            HitTarget::ClipRightEdge { clip_id: id }
+        );
+        // 完全に表示範囲より前のクリップは、境界でも何にも当たらない
+        let mut p2 = Project::new("t");
+        let v = apply(
+            &mut p2,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p2,
+            &Command::AddClip {
+                track_id: v,
+                name: "past".into(),
+                start_ms: 0,
+                duration_ms: 500,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            hit_test(&p2, 960.0, &scrolled, 120.0, 48.0),
+            HitTarget::Empty { track_index: 0 }
         );
     }
 

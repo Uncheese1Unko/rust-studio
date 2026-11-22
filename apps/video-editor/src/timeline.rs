@@ -167,6 +167,10 @@ pub struct ClipRect {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// 左端がヘッダー境界で切り取られたか（元の左端は画面外）。
+    /// ヒットテストが実在しない左端を掴み位置にしないために使う
+    /// （Issue #46 レビュー round 2 指摘）。
+    pub clipped_left: bool,
 }
 
 /// プロジェクトの全クリップの描画矩形を、トラック順・クリップ順で返す。
@@ -190,6 +194,7 @@ pub fn layout_clips(project: &Project, view_width_px: f32, scale: &ViewScale) ->
                 y: track_top_y(index),
                 w,
                 h: TRACK_HEIGHT_PX,
+                clipped_left: raw_x < HEADER_WIDTH_PX,
             });
         }
     }
@@ -343,6 +348,7 @@ mod tests {
         let rects = layout_clips(&project, 960.0, &scale);
         let opening = &rects[0]; // 1000..3000、左端は画面外
         assert_eq!(opening.x, HEADER_WIDTH_PX);
+        assert!(opening.clipped_left);
         // 見えているのは 1500..3000 の 1500ms 分
         assert!(
             (opening.w - 1_500.0 * 0.084).abs() < 0.01,
