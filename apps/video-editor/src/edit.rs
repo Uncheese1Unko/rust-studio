@@ -411,13 +411,7 @@ pub fn drop_placement_command(
     };
     let track_id = selected_track
         .filter(|id| project.tracks.iter().any(|t| t.id == *id && t.kind == want))
-        .or_else(|| {
-            project
-                .tracks
-                .iter()
-                .find(|t| t.kind == want)
-                .map(|t| t.id)
-        })?;
+        .or_else(|| project.tracks.iter().find(|t| t.kind == want).map(|t| t.id))?;
     let name = std::path::Path::new(source)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -1704,15 +1698,9 @@ mod tests {
         .unwrap()
         .unwrap();
         // 映像ファイル: A1 を選択中でも映像トラックへ
-        let cmd = drop_placement_command(
-            &p,
-            Some(a1),
-            1_500,
-            "/tmp/clip.mp4",
-            2_000,
-            DropKind::Video,
-        )
-        .unwrap();
+        let cmd =
+            drop_placement_command(&p, Some(a1), 1_500, "/tmp/clip.mp4", 2_000, DropKind::Video)
+                .unwrap();
         match cmd {
             Command::AddClip {
                 track_id,
