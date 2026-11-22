@@ -627,6 +627,67 @@ impl RenameSession {
     }
 }
 
+/// BPM 入力セッションの結果（Issue #35）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BpmAction {
+    /// 継続（確定も中止もしていない）。
+    None,
+    /// Enter で確定。発行すべきコマンド。
+    Commit(Command),
+    /// Esc で中止。コマンドは発行しない。
+    Cancel,
+}
+
+/// BPM のインライン入力セッション（Issue #35）。リネームと同じく
+/// GUI 側の表示状態で、プロジェクトには含めない。数字と小数点だけを
+/// 受け、Enter で SetBpm を返す。範囲の検証はコマンド層が行う。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BpmEdit {
+    buffer: String,
+}
+
+impl BpmEdit {
+    pub fn new(current_bpm: f32) -> BpmEdit {
+        let buffer = if current_bpm.fract() == 0.0 {
+            format!("{}", current_bpm as i64)
+        } else {
+            format!("{current_bpm}")
+        };
+        BpmEdit { buffer }
+    }
+
+    pub fn buffer(&self) -> &str {
+        &self.buffer
+    }
+
+    pub fn handle(&mut self, input: RenameInput) -> BpmAction {
+        match input {
+            RenameInput::Char(c) if c.is_ascii_digit() => {
+                if self.buffer.len() < 6 {
+                    self.buffer.push(c);
+                }
+                BpmAction::None
+            }
+            RenameInput::Char('.') => {
+                if !self.buffer.contains('.') && self.buffer.len() < 6 {
+                    self.buffer.push('.');
+                }
+                BpmAction::None
+            }
+            RenameInput::Char(_) => BpmAction::None,
+            RenameInput::Backspace => {
+                self.buffer.pop();
+                BpmAction::None
+            }
+            RenameInput::Enter => match self.buffer.parse::<f32>() {
+                Ok(bpm) => BpmAction::Commit(Command::SetBpm { bpm }),
+                Err(_) => BpmAction::None,
+            },
+            RenameInput::Escape => BpmAction::Cancel,
+        }
+    }
+}
+
 /// 空き場所への配置コマンドを作る。トラックが無ければ None。
 /// 配置先のソースは呼び出し側が渡す（DAW ではデモ素材の実パス）。
 pub fn place_clip_command(
@@ -1224,6 +1285,36 @@ mod tests {
             clip_id: 42,
             semitones: 3.0
         }));
+    }
+
+    #[test]
+    fn bpm_edit_types_digits_and_commits_on_enter() {
+        // Issue #35: BPM 入力は数字と小数点だけを受け、Enter で
+        // SetBpm を発行する。Esc は取消。
+        let mut edit = BpmEdit::new(120.0);
+        assert_eq!(edit.buffer(), "120");
+        edit.handle(RenameInput::Backspace);
+        edit.handle(RenameInput::Backspace);
+        edit.handle(RenameInput::Backspace);
+        assert_eq!(edit.buffer(), "");
+        // 空で Enter しても確定しない
+        assert_eq!(edit.handle(RenameInput::Enter), BpmAction::None);
+        edit.handle(RenameInput::Char('9'));
+        edit.handle(RenameInput::Char('0'));
+        // 数字以外は無視される
+        assert_eq!(edit.handle(RenameInput::Char('x')), BpmAction::None);
+        assert_eq!(edit.buffer(), "90");
+        assert_eq!(
+            edit.handle(RenameInput::Enter),
+            BpmAction::Commit(Command::SetBpm { bpm: 90.0 })
+        );
+        // 小数点は1つまで
+        let mut edit = BpmEdit::new(90.0);
+        edit.handle(RenameInput::Char('.'));
+        edit.handle(RenameInput::Char('.'));
+        edit.handle(RenameInput::Char('5'));
+        assert_eq!(edit.buffer(), "90.5");
+        assert_eq!(edit.handle(RenameInput::Escape), BpmAction::Cancel);
     }
 
     #[test]

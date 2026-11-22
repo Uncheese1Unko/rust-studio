@@ -50,6 +50,7 @@ fn tools_list_exposes_all_commands() {
         "trim_clip",
         "split_clip",
         "set_clip_fade",
+        "set_bpm",
         "remove_clip",
         "set_clip_gain",
         "set_track_volume",
@@ -677,6 +678,25 @@ fn set_clip_fade_tool_applies_via_tools_call() {
         "set_clip_fade",
         json!({"clip_id": 2, "fade_in_ms": 4001, "fade_out_ms": 0}),
     );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    let dump_after = project_dump_via_tool(&server);
+    assert_eq!(dump, dump_after, "rejected call must not change state");
+}
+
+#[test]
+fn set_bpm_tool_applies_via_tools_call() {
+    // Issue #35: set_bpm が tools/call 経由で適用でき、ダンプで
+    // bpm が観測できる。範囲外はエラーで状態不変。
+    let server = McpServer::new();
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.bpm, 120.0, "既定は 120");
+    let res = call_tool(&server, 80, "set_bpm", json!({"bpm": 90.0}));
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.bpm, 90.0);
+    let res = call_tool(&server, 81, "set_bpm", json!({"bpm": 301.0}));
     assert_eq!(res["result"]["isError"], true, "{res}");
     let dump_after = project_dump_via_tool(&server);
     assert_eq!(dump, dump_after, "rejected call must not change state");

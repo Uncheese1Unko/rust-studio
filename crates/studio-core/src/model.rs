@@ -97,7 +97,14 @@ pub struct Track {
 pub struct Project {
     pub name: String,
     pub tracks: Vec<Track>,
+    /// テンポ（BPM、Issue #35）。旧形式の JSON では既定 120。
+    #[serde(default = "default_bpm")]
+    pub bpm: f32,
     next_id: u64,
+}
+
+fn default_bpm() -> f32 {
+    120.0
 }
 
 impl Project {
@@ -105,6 +112,7 @@ impl Project {
         Project {
             name: name.into(),
             tracks: Vec::new(),
+            bpm: 120.0,
             next_id: 1,
         }
     }

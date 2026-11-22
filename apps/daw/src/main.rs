@@ -161,6 +161,9 @@ struct Model {
     // クリップボード（プロジェクトには保存しない）。
     edit_keys: edit::EditKeyTracker,
     clipboard: Option<studio_core::Clip>,
+    // Issue #35: BPM のインライン入力セッション（プロジェクトには
+    // 含めない）。
+    bpm_edit: Option<edit::BpmEdit>,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -339,6 +342,7 @@ fn model(app: &App) -> Model {
         history_keys: edit::HistoryKeyTracker::new(),
         edit_keys: edit::EditKeyTracker::new(),
         clipboard: None,
+        bpm_edit: None,
     }
 }
 
@@ -493,7 +497,7 @@ fn save_project_file(model: &mut Model) {
 /// 確定がコマンド層に弾かれた場合（空白名など）は編集を続け、
 /// 理由をログに出す（イシューの実装方針）。
 fn event(_app: &App, model: &mut Model, event: Event) {
-    if model.rename.is_none() {
+    if model.rename.is_none() && model.bpm_edit.is_none() {
         return;
     }
     let Event::WindowEvent {
@@ -510,6 +514,27 @@ fn event(_app: &App, model: &mut Model, event: Event) {
         WindowEvent::KeyPressed(Key::Escape) => edit::RenameInput::Escape,
         _ => return,
     };
+    // BPM 入力（Issue #35）: リネームとは同時に開かない。
+    if model.rename.is_none() {
+        if let Some(session) = model.bpm_edit.as_mut() {
+            match session.handle(input) {
+                edit::BpmAction::None => {}
+                edit::BpmAction::Cancel => {
+                    model.bpm_edit = None;
+                    println!("bpm edit cancelled");
+                }
+                edit::BpmAction::Commit(cmd) => match model.history.apply(&cmd) {
+                    Ok(_) => {
+                        model.bpm_edit = None;
+                        println!("after bpm: {}", model.history.project().dump_json());
+                        save_project_file(model);
+                    }
+                    Err(e) => println!("bpm rejected: {e}"),
+                },
+            }
+        }
+        return;
+    }
     let action = model.rename.as_mut().expect("checked above").handle(input);
     match action {
         edit::RenameAction::None => {}
@@ -530,8 +555,9 @@ fn event(_app: &App, model: &mut Model, event: Event) {
 
 fn update(app: &App, model: &mut Model, update: Update) {
     // リネーム編集中は他の操作（ポインタ編集・ピッチ・サンプラー）を
-    // 受け付けない（Issue #56）。再生ヘッドとファイル監視は続ける。
-    let renaming = model.rename.is_some();
+    // 受け付けない（Issue #56）。BPM 入力中も同じ扱い（Issue #35）。
+    // 再生ヘッドとファイル監視は続ける。
+    let renaming = model.rename.is_some() || model.bpm_edit.is_some();
     if renaming {
         model.prev_left_down = app.mouse.buttons.left().is_down();
         // エッジ検出用の prev は編集中も現在値に同期する（バグ #60:
@@ -1012,6 +1038,14 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down && !model.prev_left_down {
+        // BPM 表示（Issue #35）: クリックで入力モードに入る。
+        let bpm_r = bpm_rect(model.history.project().tracks.len());
+        if lx >= bpm_r.x && lx < bpm_r.x + bpm_r.w && ly >= bpm_r.y && ly < bpm_r.y + bpm_r.h {
+            model.bpm_edit = Some(edit::BpmEdit::new(model.history.project().bpm));
+            println!("bpm edit started");
+            model.prev_left_down = left_down;
+            return;
+        }
         // 色選択パネル（Issue #58）: トランスポートの下のパネル。
         // 他の領域とは重ならない。
         if let Some((target, color)) =
@@ -1193,6 +1227,22 @@ fn pitch_label_color() -> theme::Rgb {
     theme::TEXT_SUB
 }
 
+/// トランスポートパネルの上端 y（Issue #27 のレイアウト）。
+fn transport_top(track_count: usize) -> f32 {
+    mixer::mixer_top_y(track_count) + track_count as f32 * mixer::STRIP_HEIGHT_PX + 28.0
+}
+
+/// BPM 表示の矩形（Issue #35）。トランスポート右側の大きな数値表示で、
+/// クリックで入力モードに入る。
+fn bpm_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 695.0,
+        y: transport_top(track_count) + 6.0,
+        w: 150.0,
+        h: 36.0,
+    }
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     let win = app.window_rect();
@@ -1229,7 +1279,6 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .font_size(10)
             .color(rgb(r, g, b));
     }
-
     // トラック行（timeline.track.<id>）。
     for (index, track) in model.history.project().tracks.iter().enumerate() {
         let top = timeline::track_top_y(index);
@@ -1411,6 +1460,36 @@ fn view(app: &App, model: &Model, frame: Frame) {
         }
     }
 
+    // 小節線と小節番号（Issue #35、4/4 固定）: BPM から小節頭を計算し、
+    // ルーラーに番号、トラック領域に縦線を引く。トラック行とクリップの
+    // 描画後に重ねる（先に引くと行の地色で上塗りされる）。
+    {
+        let bpm = model.history.project().bpm;
+        let tracks_bottom = timeline::RULER_HEIGHT_PX
+            + model.history.project().tracks.len() as f32 * timeline::TRACK_HEIGHT_PX;
+        let (lr, lg, lb) = theme::LINE;
+        let mut bar = 0i64;
+        loop {
+            let start = timeline::bar_start_ms(bpm, bar);
+            if start > timeline::VIEW_DURATION_MS {
+                break;
+            }
+            let x = timeline::time_to_x(start, win.w());
+            let nx = x - win.w() / 2.0;
+            draw.line()
+                .start(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX))
+                .end(pt2(nx, win.h() / 2.0 - tracks_bottom))
+                .weight(1.0)
+                .color(rgb(lr, lg, lb));
+            let (r, g, b) = theme::TEXT;
+            draw.text(&format!("{}", bar + 1))
+                .x_y(nx + 4.0, win.h() / 2.0 - 6.0)
+                .font_size(10)
+                .color(rgb(r, g, b));
+            bar += 1;
+        }
+    }
+
     // ミキサー（mixer）: トラックごとの音量・パンスライダー（Issue #15）。
     // 選択中トラック（無効な ID なら先頭トラックにフォールバック）。
     let selected_id = model
@@ -1528,7 +1607,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     // パネルを作る本イシューで描く（#23 では定数だけ用意した）。
     {
         let count = model.history.project().tracks.len();
-        let top = mixer::mixer_top_y(count) + count as f32 * mixer::STRIP_HEIGHT_PX + 28.0;
+        let top = transport_top(count);
         draw_rounded_rect(
             &draw,
             win,
@@ -1547,8 +1626,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
         // 現在地の数値（小節・拍）は大きく出す
         draw.text(&format!(
             "BAR {} · BEAT {}",
-            timeline::bar_at_ms(model.playhead_ms),
-            timeline::beat_at_ms(model.playhead_ms)
+            timeline::bar_at_ms(model.playhead_ms, model.history.project().bpm),
+            timeline::beat_at_ms(model.playhead_ms, model.history.project().bpm)
         ))
         .x_y(115.0 - win.w() / 2.0, win.h() / 2.0 - (top + 27.0))
         .font_size(theme::VALUE_FONT_SIZE)
@@ -1611,7 +1690,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
             "-inf dB".to_string()
         };
         draw.text(&db_label)
-            .x_y(745.0 - win.w() / 2.0, win.h() / 2.0 - (top + 34.0))
+            .x_y(895.0 - win.w() / 2.0, win.h() / 2.0 - (top + 40.0))
             .font_size(11)
             .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
         draw.text(&format!(
@@ -1619,9 +1698,30 @@ fn view(app: &App, model: &Model, frame: Frame) {
             model.playhead_ms as f32 / 1000.0,
             end_ms as f32 / 1000.0
         ))
-        .x_y(880.0 - win.w() / 2.0, win.h() / 2.0 - (top + 17.0))
+        .x_y(895.0 - win.w() / 2.0, win.h() / 2.0 - (top + 24.0))
         .font_size(11)
         .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        // BPM の大きな表示（Issue #35）。入力中はバッファと下地を出す。
+        let bpm_r = bpm_rect(count);
+        if model.bpm_edit.is_some() {
+            draw_rounded_rect(&draw, win, bpm_r, 4.0, theme::PANEL_SUNK);
+        }
+        let (bcx, bcy) = rect_center(win, bpm_r.x, bpm_r.y, bpm_r.w, bpm_r.h);
+        let bpm_text = match &model.bpm_edit {
+            Some(session) => format!("{} BPM", session.buffer()),
+            None => {
+                let bpm = model.history.project().bpm;
+                if bpm.fract() == 0.0 {
+                    format!("{} BPM", bpm as i64)
+                } else {
+                    format!("{bpm:.1} BPM")
+                }
+            }
+        };
+        draw.text(&bpm_text)
+            .x_y(bcx, bcy)
+            .font_size(theme::VALUE_FONT_SIZE)
+            .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
     }
 
     // 色選択パネル（Issue #58）: トランスポートの下。TRACK 行は選択中
@@ -1834,10 +1934,13 @@ fn view(app: &App, model: &Model, frame: Frame) {
         theme::ACCENT,
     );
     let (ccx, ccy) = rect_center(win, chip_x, 3.0, chip_w, chip_h);
-    draw.text(&format!("BAR {}", timeline::bar_at_ms(model.playhead_ms)))
-        .x_y(ccx, ccy)
-        .font_size(11)
-        .color(rgb(theme::PANEL.0, theme::PANEL.1, theme::PANEL.2));
+    draw.text(&format!(
+        "BAR {}",
+        timeline::bar_at_ms(model.playhead_ms, model.history.project().bpm)
+    ))
+    .x_y(ccx, ccy)
+    .font_size(11)
+    .color(rgb(theme::PANEL.0, theme::PANEL.1, theme::PANEL.2));
 
     draw.to_frame(app, &frame).unwrap();
 }

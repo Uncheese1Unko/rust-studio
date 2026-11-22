@@ -48,17 +48,31 @@ pub fn clip_is_playing(clip: &Clip, playhead_ms: i64) -> bool {
     playhead_ms >= clip.start_ms && playhead_ms < clip.end_ms()
 }
 
-/// 再生位置の小節番号（1始まり）。プロジェクトのモデルにテンポが
-/// ないため、ルーラーの1秒区切りを1小節として数える（Issue #24）。
-pub fn bar_at_ms(playhead_ms: i64) -> i64 {
-    playhead_ms.max(0) / 1_000 + 1
+/// 1拍の長さ（ミリ秒、Issue #35）。1拍 = 60,000 / bpm。
+pub fn beat_duration_ms(bpm: f32) -> f64 {
+    60_000.0 / bpm as f64
 }
 
-/// 時刻（ms）に対する拍番号（1始まり、Issue #27）。モデルにテンポが
-/// ないため、#24 の判断（1秒＝1小節）に合わせ、1小節を4拍として
-/// 数える（1拍＝250ms）。
-pub fn beat_at_ms(ms: i64) -> i64 {
-    (ms.max(0) % 1_000) / 250 + 1
+/// 1小節の長さ（ミリ秒、Issue #35）。4/4 固定で 4拍。
+pub fn bar_duration_ms(bpm: f32) -> f64 {
+    beat_duration_ms(bpm) * 4.0
+}
+
+/// 小節頭の位置（ミリ秒、Issue #35）。`bar_index` は 0 始まり。
+pub fn bar_start_ms(bpm: f32, bar_index: i64) -> i64 {
+    (bar_duration_ms(bpm) * bar_index as f64).round() as i64
+}
+
+/// 再生位置の小節番号（1始まり、Issue #35）。BPM から計算する。
+/// #24 の仮置き（1秒＝1小節）は bpm=240 の場合に一致する。
+pub fn bar_at_ms(playhead_ms: i64, bpm: f32) -> i64 {
+    (playhead_ms.max(0) as f64 / bar_duration_ms(bpm)).floor() as i64 + 1
+}
+
+/// 時刻（ms）に対する拍番号（1始まり、Issue #35）。BPM から計算する。
+pub fn beat_at_ms(ms: i64, bpm: f32) -> i64 {
+    let within_bar = ms.max(0) as f64 % bar_duration_ms(bpm);
+    (within_bar / beat_duration_ms(bpm)).floor() as i64 + 1
 }
 
 /// トラック名を表示する左端ヘッダーの幅（px）。
@@ -282,13 +296,18 @@ mod tests {
 
     #[test]
     fn beat_at_ms_counts_four_beats_per_bar() {
-        // Issue #27: 小節（1秒、#24 の判断）の中の拍。4拍で1小節。
-        assert_eq!(beat_at_ms(0), 1);
-        assert_eq!(beat_at_ms(249), 1);
-        assert_eq!(beat_at_ms(250), 2);
-        assert_eq!(beat_at_ms(999), 4);
-        assert_eq!(beat_at_ms(1_000), 1);
-        assert_eq!(beat_at_ms(4_500), 3);
+        // Issue #35: 拍は BPM から計算する。bpm=240 では1拍250ms・
+        // 1小節1000ms になり、従来（#27 の仮置き）と同じ数え方になる。
+        assert_eq!(beat_at_ms(0, 240.0), 1);
+        assert_eq!(beat_at_ms(249, 240.0), 1);
+        assert_eq!(beat_at_ms(250, 240.0), 2);
+        assert_eq!(beat_at_ms(999, 240.0), 4);
+        assert_eq!(beat_at_ms(1_000, 240.0), 1);
+        assert_eq!(beat_at_ms(4_500, 240.0), 3);
+        // bpm=120 では1拍500ms
+        assert_eq!(beat_at_ms(499, 120.0), 1);
+        assert_eq!(beat_at_ms(500, 120.0), 2);
+        assert_eq!(beat_at_ms(1_500, 120.0), 4);
     }
 
     #[test]
@@ -380,13 +399,32 @@ mod theme_tests {
 
     #[test]
     fn bar_at_ms_counts_one_second_bars_from_one() {
-        // Issue #24: 現在の小節チップ用。モデルにテンポがないため、
-        // ルーラーの1秒区切りを1小節として数える（1始まり）。
-        assert_eq!(bar_at_ms(0), 1);
-        assert_eq!(bar_at_ms(999), 1);
-        assert_eq!(bar_at_ms(1_000), 2);
-        assert_eq!(bar_at_ms(4_500), 5);
-        assert_eq!(bar_at_ms(-100), 1, "負の位置は1小節目に丸める");
+        // Issue #35: 小節は BPM から計算する（1始まり）。bpm=240 では
+        // 1小節1000ms になり、従来（#24 の仮置き）と同じ数え方になる。
+        assert_eq!(bar_at_ms(0, 240.0), 1);
+        assert_eq!(bar_at_ms(999, 240.0), 1);
+        assert_eq!(bar_at_ms(1_000, 240.0), 2);
+        assert_eq!(bar_at_ms(4_500, 240.0), 5);
+        assert_eq!(bar_at_ms(-100, 240.0), 1, "負の位置は1小節目に丸める");
+        // bpm=120 では1小節2000ms
+        assert_eq!(bar_at_ms(1_999, 120.0), 1);
+        assert_eq!(bar_at_ms(2_000, 120.0), 2);
+    }
+
+    #[test]
+    fn bar_start_ms_follows_bpm() {
+        // Issue #35: 小節頭の位置は BPM で決まる（4/4 固定）。
+        // bpm=120 → 1小節 2000ms。
+        assert_eq!(bar_start_ms(120.0, 0), 0);
+        assert_eq!(bar_start_ms(120.0, 1), 2_000);
+        assert_eq!(bar_start_ms(120.0, 2), 4_000);
+        assert_eq!(bar_start_ms(120.0, 5), 10_000);
+        // bpm=60 → 1小節 4000ms、bpm=240 → 1小節 1000ms
+        assert_eq!(bar_start_ms(60.0, 1), 4_000);
+        assert_eq!(bar_start_ms(240.0, 3), 3_000);
+        // 拍・小節の長さ
+        assert_eq!(beat_duration_ms(120.0), 500.0);
+        assert_eq!(bar_duration_ms(120.0), 2_000.0);
     }
 }
 

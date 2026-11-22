@@ -734,3 +734,40 @@ fn split_clip_keeps_fades_on_the_outer_edges_only() {
     assert_eq!(right.fade_in_ms, 0);
     assert_eq!(right.fade_out_ms, 700);
 }
+
+#[test]
+fn set_bpm_applies_and_validates_range() {
+    // Issue #35: SetBpm は 20..=300 の範囲でだけ適用され、範囲外と
+    // NaN では状態が変わらない。既定値は 120。
+    let (mut p, _track_id, _clip_id) = project_with_clip();
+    assert_eq!(p.bpm, 120.0);
+    apply(&mut p, &Command::SetBpm { bpm: 90.0 }).unwrap();
+    assert_eq!(p.bpm, 90.0);
+    apply(&mut p, &Command::SetBpm { bpm: 20.0 }).unwrap();
+    apply(&mut p, &Command::SetBpm { bpm: 300.0 }).unwrap();
+    assert_eq!(p.bpm, 300.0);
+
+    let before = p.dump_json();
+    for bad in [19.9, 300.1, 0.0, -120.0, f32::NAN, f32::INFINITY] {
+        let result = apply(&mut p, &Command::SetBpm { bpm: bad });
+        assert!(
+            matches!(result, Err(CommandError::InvalidRange(_))),
+            "bpm {bad}: {result:?}"
+        );
+        assert_eq!(p.dump_json(), before, "状態が変わらないこと");
+    }
+}
+
+#[test]
+fn legacy_json_without_bpm_loads_default_120() {
+    // Issue #35: bpm を含まない旧形式 JSON は既定 120 で読める。
+    let legacy = r#"{"name":"old","tracks":[],"next_id":1}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    assert_eq!(project.bpm, 120.0);
+    // 往復で bpm が保存される
+    let mut p = project;
+    apply(&mut p, &Command::SetBpm { bpm: 128.0 }).unwrap();
+    let json = p.dump_json();
+    let back: Project = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.bpm, 128.0);
+}

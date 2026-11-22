@@ -217,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド16種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド17種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -341,6 +341,17 @@ fn tool_definitions() -> Value {
                     "fade_out_ms": {"type": "integer", "minimum": 0},
                 },
                 "required": ["clip_id", "fade_in_ms", "fade_out_ms"],
+            },
+        },
+        {
+            "name": "set_bpm",
+            "description": "プロジェクトのテンポ（BPM、20〜300）を設定する",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "bpm": {"type": "number", "minimum": 20, "maximum": 300},
+                },
+                "required": ["bpm"],
             },
         },
         {

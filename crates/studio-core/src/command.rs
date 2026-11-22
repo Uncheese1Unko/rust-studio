@@ -82,6 +82,11 @@ pub enum Command {
         fade_in_ms: i64,
         fade_out_ms: i64,
     },
+    /// プロジェクトのテンポ（BPM）を設定する（Issue #35）。
+    /// 有効範囲は 20..=300。
+    SetBpm {
+        bpm: f32,
+    },
     /// トラックの色を設定する（Issue #58、ADR-0013）。
     /// None は「なし（既定の種別色）」に戻す。
     SetTrackColor {
@@ -119,6 +124,13 @@ impl std::error::Error for CommandError {}
 /// 失敗時は状態を一切変えない。
 pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, CommandError> {
     match command {
+        Command::SetBpm { bpm } => {
+            if !bpm.is_finite() || *bpm < 20.0 || *bpm > 300.0 {
+                return Err(CommandError::InvalidRange("bpm must be within 20..=300"));
+            }
+            project.bpm = *bpm;
+            Ok(None)
+        }
         Command::AddTrack { name, kind } => {
             let id = project.alloc_id();
             project.tracks.push(Track {
