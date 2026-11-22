@@ -216,9 +216,11 @@ impl EditKeyTracker {
 /// クリップの配置計画（Issue #44）。複製・貼り付けは新しいコア
 /// コマンドを作らず、コピー元のパラメータを使った AddClip と、
 /// 適用で得た新クリップ id へのパラメータ設定コマンドで表す
-/// （DAW #33 と同一方針）。ただし `offset_ms` は設定コマンドが
+/// （DAW #33 と同一方針）。引き継ぐパラメータは gain / pitch /
+/// cutout / color / fade。ただし `offset_ms` は設定コマンドが
 /// 存在しないため引き継げない（分割したクリップの複製では素材の
-/// 先頭から再生される。フォローアップ PBI #62 で扱う）。
+/// 先頭から再生される）。コア側の方式決定は #62、動画側の追随は
+/// フォローアップ PBI #63 で扱う。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipPlacement {
     pub add: Command,
@@ -299,6 +301,40 @@ pub fn duplicate_placement(project: &Project, clip_id: u64) -> Option<ClipPlacem
 /// 指定トラックの指定位置へ置く。
 pub fn paste_placement(clipboard: &studio_core::Clip, track_id: u64, at_ms: i64) -> ClipPlacement {
     ClipPlacement::from_clip(clipboard, track_id, at_ms)
+}
+
+/// 配置計画を履歴へ「1回の操作」として適用する（Issue #44 レビュー
+/// 対応）。まず現在の状態の複製に対して全コマンドを試行し、全部
+/// 成功する場合だけ実プロジェクトへ適用するため、途中失敗で
+/// 半端なパラメータのクリップが残ることはない。実適用は
+/// `apply_transient` で行い、開始時スナップショットを1件だけ
+/// 履歴に積むので、複製・貼り付け全体が1回の undo で戻せる
+/// （コマンドごとに積むと、途中の undo でパラメータの一部だけ
+/// 設定された複製が残ってしまう）。
+pub fn apply_placement(
+    history: &mut studio_core::History,
+    placement: &ClipPlacement,
+) -> Result<u64, studio_core::CommandError> {
+    // 試行: 現在の状態の複製に対して全コマンドを適用する。
+    let mut trial = history.project().clone();
+    let trial_id =
+        studio_core::apply(&mut trial, &placement.add)?.expect("AddClip returns the new clip id");
+    for cmd in placement.follow_up_commands(trial_id) {
+        studio_core::apply(&mut trial, &cmd)?;
+    }
+    // 確定: 試行が成功したコマンド列は、コマンドが状態に対して
+    // 決定的であるため実プロジェクトでも成功する。
+    let mut before = Some(history.project().clone());
+    let new_id = history
+        .apply_transient(&placement.add)
+        .expect("trial succeeded")
+        .expect("AddClip returns the new clip id");
+    debug_assert_eq!(new_id, trial_id);
+    for cmd in placement.follow_up_commands(new_id) {
+        history.apply_transient(&cmd).expect("trial succeeded");
+    }
+    flush_gesture_snapshot(history, &mut before);
+    Ok(new_id)
 }
 
 /// ヒットテストの結果。
@@ -1061,7 +1097,11 @@ mod tests {
     #[test]
     fn duplicate_command_copies_all_clip_parameters() {
         // Issue #44（イシュー指定のテスト）: 複製は元クリップの直後に
-        // 置かれ、全パラメータ（cutout を含む）を引き継ぐ。
+        // 置かれ、全パラメータ（cutout を含む）を引き継ぐ。ここでの
+        // 「全パラメータ」は設定コマンドで復元できる gain / pitch /
+        // cutout / color / fade を指す。offset_ms は設定コマンドが
+        // 無く引き継げない既知の制限で、#63 で追跡している
+        // （レビュー指摘を受けて範囲を明記）。
         let (mut project, _track, clip_id) = project_with_tuned_clip();
         let placement = duplicate_placement(&project, clip_id).expect("clip exists");
         match &placement.add {
@@ -1104,8 +1144,10 @@ mod tests {
     #[test]
     fn paste_placement_puts_clip_at_playhead_on_target_track() {
         // Issue #44: 貼り付けは指定トラックの再生ヘッド位置に、
-        // コピー元のパラメータで置かれる。
-        let (project, track, clip_id) = project_with_tuned_clip();
+        // コピー元のパラメータで置かれる。実際に適用して、結果の
+        // クリップの全パラメータがコピー元と一致することまで見る
+        // （レビュー指摘: 追随コマンドの有無だけでは弱い）。
+        let (mut project, track, clip_id) = project_with_tuned_clip();
         let (_, clip) = project.clip(clip_id).unwrap();
         let placement = paste_placement(clip, track, 4_200);
         match &placement.add {
@@ -1121,15 +1163,42 @@ mod tests {
             }
             other => panic!("expected AddClip, got {other:?}"),
         }
-        let follow = placement.follow_up_commands(42);
-        assert!(follow.contains(&Command::SetClipGain {
-            clip_id: 42,
-            gain: 0.5
-        }));
-        assert!(follow.contains(&Command::SetClipCutout {
-            clip_id: 42,
-            enabled: true
-        }));
+        let new_id = apply(&mut project, &placement.add).unwrap().unwrap();
+        for cmd in placement.follow_up_commands(new_id) {
+            apply(&mut project, &cmd).unwrap();
+        }
+        let (_, src) = project.clip(clip_id).unwrap();
+        let (_, pasted) = project.clip(new_id).unwrap();
+        assert_eq!(pasted.start_ms, 4_200);
+        assert_eq!(pasted.duration_ms, src.duration_ms);
+        assert_eq!(pasted.source, src.source);
+        assert_eq!(pasted.gain, src.gain);
+        assert_eq!(pasted.pitch_semitones, src.pitch_semitones);
+        assert_eq!(pasted.cutout, src.cutout);
+        assert_eq!(pasted.color, src.color);
+        assert_eq!(pasted.fade_in_ms, src.fade_in_ms);
+        assert_eq!(pasted.fade_out_ms, src.fade_out_ms);
+    }
+
+    #[test]
+    fn placement_application_is_a_single_undo_step() {
+        // Issue #44 レビュー対応: 配置（AddClip＋パラメータ設定）の
+        // 適用は履歴に1件だけ積まれ、1回の undo で複製前の状態へ
+        // 完全に戻る。コマンドごとに履歴へ積むと、途中の undo で
+        // 半端なパラメータの複製が残ってしまう。
+        let (project, _track, clip_id) = project_with_tuned_clip();
+        let mut history = studio_core::History::new(project);
+        let before = history.project().dump_json();
+        let placement = duplicate_placement(history.project(), clip_id).expect("clip exists");
+        let new_id = apply_placement(&mut history, &placement).expect("placement applies");
+        let (_, dup) = history.project().clip(new_id).unwrap();
+        assert!(dup.cutout, "パラメータ設定まで適用されている");
+        assert!(history.can_undo());
+        assert!(history.undo(), "1回の undo で戻れる");
+        assert_eq!(history.project().dump_json(), before);
+        assert!(!history.can_undo(), "履歴は1件だけ");
+        assert!(history.redo());
+        assert!(history.project().clip(new_id).is_some());
     }
 
     #[test]

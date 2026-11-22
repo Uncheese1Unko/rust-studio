@@ -496,25 +496,14 @@ fn handle_edit_keys(app: &App, model: &mut Model) {
     }
 }
 
-/// 配置計画（AddClip＋パラメータ設定）を履歴経由で適用する
-/// （Issue #44）。新しいクリップができたらメディア（フレーム・
-/// テクスチャ）を追従させ、プロジェクトファイルへ保存する。
+/// 配置計画を「1回の操作」として履歴経由で適用する（Issue #44）。
+/// 適用の実体（試行→確定と単一 undo 化）は `edit::apply_placement`。
+/// 新しいクリップができたらメディア（フレーム・テクスチャ）を
+/// 追従させ、プロジェクトファイルへ保存する。
 fn apply_placement(app: &App, model: &mut Model, placement: &edit::ClipPlacement, label: &str) {
-    let new_id = match model.history.apply(&placement.add) {
-        Ok(Some(id)) => id,
-        Ok(None) => {
-            println!("{label}: AddClip returned no id");
-            return;
-        }
-        Err(e) => {
-            println!("{label} rejected: {e}");
-            return;
-        }
-    };
-    for cmd in placement.follow_up_commands(new_id) {
-        if let Err(e) = model.history.apply(&cmd) {
-            println!("{label} follow-up rejected: {e}");
-        }
+    if let Err(e) = edit::apply_placement(&mut model.history, placement) {
+        println!("{label} rejected: {e}");
+        return;
     }
     model.frames = media::prepare_media(model.history.project());
     model.textures = load_textures(app, model.history.project(), &model.frames);
