@@ -675,9 +675,15 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.loop_range,
         model.loop_on,
     );
-    // ループ解除（Issue #40）: Esc で範囲と ON を消す。
+    // ループ解除（Issue #40）: Esc で範囲と ON を消す。テキスト編集中の
+    // Esc は編集のキャンセルが優先する（レビュー所見への対応）。
     let esc_down = app.keys.down.contains(&Key::Escape);
-    if esc_down && !model.prev_esc_down && (model.loop_on || model.loop_range.is_some()) {
+    if esc_down
+        && !model.prev_esc_down
+        && model.rename.is_none()
+        && model.bpm_edit.is_none()
+        && (model.loop_on || model.loop_range.is_some())
+    {
         model.loop_on = false;
         model.loop_range = None;
         println!("loop: cleared");
