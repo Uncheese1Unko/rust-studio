@@ -358,12 +358,18 @@ pub enum HitTarget {
 }
 
 /// x ピクセルを時刻（ms）に変換する。ヘッダーより左では負になる。
-pub fn x_to_ms(x: f32, view_width_px: f32) -> i64 {
-    ((x - timeline::HEADER_WIDTH_PX) / timeline::px_per_ms(view_width_px)).round() as i64
+pub fn x_to_ms(x: f32, view_width_px: f32, scale: &timeline::ViewScale) -> i64 {
+    scale.x_to_ms(x, view_width_px)
 }
 
 /// 座標（左上原点ピクセル）に対するヒットテスト。
-pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTarget {
+pub fn hit_test(
+    project: &Project,
+    view_width_px: f32,
+    scale: &timeline::ViewScale,
+    x: f32,
+    y: f32,
+) -> HitTarget {
     if y < timeline::RULER_HEIGHT_PX || x < timeline::HEADER_WIDTH_PX {
         return HitTarget::Outside;
     }
@@ -371,7 +377,7 @@ pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTar
     if track_index >= project.tracks.len() {
         return HitTarget::Outside;
     }
-    for rect in timeline::layout_clips(project, view_width_px) {
+    for rect in timeline::layout_clips(project, view_width_px, scale) {
         if rect.track_id != project.tracks[track_index].id {
             continue;
         }
@@ -464,6 +470,7 @@ impl Drag {
         pointer_ms: i64,
         playhead_ms: i64,
         view_width_px: f32,
+        scale: &timeline::ViewScale,
         snap_enabled: bool,
     ) -> Command {
         let base = self.command_for(pointer_ms);
@@ -478,14 +485,21 @@ impl Drag {
                     new_start_ms,
                 },
             ) => {
-                let by_start =
-                    snap_edge(project, clip_id, new_start_ms, playhead_ms, view_width_px);
+                let by_start = snap_edge(
+                    project,
+                    clip_id,
+                    new_start_ms,
+                    playhead_ms,
+                    view_width_px,
+                    scale,
+                );
                 let snapped_end = snap_edge(
                     project,
                     clip_id,
                     new_start_ms + self.orig_duration_ms,
                     playhead_ms,
                     view_width_px,
+                    scale,
                 );
                 let by_end = snapped_end - self.orig_duration_ms;
                 // 吸着した端だけを候補にし、両端とも吸着したら調整量の
@@ -518,7 +532,14 @@ impl Drag {
                     ..
                 },
             ) => {
-                let start = snap_edge(project, clip_id, new_start_ms, playhead_ms, view_width_px);
+                let start = snap_edge(
+                    project,
+                    clip_id,
+                    new_start_ms,
+                    playhead_ms,
+                    view_width_px,
+                    scale,
+                );
                 Command::TrimClip {
                     clip_id,
                     new_start_ms: start,
@@ -539,6 +560,7 @@ impl Drag {
                     new_start_ms + new_duration_ms,
                     playhead_ms,
                     view_width_px,
+                    scale,
                 );
                 Command::TrimClip {
                     clip_id,
@@ -568,8 +590,9 @@ pub fn snap_edge(
     edge_ms: i64,
     playhead_ms: i64,
     view_width_px: f32,
+    scale: &timeline::ViewScale,
 ) -> i64 {
-    let ppm = timeline::px_per_ms(view_width_px);
+    let ppm = scale.px_per_ms(view_width_px);
     let mut targets: Vec<i64> = Vec::new();
     for track in &project.tracks {
         for clip in &track.clips {
@@ -823,24 +846,33 @@ mod tests {
         let p = sample_project();
         let id = clip_id(&p);
         assert_eq!(
-            hit_test(&p, 960.0, 280.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 280.0, 48.0),
             HitTarget::ClipBody { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 206.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 206.0, 48.0),
             HitTarget::ClipLeftEdge { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 370.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 370.0, 48.0),
             HitTarget::ClipRightEdge { clip_id: id }
         );
         assert_eq!(
-            hit_test(&p, 960.0, 700.0, 48.0),
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 700.0, 48.0),
             HitTarget::Empty { track_index: 0 }
         );
-        assert_eq!(hit_test(&p, 960.0, 280.0, 10.0), HitTarget::Outside);
-        assert_eq!(hit_test(&p, 960.0, 60.0, 48.0), HitTarget::Outside);
-        assert_eq!(hit_test(&p, 960.0, 280.0, 200.0), HitTarget::Outside);
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 280.0, 10.0),
+            HitTarget::Outside
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 60.0, 48.0),
+            HitTarget::Outside
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 280.0, 200.0),
+            HitTarget::Outside
+        );
     }
 
     #[test]
@@ -1388,6 +1420,50 @@ mod tests {
         assert_eq!(tracker.update(false, true, true, false, false), None);
     }
 
+    #[test]
+    fn x_to_ms_round_trips_at_any_zoom() {
+        // Issue #46（イシュー指定のテスト）: 任意の倍率・オフセットで
+        // ms→px→ms がピクセル量子化の誤差以内で往復する。
+        for zoom in [0.25f32, 0.5, 1.0, 2.0, 8.0] {
+            for offset in [0i64, 1_000, 5_000] {
+                let scale = timeline::ViewScale {
+                    zoom,
+                    offset_ms: offset,
+                };
+                let tolerance = (1.0 / scale.px_per_ms(960.0)).ceil() as i64 + 1;
+                for ms in [offset, offset + 500, offset + 1_234, offset + 9_999] {
+                    let x = scale.time_to_x(ms, 960.0);
+                    let back = x_to_ms(x, 960.0, &scale);
+                    assert!(
+                        (back - ms).abs() <= tolerance,
+                        "zoom={zoom} offset={offset} ms={ms} x={x} back={back}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn hit_test_uses_view_scale() {
+        // Issue #46: ヒットテストは倍率・オフセットを反映する。
+        // 既定スケールでは x=130 は opening（1000ms 開始）より左で
+        // Empty だが、zoom 2・offset 1000 では opening の本体になる。
+        let p = sample_project();
+        let id = clip_id(&p);
+        assert_eq!(
+            hit_test(&p, 960.0, &timeline::ViewScale::default(), 130.0, 48.0),
+            HitTarget::Empty { track_index: 0 }
+        );
+        let zoomed = timeline::ViewScale {
+            zoom: 2.0,
+            offset_ms: 1_000,
+        };
+        assert_eq!(
+            hit_test(&p, 960.0, &zoomed, 130.0, 48.0),
+            HitTarget::ClipBody { clip_id: id }
+        );
+    }
+
     // Issue #45: スナップ（移動・トリムの吸着）。
 
     fn project_with_neighbor() -> (Project, u64, u64) {
@@ -1416,11 +1492,41 @@ mod tests {
         // 内では最も近いクリップ端に吸着し、外では元の位置のまま。
         let (p, opening, _neighbor) = project_with_neighbor();
         // 隣の開始端 6000 に 50ms まで近づいた端は 6000 に吸着
-        assert_eq!(snap_edge(&p, opening, 5_950, 0, 960.0), 6_000);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                5_950,
+                0,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            6_000
+        );
         // 隣の終端 8000 にも吸着
-        assert_eq!(snap_edge(&p, opening, 7_960, 0, 960.0), 8_000);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                7_960,
+                0,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            8_000
+        );
         // どこにも近くない端はそのまま
-        assert_eq!(snap_edge(&p, opening, 5_500, 0, 960.0), 5_500);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                5_500,
+                0,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            5_500
+        );
     }
 
     #[test]
@@ -1442,7 +1548,17 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(snap_edge(&p, odd, 1_540, 9_000, 960.0), 1_540);
+        assert_eq!(
+            snap_edge(
+                &p,
+                odd,
+                1_540,
+                9_000,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            1_540
+        );
     }
 
     #[test]
@@ -1450,13 +1566,53 @@ mod tests {
         // Issue #45: 吸着先は他クリップ端・再生ヘッド・0ms・1秒グリッド。
         let (p, opening, _neighbor) = project_with_neighbor();
         // 再生ヘッド 4200 に吸着
-        assert_eq!(snap_edge(&p, opening, 4_160, 4_200, 960.0), 4_200);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                4_160,
+                4_200,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            4_200
+        );
         // 0ms に吸着
-        assert_eq!(snap_edge(&p, opening, 60, 4_200, 960.0), 0);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                60,
+                4_200,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            0
+        );
         // 1秒グリッド 4000 に吸着（再生ヘッドは遠い）
-        assert_eq!(snap_edge(&p, opening, 3_950, 9_000, 960.0), 4_000);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                3_950,
+                9_000,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            4_000
+        );
         // 最も近いものを選ぶ: グリッド 4000（30ms）と再生ヘッド 4080（50ms）ならグリッド
-        assert_eq!(snap_edge(&p, opening, 4_030, 4_080, 960.0), 4_000);
+        assert_eq!(
+            snap_edge(
+                &p,
+                opening,
+                4_030,
+                4_080,
+                960.0,
+                &timeline::ViewScale::default()
+            ),
+            4_000
+        );
     }
 
     #[test]
@@ -1468,7 +1624,8 @@ mod tests {
         // ポインタを +4450ms 動かす: 候補の終端は 7450 ではなく…
         // 開始 1000+4450=5450、終端 7450。吸着先は隣の終端 8000 でも
         // 開始 6000 でもないため、そのまま。
-        let cmd = drag.snapped_command_for(&p, 5_950, 0, 960.0, true);
+        let cmd =
+            drag.snapped_command_for(&p, 5_950, 0, 960.0, &timeline::ViewScale::default(), true);
         assert_eq!(
             cmd,
             Command::MoveClip {
@@ -1478,7 +1635,8 @@ mod tests {
         );
         // 終端が隣の開始（6000）に 50ms まで近づく移動: 開始候補 3950、
         // 終端候補 5950 → 終端が吸着して開始は 4000 になる。
-        let cmd = drag.snapped_command_for(&p, 4_450, 0, 960.0, true);
+        let cmd =
+            drag.snapped_command_for(&p, 4_450, 0, 960.0, &timeline::ViewScale::default(), true);
         assert_eq!(
             cmd,
             Command::MoveClip {
@@ -1487,7 +1645,8 @@ mod tests {
             }
         );
         // Alt（スナップ無効）では候補がそのまま返る
-        let cmd = drag.snapped_command_for(&p, 4_450, 0, 960.0, false);
+        let cmd =
+            drag.snapped_command_for(&p, 4_450, 0, 960.0, &timeline::ViewScale::default(), false);
         assert_eq!(
             cmd,
             Command::MoveClip {
@@ -1504,7 +1663,8 @@ mod tests {
         // 右端トリム: 終端候補 5950 → 隣の開始 6000 に吸着し、
         // duration は 1000..6000 の 5000 になる。
         let drag = Drag::begin(&p, &HitTarget::ClipRightEdge { clip_id: opening }, 3_000).unwrap();
-        let cmd = drag.snapped_command_for(&p, 5_950, 0, 960.0, true);
+        let cmd =
+            drag.snapped_command_for(&p, 5_950, 0, 960.0, &timeline::ViewScale::default(), true);
         assert_eq!(
             cmd,
             Command::TrimClip {
@@ -1516,7 +1676,8 @@ mod tests {
         // 左端トリム: 開始候補 1050 → 1秒グリッド 1000 に吸着し、
         // 終端 3000 は保たれる。
         let drag = Drag::begin(&p, &HitTarget::ClipLeftEdge { clip_id: opening }, 1_000).unwrap();
-        let cmd = drag.snapped_command_for(&p, 1_050, 0, 960.0, true);
+        let cmd =
+            drag.snapped_command_for(&p, 1_050, 0, 960.0, &timeline::ViewScale::default(), true);
         assert_eq!(
             cmd,
             Command::TrimClip {
@@ -1526,7 +1687,8 @@ mod tests {
             }
         );
         // 左端トリムで再生ヘッド（500）へ吸着
-        let cmd = drag.snapped_command_for(&p, 540, 500, 960.0, true);
+        let cmd =
+            drag.snapped_command_for(&p, 540, 500, 960.0, &timeline::ViewScale::default(), true);
         assert_eq!(
             cmd,
             Command::TrimClip {
@@ -1578,7 +1740,8 @@ mod tests {
         let drag = Drag::begin(&p, &HitTarget::ClipBody { clip_id: opening }, 1_000).unwrap();
         // 候補: 開始 452（吸着先なし）、終端 2452（interview の開始
         // 2500 に 48ms まで接近）→ 終端が吸着して開始は 500。
-        let cmd = drag.snapped_command_for(&p, 1_452, 300, 960.0, true);
+        let cmd =
+            drag.snapped_command_for(&p, 1_452, 300, 960.0, &timeline::ViewScale::default(), true);
         assert_eq!(
             cmd,
             Command::MoveClip {

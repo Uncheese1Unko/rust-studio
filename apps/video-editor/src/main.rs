@@ -55,6 +55,9 @@ struct Model {
     // クリップボード（プロジェクトには保存しない）。
     edit_keys: edit::EditKeyTracker,
     clipboard: Option<studio_core::Clip>,
+    // Issue #46: タイムラインの表示スケール（倍率と左端オフセット）。
+    // 表示状態であり、プロジェクトには保存しない。
+    view_scale: timeline::ViewScale,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -222,6 +225,7 @@ fn model(app: &App) -> Model {
         history_keys: edit::HistoryKeyTracker::new(),
         edit_keys: edit::EditKeyTracker::new(),
         clipboard: None,
+        view_scale: timeline::ViewScale::default(),
     }
 }
 
@@ -291,10 +295,50 @@ fn save_project_file(model: &mut Model) {
     }
 }
 
+/// ホイール操作（Issue #46）: Ctrl+ホイールでマウス位置の時刻を
+/// 中心にズーム、通常のホイールで水平スクロールする。リネーム編集中は
+/// 受け付けない。倍率とオフセットは表示状態で、保存はしない。
+fn mouse_wheel(app: &App, model: &mut Model, delta: MouseScrollDelta) {
+    if model.rename.is_some() {
+        return;
+    }
+    let lines = match delta {
+        MouseScrollDelta::LineDelta(_, y) => y,
+        MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 50.0,
+    };
+    if lines == 0.0 {
+        return;
+    }
+    let win = app.window_rect();
+    let mx = app.mouse.x + win.w() / 2.0;
+    if ctrl_down(app) {
+        let anchor_ms = model.view_scale.x_to_ms(mx, win.w());
+        let factor = if lines > 0.0 { 1.25 } else { 0.8 };
+        model.view_scale = model.view_scale.zoom_at(factor, anchor_ms, mx, win.w());
+        println!(
+            "zoom: {:.2} offset: {}",
+            model.view_scale.zoom, model.view_scale.offset_ms
+        );
+    } else {
+        model.view_scale = model.view_scale.scroll_by(-(lines * 100.0) as i64);
+        println!("scroll offset: {}", model.view_scale.offset_ms);
+    }
+}
+
 /// リネーム編集中のキー・文字イベント（Issue #57）。確定は
 /// RenameTrack コマンド経由でのみ行い、コアが拒否した場合は編集を
 /// 継続して理由を標準出力に残す（DAW #56 と同じ意味論）。
-fn event(_app: &App, model: &mut Model, event: Event) {
+fn event(app: &App, model: &mut Model, event: Event) {
+    // ホイール（Issue #46）はリネーム編集の有無によらず先に捌く
+    // （編集中は mouse_wheel 側で無視する）。
+    if let Event::WindowEvent {
+        simple: Some(WindowEvent::MouseWheel(delta, _)),
+        ..
+    } = event
+    {
+        mouse_wheel(app, model, delta);
+        return;
+    }
     if model.rename.is_none() {
         return;
     }
@@ -714,7 +758,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let lx = app.mouse.x + win.w() / 2.0;
     let ly = win.h() / 2.0 - app.mouse.y;
     let left_down = app.mouse.buttons.left().is_down();
-    let pointer_ms = edit::x_to_ms(lx, win.w());
+    let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
 
     if left_down && !model.prev_left_down {
         // 色選択パネル（Issue #59）: トラック追加エリアの下のパネル。
@@ -783,7 +827,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 println!("rename begin: track {}", track.id);
             }
         }
-        let target = edit::hit_test(model.history.project(), win.w(), lx, ly);
+        let target = edit::hit_test(model.history.project(), win.w(), &model.view_scale, lx, ly);
         if let Some(drag) = edit::Drag::begin(model.history.project(), &target, pointer_ms) {
             model.drag = Some(drag);
             model.last_drag_cmd = None;
@@ -816,6 +860,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 pointer_ms,
                 model.playhead_ms,
                 win.w(),
+                &model.view_scale,
                 !alt_down(app),
             );
             if model.last_drag_cmd.as_ref() != Some(&cmd) {
@@ -854,13 +899,19 @@ fn view(app: &App, model: &Model, frame: Frame) {
     draw.background().color(rgb(0.09, 0.09, 0.11));
 
     // ルーラー（timeline.ruler）: 帯＋1秒ごとの目盛りと秒ラベル。
+    // 表示範囲（倍率・オフセット）の秒だけを描く（Issue #46）。
     let (rx, ry) = rect_center(win, 0.0, 0.0, win.w(), timeline::RULER_HEIGHT_PX);
     draw.rect()
         .x_y(rx, ry)
         .w_h(win.w(), timeline::RULER_HEIGHT_PX)
         .color(rgb(0.13, 0.13, 0.16));
-    for sec in 0..=(timeline::VIEW_DURATION_MS / 1_000) {
-        let x = timeline::time_to_x(sec * 1_000, win.w());
+    let first_sec = (model.view_scale.offset_ms / 1_000).max(0);
+    let last_sec = model.view_scale.end_ms(win.w()) / 1_000 + 1;
+    for sec in first_sec..=last_sec {
+        let x = model.view_scale.time_to_x(sec * 1_000, win.w());
+        if x > win.w() {
+            break;
+        }
         let nx = x - win.w() / 2.0;
         draw.line()
             .start(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX))
@@ -1054,7 +1105,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     // クリップ（timeline.clip.<id>）: コアの start/duration をそのまま矩形にする。
-    for rect in timeline::layout_clips(model.history.project(), win.w()) {
+    for rect in timeline::layout_clips(model.history.project(), win.w(), &model.view_scale) {
         let clip = model.history.project().clip(rect.clip_id).map(|(_, c)| c);
         // 表示色（Issue #59）: ユーザー色があればそれ、なければ種別色。
         let (r, g, b) = timeline::clip_display_color(clip.and_then(|c| c.color), rect.kind);
@@ -1139,7 +1190,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     // 再生ヘッド（timeline.playhead）: ルーラー上端から画面下端までの縦線。
     let (pr, pg, pb) = timeline::PLAYHEAD_COLOR;
-    let px = timeline::playhead_x(model.playhead_ms, win.w()) - win.w() / 2.0;
+    let px = timeline::playhead_x(model.playhead_ms, win.w(), &model.view_scale) - win.w() / 2.0;
     draw.line()
         .start(pt2(px, win.h() / 2.0))
         .end(pt2(px, -win.h() / 2.0))
