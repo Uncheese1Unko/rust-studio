@@ -43,3 +43,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #31 両アプリの GUI で Undo/Redo がキー操作できる | [issue-0031-gui-undo-redo-keys.md](issue-0031-gui-undo-redo-keys.md) |
 | 2026-11-22 | #32 DAW でクリップを分割できる（SplitClip） | [issue-0032-clip-split.md](issue-0032-clip-split.md) |
 | 2026-11-22 | #33 DAW でクリップの複製とコピー＆ペーストができる | [issue-0033-duplicate-copy-paste.md](issue-0033-duplicate-copy-paste.md) |
+| 2026-11-22 | #34 DAW でクリップにフェードイン／フェードアウトを付けられる | [issue-0034-clip-fade.md](issue-0034-clip-fade.md) |
