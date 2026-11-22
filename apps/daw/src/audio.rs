@@ -247,6 +247,46 @@ pub fn add_metronome_clicks(mix: &mut [f32], bpm: f32, start_ms: i64, out_rate: 
 
 /// render_mix にメトロノーム（Issue #36）を重ねた再生レンダリング。
 /// ON/OFF はアプリ側の再生状態で、プロジェクトには保存しない。
+/// ミックスを WAV に書き出す（Issue #41）。プロジェクト全長
+/// （最後のクリップの終端まで）を 44.1kHz / 16bit PCM / ステレオで
+/// 書き出す。中身は render_mix の出力そのもの（16bit 量子化のみ）。
+pub fn export_wav(
+    project: &Project,
+    audio: &HashMap<String, ClipAudio>,
+    out_path: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    const RATE: u32 = 44_100;
+    let end_ms = crate::timeline::project_end_ms(project);
+    let mix = render_mix(project, audio, 0, end_ms, RATE);
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(out_path, spec).map_err(|e| e.to_string())?;
+    for sample in &mix {
+        let v = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
+        writer.write_sample(v).map_err(|e| e.to_string())?;
+    }
+    writer.finalize().map_err(|e| e.to_string())?;
+    Ok(out_path.to_path_buf())
+}
+
+/// 書き出し先の初期値（Issue #41）: プロジェクトファイルと同じ
+/// ディレクトリの `<プロジェクト名>.wav`。プロジェクトファイルが
+/// なければカレントディレクトリの同名ファイル。
+pub fn default_export_path(
+    project_file: Option<&std::path::Path>,
+    project_name: &str,
+) -> std::path::PathBuf {
+    let file_name = format!("{project_name}.wav");
+    match project_file.and_then(|p| p.parent()) {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join(file_name),
+        _ => std::path::PathBuf::from(file_name),
+    }
+}
+
 pub fn render_mix_with_metronome(
     project: &Project,
     audio: &HashMap<String, ClipAudio>,
@@ -1101,6 +1141,43 @@ mod review_fix_tests {
             at(1999).abs() < 0.01,
             "fade end must be silent: {}",
             at(1999)
+        );
+    }
+
+    #[test]
+    fn exported_wav_round_trips_with_same_samples() {
+        // Issue #41（イシュー指定名）: 書き出した WAV を読み戻すと
+        // 44.1kHz / ステレオで、render_mix の出力と一致する
+        // （16bit 量子化の誤差以内）。無音でもない。
+        let (p, audio) = project_with(&[("a.wav", 0, 2_000, 1.0)]);
+        let path = std::env::temp_dir().join(format!("daw-export-test-{}.wav", std::process::id()));
+        let written = export_wav(&p, &audio, &path).unwrap();
+        assert_eq!(written, path);
+        let back = decode_audio(&path).unwrap();
+        assert_eq!(back.sample_rate, 44_100);
+        assert_eq!(back.channels, 2);
+        let expected = render_mix(&p, &audio, 0, crate::timeline::project_end_ms(&p), 44_100);
+        assert_eq!(back.samples.len(), expected.len());
+        let tol = 2.0 / 32_767.0;
+        for (a, b) in back.samples.iter().zip(expected.iter()) {
+            assert!((a - b).abs() <= tol, "sample mismatch: {a} vs {b}");
+        }
+        assert!(rms(&back.samples) > 0.05, "export must not be silent");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn default_export_path_sits_next_to_project() {
+        // Issue #41: 書き出し先の初期値はプロジェクトと同じ
+        // ディレクトリの <プロジェクト名>.wav。
+        let dir = std::path::Path::new("/tmp/somewhere/project.json");
+        assert_eq!(
+            default_export_path(Some(dir), "my song"),
+            std::path::PathBuf::from("/tmp/somewhere/my song.wav")
+        );
+        assert_eq!(
+            default_export_path(None, "my song"),
+            std::path::PathBuf::from("my song.wav")
         );
     }
 

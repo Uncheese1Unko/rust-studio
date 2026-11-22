@@ -178,6 +178,8 @@ struct Model {
     loop_drag_anchor_ms: Option<i64>,
     loop_drag_pointer_ms: i64,
     prev_esc_down: bool,
+    // Issue #41: WAV 書き出しの完了表示（画面と stdout に出す）。
+    export_status: Option<String>,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -367,6 +369,7 @@ fn model(app: &App) -> Model {
         loop_drag_anchor_ms: None,
         loop_drag_pointer_ms: 0,
         prev_esc_down: false,
+        export_status: None,
     }
 }
 
@@ -388,7 +391,27 @@ fn main() {
         sampler_demo(&args[2], &args[3]);
         return;
     }
+    // WAV 書き出し（Issue #41 の検証用 CLI）:
+    // daw --export-wav <project.json> <out.wav>
+    if args.len() == 4 && args[1] == "--export-wav" {
+        export_wav_cli(&args[2], &args[3]);
+        return;
+    }
     nannou::app(model).event(event).update(update).run();
+}
+
+/// プロジェクト JSON を読み、ミックスを WAV に書き出す（Issue #41）。
+fn export_wav_cli(project_json: &str, out_wav: &str) {
+    let project =
+        Project::load_from_path(std::path::Path::new(project_json)).expect("load project json");
+    let audio_map = compute_audio_map(&project, "");
+    match audio::export_wav(&project, &audio_map, std::path::Path::new(out_wav)) {
+        Ok(path) => println!("exported: {}", path.display()),
+        Err(e) => {
+            eprintln!("export failed: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// 素材をサンプラーに読み、和音（0/+4/+7）と単音（+7）を書き出す。
@@ -1160,6 +1183,26 @@ fn handle_pointer(app: &App, model: &mut Model) {
             model.prev_left_down = left_down;
             return;
         }
+        // WAV 書き出し（Issue #41）: 初期値の書き出し先へ書く。
+        let e_r = export_rect(model.history.project().tracks.len());
+        if lx >= e_r.x && lx < e_r.x + e_r.w && ly >= e_r.y && ly < e_r.y + e_r.h {
+            let out = audio::default_export_path(
+                model.project_file.as_deref(),
+                &model.history.project().name,
+            );
+            match audio::export_wav(model.history.project(), &model.audio_map, &out) {
+                Ok(path) => {
+                    model.export_status = Some(format!("EXPORTED {}", path.display()));
+                    println!("exported: {}", path.display());
+                }
+                Err(e) => {
+                    model.export_status = Some("EXPORT FAILED".to_string());
+                    println!("export failed: {e}");
+                }
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
         // BPM 表示（Issue #35）: クリックで入力モードに入る。
         let bpm_r = bpm_rect(model.history.project().tracks.len());
         if lx >= bpm_r.x && lx < bpm_r.x + bpm_r.w && ly >= bpm_r.y && ly < bpm_r.y + bpm_r.h {
@@ -1412,6 +1455,18 @@ fn metronome_rect(track_count: usize) -> mixer::Rect {
 fn loop_rect(track_count: usize) -> mixer::Rect {
     mixer::Rect {
         x: 228.0,
+        y: transport_top(track_count) + 38.0,
+        w: 180.0,
+        h: 16.0,
+    }
+}
+
+/// WAV 書き出しボタンのチップ（Issue #41）。ループチップの右隣。
+/// 書き出し先はプロジェクトと同じ場所の <プロジェクト名>.wav
+/// （初期値。ファイルダイアログは持たない）。
+fn export_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 420.0,
         y: transport_top(track_count) + 38.0,
         w: 180.0,
         h: 16.0,
@@ -1987,6 +2042,14 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(lcx, lcy)
             .font_size(10)
             .color(rgb(l_text_color.0, l_text_color.1, l_text_color.2));
+        // WAV 書き出しボタン（Issue #41）: 完了後は状態を表示する。
+        let e_r = export_rect(count);
+        draw_rounded_rect(&draw, win, e_r, 4.0, theme::PANEL_SUNK);
+        let (ecx, ecy) = rect_center(win, e_r.x, e_r.y, e_r.w, e_r.h);
+        draw.text(model.export_status.as_deref().unwrap_or("EXPORT WAV"))
+            .x_y(ecx, ecy)
+            .font_size(10)
+            .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
     }
 
     // 色選択パネル（Issue #58）: トランスポートの下。TRACK 行は選択中

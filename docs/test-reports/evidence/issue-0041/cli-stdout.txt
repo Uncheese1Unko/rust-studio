@@ -1,0 +1,1 @@
+exported: /home/hatch/workspace/repos/rust-studio-lane-a/docs/test-reports/evidence/issue-0041/run/cli-out.wav
