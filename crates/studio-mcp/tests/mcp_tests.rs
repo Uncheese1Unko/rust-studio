@@ -54,6 +54,7 @@ fn tools_list_exposes_all_commands() {
         "remove_clip",
         "set_clip_gain",
         "set_clip_title",
+        "set_clip_transition",
         "set_track_volume",
         "set_track_pan",
         "set_track_mute",
@@ -786,4 +787,62 @@ fn set_clip_title_tool_applies_via_tools_call() {
     let dump = project_dump_via_tool(&server);
     let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
     assert_eq!(project.tracks[0].clips[0].title_text, "");
+}
+
+#[test]
+fn set_clip_transition_tool_applies_via_tools_call() {
+    // Issue #49: set_clip_transition が tools/call 経由で適用でき、
+    // ダンプで観測できる。検証エラーは状態不変、none + 0 で解除。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        85,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        86,
+        "add_clip",
+        json!({"track_id": 1, "name": "opening", "start_ms": 0, "duration_ms": 4000, "source": "opening.mp4"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        87,
+        "set_clip_transition",
+        json!({"clip_id": 2, "kind": "cross_dissolve", "duration_ms": 500}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let clip = &project.tracks[0].clips[0];
+    assert_eq!(
+        clip.transition_in_kind,
+        studio_core::TransitionKind::CrossDissolve
+    );
+    assert_eq!(clip.transition_in_ms, 500);
+    // 長さ 0 の cross_dissolve はエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        88,
+        "set_clip_transition",
+        json!({"clip_id": 2, "kind": "cross_dissolve", "duration_ms": 0}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    // 解除（none + 0）
+    let res = call_tool(
+        &server,
+        89,
+        "set_clip_transition",
+        json!({"clip_id": 2, "kind": "none", "duration_ms": 0}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let clip = &project.tracks[0].clips[0];
+    assert_eq!(clip.transition_in_kind, studio_core::TransitionKind::None);
+    assert_eq!(clip.transition_in_ms, 0);
 }

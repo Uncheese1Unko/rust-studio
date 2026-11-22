@@ -878,3 +878,139 @@ fn set_clip_title_round_trips_through_json() {
     assert!(result.is_err());
     assert_eq!(p.dump_json(), before);
 }
+
+#[test]
+fn set_clip_transition_validates_and_round_trips() {
+    // Issue #49（ADR-0014）: SetClipTransition は後続クリップの属性
+    // として持ち、種類で検証を分ける。cross_dissolve は
+    // 0 < duration <= クリップ長、none は duration 0 のみ（解除）。
+    use studio_core::TransitionKind;
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.transition_in_kind, TransitionKind::None);
+    assert_eq!(clip.transition_in_ms, 0);
+
+    apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id,
+            kind: TransitionKind::CrossDissolve,
+            duration_ms: 500,
+        },
+    )
+    .unwrap();
+    let json = p.dump_json();
+    assert!(
+        json.contains("\"transition_in_kind\": \"cross_dissolve\""),
+        "{json}"
+    );
+    let loaded: Project = serde_json::from_str(&json).unwrap();
+    let (_, clip) = loaded.clip(clip_id).unwrap();
+    assert_eq!(clip.transition_in_kind, TransitionKind::CrossDissolve);
+    assert_eq!(clip.transition_in_ms, 500);
+
+    // 旧形式（フィールドなし）は none / 0 で読める
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let obj = value["tracks"][0]["clips"][0].as_object_mut().unwrap();
+    obj.remove("transition_in_kind");
+    obj.remove("transition_in_ms");
+    let legacy = serde_json::to_string(&value).unwrap();
+    let loaded_legacy: Project = serde_json::from_str(&legacy).unwrap();
+    let (_, clip) = loaded_legacy.clip(clip_id).unwrap();
+    assert_eq!(clip.transition_in_kind, TransitionKind::None);
+    assert_eq!(clip.transition_in_ms, 0);
+
+    // 検証: 0 以下・クリップ長超過はエラーで状態不変
+    let before = p.dump_json();
+    for bad in [0, -100, 5_001] {
+        assert!(
+            apply(
+                &mut p,
+                &Command::SetClipTransition {
+                    clip_id,
+                    kind: TransitionKind::CrossDissolve,
+                    duration_ms: bad,
+                },
+            )
+            .is_err(),
+            "duration {bad} must be rejected"
+        );
+    }
+    // none に長さを持たせることはできない（解除は 0 のみ）
+    assert!(
+        apply(
+            &mut p,
+            &Command::SetClipTransition {
+                clip_id,
+                kind: TransitionKind::None,
+                duration_ms: 500,
+            },
+        )
+        .is_err()
+    );
+    assert_eq!(p.dump_json(), before, "rejected calls keep state");
+
+    // 解除（none + 0）で属性が消える
+    apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id,
+            kind: TransitionKind::None,
+            duration_ms: 0,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.transition_in_kind, TransitionKind::None);
+    assert_eq!(clip.transition_in_ms, 0);
+
+    // 存在しないクリップはエラーで状態不変
+    let before = p.dump_json();
+    assert!(
+        apply(
+            &mut p,
+            &Command::SetClipTransition {
+                clip_id: 9999,
+                kind: TransitionKind::CrossDissolve,
+                duration_ms: 500,
+            },
+        )
+        .is_err()
+    );
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn split_clip_clears_right_clip_transition_in() {
+    // Issue #49（ADR-0014）: トランジションは境界の属性。分割で
+    // 新しく生じた境界は素の切り替わりにするため、右クリップの
+    // transition_in は引き継がない（フェードの外側保持と同じ）。
+    use studio_core::TransitionKind;
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id,
+            kind: TransitionKind::CrossDissolve,
+            duration_ms: 500,
+        },
+    )
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id,
+            at_ms: 2_000,
+        },
+    )
+    .unwrap();
+    let clips = &p.tracks[0].clips;
+    assert_eq!(clips.len(), 2);
+    let (left, right) = (&clips[0], &clips[1]);
+    // 左（元の先頭側）は前の境界の属性を保持する
+    assert_eq!(left.transition_in_kind, TransitionKind::CrossDissolve);
+    assert_eq!(left.transition_in_ms, 500);
+    // 右の先頭は新しい境界なので属性なし
+    assert_eq!(right.transition_in_kind, TransitionKind::None);
+    assert_eq!(right.transition_in_ms, 0);
+}

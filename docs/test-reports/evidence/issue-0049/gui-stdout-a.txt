@@ -1,0 +1,274 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue49/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue49",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "sceneA",
+          "start_ms": 0,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneA.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 4,
+          "name": "sceneB",
+          "start_ms": 3000,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneB.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.clip.4, timeline.track.2, preview, media-bin
+sample media generated: /tmp/rust-studio-video-editor-media/opening.mp4
+sample media generated: /tmp/rust-studio-video-editor-media/interview.mp4
+sample media generated: /tmp/rust-studio-video-editor-media/bgm.wav
+sample media generated: /tmp/rust-studio-video-editor-media/bg.mp4
+media prepared: /tmp/trans49/sceneA.mp4 -> 30 frames
+media prepared: /tmp/trans49/sceneB.mp4 -> 30 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 60
+preview: source=/tmp/trans49/sceneA.mp4 playhead=0 source_time=0 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=113 source_time=113 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=215 source_time=215 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=316 source_time=316 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=406 source_time=406 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=507 source_time=507 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=610 source_time=610 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=705 source_time=705 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=815 source_time=815 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=937 source_time=937 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1005 source_time=1005 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1104 source_time=1104 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1208 source_time=1208 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1302 source_time=1302 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1402 source_time=1402 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1510 source_time=1510 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1609 source_time=1609 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1717 source_time=1717 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1871 source_time=1871 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1967 source_time=1967 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2001 source_time=2001 frame=20
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2101 source_time=2101 frame=21
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2260 source_time=2260 frame=22
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2356 source_time=2356 frame=23
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2458 source_time=2458 frame=24
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2568 source_time=2568 frame=25
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2665 source_time=2665 frame=26
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2761 source_time=2761 frame=27
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2806 source_time=2806 frame=28
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2948 source_time=2948 frame=29
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3058 source_time=58 frame=0
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3146 source_time=146 frame=1
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3254 source_time=254 frame=2
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3344 source_time=344 frame=3
+after transition: {
+  "name": "issue49",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "sceneA",
+          "start_ms": 0,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneA.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 4,
+          "name": "sceneB",
+          "start_ms": 3000,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneB.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "cross_dissolve",
+          "transition_in_ms": 500
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3498 source_time=498 frame=4
+transition blend: alpha=1.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3577 source_time=577 frame=5
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3644 source_time=644 frame=6
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3754 source_time=754 frame=7
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3845 source_time=845 frame=8
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3945 source_time=945 frame=9
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4043 source_time=1043 frame=10
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4141 source_time=1141 frame=11
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4234 source_time=1234 frame=12
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4336 source_time=1336 frame=13
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4440 source_time=1440 frame=14
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4542 source_time=1542 frame=15
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4637 source_time=1637 frame=16
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4734 source_time=1734 frame=17
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4843 source_time=1843 frame=18
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4933 source_time=1933 frame=19
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5050 source_time=2050 frame=20
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5132 source_time=2132 frame=21
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5236 source_time=2236 frame=22
+after transition: {
+  "name": "issue49",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "sceneA",
+          "start_ms": 0,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneA.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 4,
+          "name": "sceneB",
+          "start_ms": 3000,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneB.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5325 source_time=2325 frame=23
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5423 source_time=2423 frame=24
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5522 source_time=2522 frame=25
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5632 source_time=2632 frame=26
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5717 source_time=2717 frame=27
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5816 source_time=2816 frame=28
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5929 source_time=2929 frame=29
+preview: source=/tmp/trans49/sceneA.mp4 playhead=39 source_time=39 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=115 source_time=115 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=214 source_time=214 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=309 source_time=309 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=414 source_time=414 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=510 source_time=510 frame=5

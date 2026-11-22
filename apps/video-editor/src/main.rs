@@ -41,6 +41,10 @@ struct Model {
     prev_t_down: bool,
     // Issue #43: S キー（分割）の前回状態。
     prev_s_down: bool,
+    // Issue #49: X キー（トランジション付け外し）の前回状態と、
+    // 現在の再生ヘッド用に用意したブレンド済みフレーム。
+    prev_x_down: bool,
+    blend_frame: Option<std::path::PathBuf>,
     // Issue #53: 直近のドロップ時刻（複数ファイルのバースト判定）。
     last_drop_at: Option<f32>,
     // Issue #10: プレビュー再生の状態。
@@ -277,6 +281,8 @@ fn model(app: &App) -> Model {
         title_input: None,
         prev_t_down: false,
         prev_s_down: false,
+        prev_x_down: false,
+        blend_frame: None,
         last_drop_at: None,
         selected_track: initial_selected,
         frames,
@@ -417,6 +423,59 @@ fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
             save_project_file(model);
         }
         Err(e) => println!("drop rejected: {} ({e})", path.display()),
+    }
+}
+
+/// トランジションの付け外し（Issue #49、ADR-0014）。選択中
+/// トラックの再生ヘッド位置にあるクリップを対象に、その先頭境界
+/// へ既定 500ms のクロスディゾルブを設定／解除する。付けるには
+/// 同一トラックに直接隣接する前のクリップが必要（なければログ
+/// のみ）。状態変更は SetClipTransition コマンド経由のみ。
+fn toggle_transition(model: &mut Model) {
+    let target = model.selected_track.and_then(|track_id| {
+        let track = model.history.project().track(track_id)?;
+        track
+            .clips
+            .iter()
+            .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+            .map(|c| {
+                let has_prev = track
+                    .clips
+                    .iter()
+                    .any(|p| p.id != c.id && p.end_ms() == c.start_ms);
+                (c.id, c.transition_in_kind, has_prev)
+            })
+    });
+    let Some((clip_id, kind, has_prev)) = target else {
+        println!("transition: no clip at playhead on selected track");
+        return;
+    };
+    let cmd = if kind == studio_core::TransitionKind::CrossDissolve {
+        studio_core::Command::SetClipTransition {
+            clip_id,
+            kind: studio_core::TransitionKind::None,
+            duration_ms: 0,
+        }
+    } else {
+        if !has_prev {
+            println!("transition: no adjacent previous clip at the boundary");
+            return;
+        }
+        studio_core::Command::SetClipTransition {
+            clip_id,
+            kind: studio_core::TransitionKind::CrossDissolve,
+            duration_ms: 500,
+        }
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            println!(
+                "after transition: {}",
+                model.history.project().dump_json()
+            );
+            save_project_file(model);
+        }
+        Err(e) => println!("transition rejected: {e}"),
     }
 }
 
@@ -667,6 +726,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.bin_reload_key_down = app.keys.down.contains(&Key::R);
         model.prev_t_down = app.keys.down.contains(&Key::T);
         model.prev_s_down = app.keys.down.contains(&Key::S);
+        model.prev_x_down = app.keys.down.contains(&Key::X);
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
@@ -713,6 +773,14 @@ fn update(app: &App, model: &mut Model, update: Update) {
             split_at_playhead(app, model);
         }
         model.prev_s_down = s_down;
+        // トランジションの付け外し（Issue #49）: X キーの押下エッジ。
+        // 対象は選択中トラックの再生ヘッド位置にあるクリップで、
+        // その先頭境界に既定 500ms のクロスディゾルブを付け外しする。
+        let x_down = app.keys.down.contains(&Key::X);
+        if x_down && !model.prev_x_down {
+            toggle_transition(model);
+        }
+        model.prev_x_down = x_down;
     }
     watch_project_file(app, model);
 
@@ -738,6 +806,44 @@ fn update(app: &App, model: &mut Model, update: Update) {
             );
         }
         model.last_preview = current_key;
+    }
+
+    // トランジションのブレンド（Issue #49、ADR-0014）: 窓内なら
+    // 合成フレームを用意しテクスチャまで読み、view が使えるよう
+    // にする。α は 0.05 刻みに量子化してキャッシュを共有する。
+    match media::transition_blend(model.history.project(), model.playhead_ms) {
+        Some(b) => {
+            let prev_frame = model
+                .frames
+                .frame_path(&b.prev_source, b.prev_source_time_ms)
+                .map(|p| p.to_path_buf());
+            let next_frame = model
+                .frames
+                .frame_path(&b.next_source, b.next_source_time_ms)
+                .map(|p| p.to_path_buf());
+            if let (Some(pf), Some(nf)) = (prev_frame, next_frame) {
+                let alpha_q = (b.alpha * 20.0).round() / 20.0;
+                let cache = media::blend_cache_path(&pf, &nf, b.alpha);
+                if !cache.exists() {
+                    if let Err(e) = media::blend_frame_files(&pf, &nf, alpha_q, &cache) {
+                        println!("transition blend failed: {e}");
+                    }
+                }
+                if cache.exists() && !model.textures.contains_key(&cache) {
+                    if let Ok(texture) = wgpu::Texture::from_path(app, &cache) {
+                        model.textures.insert(cache.clone(), texture);
+                    }
+                }
+                if model.blend_frame.as_deref() != Some(cache.as_path()) {
+                    println!(
+                        "transition blend: alpha={alpha_q:.2} prev={} next={}",
+                        b.prev_source, b.next_source
+                    );
+                    model.blend_frame = Some(cache);
+                }
+            }
+        }
+        None => model.blend_frame = None,
     }
 }
 
@@ -1485,6 +1591,24 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(cx, cy)
             .w_h(rect.w, rect.h - 8.0)
             .color(rgb(r, g, b));
+        // トランジションの印（Issue #49）: 先頭の窓の幅だけ帯を引く。
+        if let Some(clip) = clip {
+            if clip.transition_in_kind == studio_core::TransitionKind::CrossDissolve
+                && clip.transition_in_ms > 0
+            {
+                let w = (clip.transition_in_ms as f32
+                    * model.view_scale.px_per_ms(win.w()))
+                .min(rect.w);
+                if w > 0.5 {
+                    let (sx, sy) =
+                        rect_center(win, rect.x, rect.y + 4.0, w, rect.h - 8.0);
+                    draw.rect()
+                        .x_y(sx, sy)
+                        .w_h(w, rect.h - 8.0)
+                        .color(rgb(0.98, 0.95, 0.85));
+                }
+            }
+        }
         if let Some(clip) = clip {
             draw.text(&clip.name)
                 .x_y(cx, cy)
@@ -1516,6 +1640,15 @@ fn view(app: &App, model: &Model, frame: Frame) {
             let texture = composite_path
                 .as_ref()
                 .and_then(|p| model.textures.get(p))
+                .or_else(|| {
+                    // トランジション中はブレンド済みフレームを優先
+                    // する（Issue #49）。update が現在の再生ヘッドに
+                    // 合わせて用意したものだけが入っている。
+                    model
+                        .blend_frame
+                        .as_ref()
+                        .and_then(|p| model.textures.get(p))
+                })
                 .or_else(|| {
                     model
                         .frames

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Clip, ColorTag, Project, Track, TrackKind};
+use crate::model::{Clip, ColorTag, Project, Track, TrackKind, TransitionKind};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -63,6 +63,15 @@ pub enum Command {
     SetClipTitle {
         clip_id: u64,
         title: String,
+    },
+    /// クリップの先頭境界のトランジションを設定する
+    /// （Issue #49、ADR-0014）。検証は種類で分ける:
+    /// cross_dissolve は 0 < duration_ms <= クリップ長、
+    /// none は解除で duration_ms = 0 のみ許可する。
+    SetClipTransition {
+        clip_id: u64,
+        kind: TransitionKind,
+        duration_ms: i64,
     },
     SetTrackVolume {
         track_id: u64,
@@ -224,6 +233,8 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     fade_in_ms: 0,
                     fade_out_ms: 0,
                     title_text: String::new(),
+                    transition_in_kind: TransitionKind::None,
+                    transition_in_ms: 0,
                 });
             Ok(Some(id))
         }
@@ -316,6 +327,12 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 // タイトルはクリップ全体への注釈として右側にも
                 // 引き継ぐ（Issue #50）。
                 title_text: clip.title_text.clone(),
+                // 分割点は新しい境界なので、右クリップは先頭境界の
+                // トランジションを引き継がない（Issue #49、ADR-0014。
+                // フェードインを付けないのと同じ扱い）。左クリップは
+                // 前の境界の属性をそのまま保持する。
+                transition_in_kind: TransitionKind::None,
+                transition_in_ms: 0,
             };
             let track = &mut project.tracks[track_idx];
             // 左クリップはフェードインを外側の端として引き継ぎ、
@@ -364,6 +381,42 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.title_text = title.clone();
+            Ok(None)
+        }
+        Command::SetClipTransition {
+            clip_id,
+            kind,
+            duration_ms,
+        } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            match kind {
+                TransitionKind::CrossDissolve => {
+                    if *duration_ms <= 0 || *duration_ms > clip.duration_ms {
+                        return Err(CommandError::InvalidRange(
+                            "transition duration must be within 1..=clip duration",
+                        ));
+                    }
+                }
+                TransitionKind::None => {
+                    if *duration_ms != 0 {
+                        return Err(CommandError::InvalidRange(
+                            "clearing a transition requires duration_ms = 0",
+                        ));
+                    }
+                }
+            }
+            clip.transition_in_kind = *kind;
+            // none のときは常に 0 に正規化される（検証で 0 のみ許可）
+            clip.transition_in_ms = *duration_ms;
             Ok(None)
         }
         Command::SetTrackVolume { track_id, volume } => {

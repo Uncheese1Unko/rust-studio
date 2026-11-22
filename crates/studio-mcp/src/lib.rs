@@ -412,6 +412,19 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "set_clip_transition",
+            "description": "クリップの先頭境界のトランジションを設定する（kind: none / cross_dissolve、none は duration_ms=0 で解除、Issue #49）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "kind": {"type": "string", "enum": ["none", "cross_dissolve"]},
+                    "duration_ms": {"type": "integer"},
+                },
+                "required": ["clip_id", "kind", "duration_ms"],
+            },
+        },
+        {
             "name": "set_track_volume",
             "description": "トラックの音量を設定する（0.0〜2.0、既定 1.0）",
             "inputSchema": {

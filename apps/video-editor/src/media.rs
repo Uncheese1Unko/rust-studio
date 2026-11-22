@@ -149,6 +149,118 @@ pub fn frame_index(source_time_ms: i64, fps: u32) -> usize {
     (source_time_ms as u64 * fps as u64 / 1_000) as usize
 }
 
+/// トランジションのブレンド係数（Issue #49、ADR-0014）。
+/// 後続クリップの先頭の時間窓 [start, start + transition_in_ms)
+/// の中では位置に応じて線形に 0 → 1 へ進む。窓の外・種類が
+/// cross_dissolve でない・長さ 0 の場合は None（ブレンドしない）。
+pub fn blend_factor(clip: &Clip, playhead_ms: i64) -> Option<f32> {
+    if clip.transition_in_kind != studio_core::TransitionKind::CrossDissolve
+        || clip.transition_in_ms <= 0
+    {
+        return None;
+    }
+    let elapsed = playhead_ms - clip.start_ms;
+    if elapsed < 0 || elapsed >= clip.transition_in_ms {
+        return None;
+    }
+    Some(elapsed as f32 / clip.transition_in_ms as f32)
+}
+
+/// プレビューでブレンドすべき2フレームの指定（Issue #49）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionBlend {
+    pub prev_source: String,
+    /// 前クリップの素材時刻。タイムライン上の終了位置を過ぎた
+    /// 続き（offset 込み）で、フレーム取得側で末尾にクランプされる。
+    pub prev_source_time_ms: i64,
+    pub next_source: String,
+    pub next_source_time_ms: i64,
+    pub alpha: f32,
+}
+
+/// 再生ヘッド位置でトランジションのブレンドが成立するか
+/// （Issue #49、ADR-0014）。成立条件は、アクティブな映像
+/// クリップにブレンド係数があり、同一トラックに直接隣接する
+/// 前のクリップ（end == start）が存在すること。隙間がある・
+/// 前のクリップがない場合は None（従来どおり単一クリップ）。
+pub fn transition_blend(project: &Project, playhead_ms: i64) -> Option<TransitionBlend> {
+    let clip = active_video_clip(project, playhead_ms)?;
+    let alpha = blend_factor(clip, playhead_ms)?;
+    let track = project
+        .tracks
+        .iter()
+        .find(|t| t.clips.iter().any(|c| c.id == clip.id))?;
+    let prev = track
+        .clips
+        .iter()
+        .filter(|c| c.id != clip.id && c.end_ms() == clip.start_ms)
+        .max_by_key(|c| c.start_ms)?;
+    Some(TransitionBlend {
+        prev_source: prev.source.clone(),
+        prev_source_time_ms: prev.offset_ms + (playhead_ms - prev.start_ms),
+        next_source: clip.source.clone(),
+        next_source_time_ms: source_time_ms(clip, playhead_ms)?,
+        alpha,
+    })
+}
+
+/// 2枚のフレーム画像を α でブレンドした PNG を書き出す
+/// （Issue #49、ADR-0014 の CPU ブレンド）。式は切り抜き合成と
+/// 同じ out = prev * (1 - α) + next * α。寸法が違う場合は前
+/// フレームの寸法に合わせて後フレームをリサイズする。
+pub fn blend_frame_files(
+    prev_path: &Path,
+    next_path: &Path,
+    alpha: f32,
+    out_path: &Path,
+) -> std::io::Result<()> {
+    let prev = image::open(prev_path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        .to_rgba8();
+    let next_img = image::open(next_path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let next = if next_img.width() == prev.width() && next_img.height() == prev.height() {
+        next_img.to_rgba8()
+    } else {
+        image::imageops::resize(
+            &next_img.to_rgba8(),
+            prev.width(),
+            prev.height(),
+            image::imageops::FilterType::Triangle,
+        )
+    };
+    let a = alpha.clamp(0.0, 1.0);
+    // out は prev の複製なので、書き込む前の op[ch] が prev の値。
+    let mut out = prev.clone();
+    for (op, np) in out.pixels_mut().zip(next.pixels()) {
+        for ch in 0..4 {
+            op[ch] = ((op[ch] as f32) * (1.0 - a) + (np[ch] as f32) * a)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+        }
+    }
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    out.save(out_path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
+/// ブレンド済みフレームのキャッシュパス（Issue #49）。
+/// フレームの組と α の量子化段（0.05 刻み）で決まる。
+pub fn blend_cache_path(prev_frame: &Path, next_frame: &Path, alpha: f32) -> PathBuf {
+    let alpha_q = (alpha.clamp(0.0, 1.0) * 20.0).round() as u8;
+    let key = format!(
+        "{}|{}|{}",
+        prev_frame.display(),
+        next_frame.display(),
+        alpha_q
+    );
+    media_dir()
+        .join("blend")
+        .join(format!("b{:016x}.png", fnv1a(key.as_bytes())))
+}
+
 /// 展開済みフレーム列のストア。キーはクリップの source 文字列。
 #[derive(Debug, Default)]
 pub struct FrameStore {
@@ -475,6 +587,73 @@ mod tests {
         assert_eq!(frame_index(100, 10), 1);
         assert_eq!(frame_index(2_500, 10), 25);
         assert_eq!(frame_index(-100, 10), 0);
+    }
+
+    #[test]
+    fn blend_factor_is_linear_across_transition() {
+        // Issue #49（イシュー指定のテスト、ADR-0014）: ブレンド係数は
+        // 後続クリップ先頭の時間窓で線形に 0 → 1 へ進む。
+        let mut p = project();
+        // interview は 2500 開始。先頭に 500ms のディゾルブを設定。
+        let interview = active_video_clip(&p, 3_000).unwrap().clone();
+        apply(
+            &mut p,
+            &Command::SetClipTransition {
+                clip_id: interview.id,
+                kind: studio_core::TransitionKind::CrossDissolve,
+                duration_ms: 500,
+            },
+        )
+        .unwrap();
+        let clip = active_video_clip(&p, 3_000).unwrap();
+        assert_eq!(blend_factor(clip, 2_500), Some(0.0));
+        assert_eq!(blend_factor(clip, 2_750), Some(0.5));
+        let near_end = blend_factor(clip, 2_999).unwrap();
+        assert!(near_end > 0.99 && near_end < 1.0, "{near_end}");
+        // 窓の外はブレンドしない
+        assert_eq!(blend_factor(clip, 2_499), None);
+        assert_eq!(blend_factor(clip, 3_000), None);
+        // 種類が none のクリップは窓内でもブレンドしない
+        let opening = active_video_clip(&p, 0).unwrap();
+        assert_eq!(blend_factor(opening, 0), None);
+    }
+
+    #[test]
+    fn transition_blend_needs_directly_adjacent_previous_clip() {
+        // Issue #49（ADR-0014）: ブレンドは同一トラックで直接隣接
+        // する境界にだけ適用される。前クリップ側の素材時刻は
+        // 終了位置を過ぎた続き（offset 込み）を使う。
+        let mut p = project();
+        let interview = active_video_clip(&p, 3_000).unwrap().clone();
+        apply(
+            &mut p,
+            &Command::SetClipTransition {
+                clip_id: interview.id,
+                kind: studio_core::TransitionKind::CrossDissolve,
+                duration_ms: 500,
+            },
+        )
+        .unwrap();
+        // project() では opening(0..2000) と interview(2500..) の間に
+        // 隙間があるため、隣接しておらずブレンドは成立しない。
+        assert!(transition_blend(&p, 2_750).is_none());
+        // 隙間をなくす: opening を 2500 まで伸ばす代わりに、
+        // interview を 2000 開始へ移動して直接隣接させる。
+        apply(
+            &mut p,
+            &Command::MoveClip {
+                clip_id: interview.id,
+                new_start_ms: 2_000,
+            },
+        )
+        .unwrap();
+        let blend = transition_blend(&p, 2_250).expect("adjacent blend");
+        assert_eq!(blend.alpha, 0.5);
+        assert_eq!(blend.next_source, "demo/interview.mp4");
+        assert_eq!(blend.next_source_time_ms, 250);
+        assert_eq!(blend.prev_source, "demo/opening.mp4");
+        // 前クリップは終了（2000）を過ぎた続きの素材時刻になる
+        assert_eq!(blend.prev_source_time_ms, 2_250);
     }
 
     #[test]

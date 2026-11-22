@@ -1,0 +1,161 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue49/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue49",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "sceneA",
+          "start_ms": 0,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneA.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 4,
+          "name": "sceneB",
+          "start_ms": 3000,
+          "duration_ms": 3000,
+          "source": "/tmp/trans49/sceneB.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "cross_dissolve",
+          "transition_in_ms": 2000
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.clip.4, timeline.track.2, preview, media-bin
+media prepared: /tmp/trans49/sceneA.mp4 -> 30 frames
+media prepared: /tmp/trans49/sceneB.mp4 -> 30 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 60
+preview: source=/tmp/trans49/sceneA.mp4 playhead=0 source_time=0 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=136 source_time=136 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=240 source_time=240 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=333 source_time=333 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=436 source_time=436 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=535 source_time=535 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=632 source_time=632 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=741 source_time=741 frame=7
+preview: source=/tmp/trans49/sceneA.mp4 playhead=828 source_time=828 frame=8
+preview: source=/tmp/trans49/sceneA.mp4 playhead=927 source_time=927 frame=9
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1024 source_time=1024 frame=10
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1124 source_time=1124 frame=11
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1222 source_time=1222 frame=12
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1329 source_time=1329 frame=13
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1422 source_time=1422 frame=14
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1523 source_time=1523 frame=15
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1617 source_time=1617 frame=16
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1713 source_time=1713 frame=17
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1823 source_time=1823 frame=18
+preview: source=/tmp/trans49/sceneA.mp4 playhead=1912 source_time=1912 frame=19
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2019 source_time=2019 frame=20
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2110 source_time=2110 frame=21
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2208 source_time=2208 frame=22
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2307 source_time=2307 frame=23
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2420 source_time=2420 frame=24
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2534 source_time=2534 frame=25
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2601 source_time=2601 frame=26
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2705 source_time=2705 frame=27
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2822 source_time=2822 frame=28
+preview: source=/tmp/trans49/sceneA.mp4 playhead=2904 source_time=2904 frame=29
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3006 source_time=6 frame=0
+transition blend: alpha=0.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3119 source_time=119 frame=1
+transition blend: alpha=0.05 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3239 source_time=239 frame=2
+transition blend: alpha=0.10 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3365 source_time=365 frame=3
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3442 source_time=442 frame=4
+transition blend: alpha=0.20 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3523 source_time=523 frame=5
+transition blend: alpha=0.25 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3611 source_time=611 frame=6
+transition blend: alpha=0.30 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+transition blend: alpha=0.35 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3777 source_time=777 frame=7
+transition blend: alpha=0.40 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3855 source_time=855 frame=8
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=3941 source_time=941 frame=9
+transition blend: alpha=0.45 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4027 source_time=1027 frame=10
+transition blend: alpha=0.50 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4106 source_time=1106 frame=11
+transition blend: alpha=0.55 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4260 source_time=1260 frame=12
+transition blend: alpha=0.65 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4357 source_time=1357 frame=13
+transition blend: alpha=0.70 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4500 source_time=1500 frame=15
+transition blend: alpha=0.75 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4640 source_time=1640 frame=16
+transition blend: alpha=0.80 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4766 source_time=1766 frame=17
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4847 source_time=1847 frame=18
+transition blend: alpha=0.90 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=4959 source_time=1959 frame=19
+transition blend: alpha=1.00 prev=/tmp/trans49/sceneA.mp4 next=/tmp/trans49/sceneB.mp4
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5077 source_time=2077 frame=20
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5140 source_time=2140 frame=21
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5211 source_time=2211 frame=22
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5311 source_time=2311 frame=23
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5408 source_time=2408 frame=24
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5502 source_time=2502 frame=25
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5614 source_time=2614 frame=26
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5781 source_time=2781 frame=27
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5812 source_time=2812 frame=28
+preview: source=/tmp/trans49/sceneB.mp4 playhead=5910 source_time=2910 frame=29
+preview: source=/tmp/trans49/sceneA.mp4 playhead=84 source_time=84 frame=0
+preview: source=/tmp/trans49/sceneA.mp4 playhead=115 source_time=115 frame=1
+preview: source=/tmp/trans49/sceneA.mp4 playhead=210 source_time=210 frame=2
+preview: source=/tmp/trans49/sceneA.mp4 playhead=301 source_time=301 frame=3
+preview: source=/tmp/trans49/sceneA.mp4 playhead=403 source_time=403 frame=4
+preview: source=/tmp/trans49/sceneA.mp4 playhead=509 source_time=509 frame=5
+preview: source=/tmp/trans49/sceneA.mp4 playhead=613 source_time=613 frame=6
+preview: source=/tmp/trans49/sceneA.mp4 playhead=702 source_time=702 frame=7

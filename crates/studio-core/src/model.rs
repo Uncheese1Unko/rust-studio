@@ -10,6 +10,17 @@ pub enum TrackKind {
     Audio,
 }
 
+/// トランジションの種類（Issue #49、ADR-0014）。後続クリップの
+/// 属性 `transition_in_kind` として持つ。当面はクロスディゾルブ
+/// のみで、種類の追加はこの列挙の拡張で受ける。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TransitionKind {
+    #[default]
+    None,
+    CrossDissolve,
+}
+
 /// ユーザーが付けられる色のパレット識別子（Issue #58、ADR-0013）。
 /// 色の指定はテーマに合う固定パレットから選ぶ方式とし、自由色は
 /// 採らない。再生中専用色のホットピンク（ACCENT）はパレットに
@@ -67,6 +78,15 @@ pub struct Clip {
     /// 旧形式の JSON では空文字。
     #[serde(default)]
     pub title_text: String,
+    /// 先頭境界のトランジション種類（Issue #49、ADR-0014）。
+    /// 後続クリップ側の属性として持ち、直接隣接する前のクリップ
+    /// との境界にだけプレビューで適用される。旧形式では None。
+    #[serde(default)]
+    pub transition_in_kind: TransitionKind,
+    /// トランジションの長さ（ミリ秒、Issue #49、ADR-0014）。
+    /// kind が None のときは常に 0。旧形式の JSON では 0。
+    #[serde(default)]
+    pub transition_in_ms: i64,
 }
 
 impl Clip {

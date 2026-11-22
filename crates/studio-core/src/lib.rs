@@ -10,4 +10,4 @@ pub mod model;
 
 pub use command::{apply, Command, CommandError};
 pub use history::History;
-pub use model::{Clip, ColorTag, PersistenceError, Project, Track, TrackKind};
+pub use model::{Clip, ColorTag, PersistenceError, Project, Track, TrackKind, TransitionKind};
