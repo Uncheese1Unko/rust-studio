@@ -51,6 +51,10 @@ struct Model {
     prev_k_down: bool,
     // Issue #31: Undo/Redo キーの押下エッジ追跡。
     history_keys: edit::HistoryKeyTracker,
+    // Issue #44: 複製・コピー＆ペーストのキー追跡とアプリ内
+    // クリップボード（プロジェクトには保存しない）。
+    edit_keys: edit::EditKeyTracker,
+    clipboard: Option<studio_core::Clip>,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -216,6 +220,8 @@ fn model(app: &App) -> Model {
         cutout_job_reported: false,
         prev_k_down: false,
         history_keys: edit::HistoryKeyTracker::new(),
+        edit_keys: edit::EditKeyTracker::new(),
+        clipboard: None,
     }
 }
 
@@ -336,9 +342,15 @@ fn update(app: &App, model: &mut Model, update: Update) {
             app.keys.down.contains(&Key::Z),
             app.keys.down.contains(&Key::Y),
         );
+        model.edit_keys.sync(
+            app.keys.down.contains(&Key::D),
+            app.keys.down.contains(&Key::C),
+            app.keys.down.contains(&Key::V),
+        );
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
+        handle_edit_keys(app, model);
         handle_cutout(app, model);
     }
     watch_project_file(app, model);
@@ -421,6 +433,92 @@ fn handle_history_keys(app: &App, model: &mut Model) {
         edit::HistoryOp::Undo => "undo",
         edit::HistoryOp::Redo => "redo",
     };
+    println!("after {label}: {}", model.history.project().dump_json());
+    save_project_file(model);
+}
+
+/// 複製・コピー＆ペースト（Issue #44）: Ctrl+D / Ctrl+C / Ctrl+V。
+/// 対象クリップは「選択中トラックの再生ヘッド位置にあるクリップ」
+/// （DAW #33 と同一方針・同一キー割り当て）。複製は元クリップの
+/// 直後、貼り付けは選択中トラックの再生ヘッド位置に置く。配置は
+/// AddClip＋パラメータ設定コマンドで、状態変更はコマンド経由のみ。
+/// ドラッグ等のジェスチャ進行中は発火しない。
+fn handle_edit_keys(app: &App, model: &mut Model) {
+    let Some(op) = model.edit_keys.update(
+        false,
+        ctrl_down(app),
+        app.keys.down.contains(&Key::D),
+        app.keys.down.contains(&Key::C),
+        app.keys.down.contains(&Key::V),
+    ) else {
+        return;
+    };
+    if model.drag.is_some() {
+        return;
+    }
+    let target_clip = model
+        .selected_track
+        .and_then(|tid| model.history.project().track(tid))
+        .and_then(|t| {
+            t.clips
+                .iter()
+                .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+        })
+        .map(|c| c.id);
+    match op {
+        edit::EditOp::Copy => {
+            if let Some(clip_id) = target_clip {
+                let (_, clip) = model.history.project().clip(clip_id).expect("found above");
+                model.clipboard = Some(clip.clone());
+                println!("copied clip: {}", clip.name);
+            } else {
+                println!("copy: no clip at playhead");
+            }
+        }
+        edit::EditOp::Duplicate => {
+            let Some(clip_id) = target_clip else {
+                println!("duplicate: no clip at playhead");
+                return;
+            };
+            let placement =
+                edit::duplicate_placement(model.history.project(), clip_id).expect("clip exists");
+            apply_placement(app, model, &placement, "duplicate");
+        }
+        edit::EditOp::Paste => {
+            let (Some(clipboard), Some(track_id)) = (model.clipboard.clone(), model.selected_track)
+            else {
+                println!("paste: clipboard is empty or no track selected");
+                return;
+            };
+            let placement = edit::paste_placement(&clipboard, track_id, model.playhead_ms);
+            apply_placement(app, model, &placement, "paste");
+        }
+    }
+}
+
+/// 配置計画（AddClip＋パラメータ設定）を履歴経由で適用する
+/// （Issue #44）。新しいクリップができたらメディア（フレーム・
+/// テクスチャ）を追従させ、プロジェクトファイルへ保存する。
+fn apply_placement(app: &App, model: &mut Model, placement: &edit::ClipPlacement, label: &str) {
+    let new_id = match model.history.apply(&placement.add) {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            println!("{label}: AddClip returned no id");
+            return;
+        }
+        Err(e) => {
+            println!("{label} rejected: {e}");
+            return;
+        }
+    };
+    for cmd in placement.follow_up_commands(new_id) {
+        if let Err(e) = model.history.apply(&cmd) {
+            println!("{label} follow-up rejected: {e}");
+        }
+    }
+    model.frames = media::prepare_media(model.history.project());
+    model.textures = load_textures(app, model.history.project(), &model.frames);
+    model.last_preview = None;
     println!("after {label}: {}", model.history.project().dump_json());
     save_project_file(model);
 }
