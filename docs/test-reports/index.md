@@ -71,3 +71,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #65 バグ: 動画編集で Escape を押すとアプリが終了する | [issue-0065-video-editor-escape-quit.md](issue-0065-video-editor-escape-quit.md) |
 | 2026-11-22 | #72 Vital の音色でメロディーを鳴らせる（CLAP ヘッドレス連携） | [issue-0072-vital-plugin-playback.md](issue-0072-vital-plugin-playback.md) |
 | 2026-11-22 | #73 音色を作成・保存・切り替えできる（プロジェクト内の音色管理） | [issue-0073-tone-management.md](issue-0073-tone-management.md) |
+| 2026-11-22 | #74 バグ: ピアノロールのヘッダでパネルラベルとクリップ名表示が重なる | [issue-0074-piano-roll-header-overlap.md](issue-0074-piano-roll-header-overlap.md) |
