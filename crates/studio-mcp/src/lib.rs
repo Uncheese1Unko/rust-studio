@@ -400,6 +400,18 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "set_clip_title",
+            "description": "クリップのタイトル文字列を設定する（空文字で消去、Issue #50）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "title": {"type": "string"},
+                },
+                "required": ["clip_id", "title"],
+            },
+        },
+        {
             "name": "set_track_volume",
             "description": "トラックの音量を設定する（0.0〜2.0、既定 1.0）",
             "inputSchema": {

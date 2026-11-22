@@ -819,3 +819,62 @@ fn legacy_json_without_bpm_loads_default_120() {
     let back: Project = serde_json::from_str(&json).unwrap();
     assert_eq!(back.bpm, 128.0);
 }
+
+#[test]
+fn set_clip_title_round_trips_through_json() {
+    // Issue #50（イシュー指定のテスト）: SetClipTitle で設定した
+    // タイトルが、JSON へ保存→読込しても一致する。空文字で消去。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.title_text, "", "初期値はタイトルなし（空文字）");
+
+    apply(
+        &mut p,
+        &Command::SetClipTitle {
+            clip_id,
+            title: "Opening Scene".into(),
+        },
+    )
+    .unwrap();
+    let json = p.dump_json();
+    assert!(json.contains("\"title_text\": \"Opening Scene\""), "{json}");
+    let loaded: Project = serde_json::from_str(&json).unwrap();
+    let (_, clip) = loaded.clip(clip_id).unwrap();
+    assert_eq!(clip.title_text, "Opening Scene");
+
+    // 旧形式（title_text フィールドなし）も空文字で読める
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value["tracks"][0]["clips"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("title_text");
+    let legacy = serde_json::to_string(&value).unwrap();
+    assert!(!legacy.contains("title_text"));
+    let loaded_legacy: Project = serde_json::from_str(&legacy).unwrap();
+    let (_, clip) = loaded_legacy.clip(clip_id).unwrap();
+    assert_eq!(clip.title_text, "");
+
+    // 空文字で消去できる
+    apply(
+        &mut p,
+        &Command::SetClipTitle {
+            clip_id,
+            title: String::new(),
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.title_text, "");
+
+    // 存在しないクリップはエラーで、状態は変わらない
+    let before = p.dump_json();
+    let result = apply(
+        &mut p,
+        &Command::SetClipTitle {
+            clip_id: 999_999,
+            title: "x".into(),
+        },
+    );
+    assert!(result.is_err());
+    assert_eq!(p.dump_json(), before);
+}

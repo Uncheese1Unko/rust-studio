@@ -58,6 +58,12 @@ pub enum Command {
         clip_id: u64,
         gain: f32,
     },
+    /// クリップのタイトル文字列を設定する（Issue #50）。
+    /// 空文字はタイトルなし（消去）。
+    SetClipTitle {
+        clip_id: u64,
+        title: String,
+    },
     SetTrackVolume {
         track_id: u64,
         volume: f32,
@@ -217,6 +223,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     color: None,
                     fade_in_ms: 0,
                     fade_out_ms: 0,
+                    title_text: String::new(),
                 });
             Ok(Some(id))
         }
@@ -306,6 +313,9 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 // （Issue #34、分割後の長さでクランプ）。
                 fade_in_ms: 0,
                 fade_out_ms: clip.fade_out_ms.min(right_duration),
+                // タイトルはクリップ全体への注釈として右側にも
+                // 引き継ぐ（Issue #50）。
+                title_text: clip.title_text.clone(),
             };
             let track = &mut project.tracks[track_idx];
             // 左クリップはフェードインを外側の端として引き継ぎ、
@@ -340,6 +350,20 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.gain = *gain;
+            Ok(None)
+        }
+        Command::SetClipTitle { clip_id, title } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.title_text = title.clone();
             Ok(None)
         }
         Command::SetTrackVolume { track_id, volume } => {

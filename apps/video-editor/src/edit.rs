@@ -230,6 +230,8 @@ pub struct ClipPlacement {
     color: Option<studio_core::ColorTag>,
     fade_in_ms: i64,
     fade_out_ms: i64,
+    // Issue #50: タイトルも「全パラメータ」に含める。
+    title_text: String,
 }
 
 impl ClipPlacement {
@@ -248,6 +250,7 @@ impl ClipPlacement {
             color: clip.color,
             fade_in_ms: clip.fade_in_ms,
             fade_out_ms: clip.fade_out_ms,
+            title_text: clip.title_text.clone(),
         }
     }
 
@@ -284,6 +287,12 @@ impl ClipPlacement {
                 clip_id: new_clip_id,
                 fade_in_ms: self.fade_in_ms,
                 fade_out_ms: self.fade_out_ms,
+            });
+        }
+        if !self.title_text.is_empty() {
+            cmds.push(Command::SetClipTitle {
+                clip_id: new_clip_id,
+                title: self.title_text.clone(),
             });
         }
         cmds
@@ -797,6 +806,46 @@ impl RenameSession {
     }
 }
 
+/// タイトル編集セッション（Issue #50）。リネーム（#57）と同じ
+/// インライン編集の意味論で、対象がクリップで確定コマンドが
+/// SetClipTitle になる。入力は英数字キーと貼り付けのみ（イシューの
+/// スコープ）: ASCII 英数字と空白・一部記号だけを受け付け、
+/// 日本語などの文字は取り込まない。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TitleSession {
+    pub clip_id: u64,
+    pub text: String,
+}
+
+impl TitleSession {
+    pub fn begin(clip_id: u64, current_title: &str) -> TitleSession {
+        TitleSession {
+            clip_id,
+            text: current_title.to_string(),
+        }
+    }
+
+    pub fn handle(&mut self, input: RenameInput) -> RenameAction {
+        match input {
+            RenameInput::Char(c) => {
+                if c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') {
+                    self.text.push(c);
+                }
+                RenameAction::Continue
+            }
+            RenameInput::Backspace => {
+                self.text.pop();
+                RenameAction::Continue
+            }
+            RenameInput::Enter => RenameAction::Commit(Command::SetClipTitle {
+                clip_id: self.clip_id,
+                title: self.text.clone(),
+            }),
+            RenameInput::Escape => RenameAction::Cancel,
+        }
+    }
+}
+
 /// 空き場所への配置コマンドを作る。トラックが無ければ None。
 pub fn place_clip_command(project: &Project, track_index: usize, at_ms: i64) -> Option<Command> {
     let track = project.tracks.get(track_index)?;
@@ -1121,6 +1170,40 @@ mod tests {
         assert_eq!(session.handle(RenameInput::Escape), RenameAction::Cancel);
     }
     #[test]
+    fn title_session_enter_commits_and_esc_cancels() {
+        // Issue #50: タイトル編集は Enter で SetClipTitle を発行し、
+        // Esc で中止する。入力は英数字のみ（日本語は取り込まない）。
+        let p = sample_project();
+        let clip_id = p.tracks[0].clips[0].id;
+        let mut session = TitleSession::begin(clip_id, "");
+        for c in "Op3n ing".chars() {
+            assert_eq!(session.handle(RenameInput::Char(c)), RenameAction::Continue);
+        }
+        assert_eq!(session.text, "Op3n ing");
+        // 日本語・制御文字は取り込まない（イシューのスコープ）
+        session.handle(RenameInput::Char('あ'));
+        session.handle(RenameInput::Char('\r'));
+        assert_eq!(session.text, "Op3n ing");
+        assert_eq!(
+            session.handle(RenameInput::Backspace),
+            RenameAction::Continue
+        );
+        assert_eq!(session.text, "Op3n in");
+        match session.handle(RenameInput::Enter) {
+            RenameAction::Commit(cmd) => assert_eq!(
+                cmd,
+                Command::SetClipTitle {
+                    clip_id,
+                    title: "Op3n in".into()
+                }
+            ),
+            other => panic!("expected Commit, got {other:?}"),
+        }
+        let mut session = TitleSession::begin(clip_id, "old");
+        session.handle(RenameInput::Char('X'));
+        assert_eq!(session.handle(RenameInput::Escape), RenameAction::Cancel);
+    }
+    #[test]
     fn ctrl_z_restores_state_before_last_edit() {
         // Issue #31（指定テスト）: Ctrl+Z で直前の編集前に戻る。
         let mut history = studio_core::History::new(sample_project());
@@ -1273,6 +1356,14 @@ mod tests {
             },
         )
         .unwrap();
+        apply(
+            &mut project,
+            &Command::SetClipTitle {
+                clip_id: clip,
+                title: "Tuned Title".into(),
+            },
+        )
+        .unwrap();
         (project, track, clip)
     }
 
@@ -1281,7 +1372,7 @@ mod tests {
         // Issue #44（イシュー指定のテスト）: 複製は元クリップの直後に
         // 置かれ、全パラメータ（cutout を含む）を引き継ぐ。ここでの
         // 「全パラメータ」は設定コマンドで復元できる gain / pitch /
-        // cutout / color / fade を指す。offset_ms は設定コマンドが
+        // cutout / color / fade / title（#50 で追加）を指す。offset_ms は設定コマンドが
         // 無く引き継げない既知の制限で、#63 で追跡している
         // （レビュー指摘を受けて範囲を明記）。
         let (mut project, _track, clip_id) = project_with_tuned_clip();
@@ -1314,6 +1405,7 @@ mod tests {
         assert_eq!(dup.color, src.color);
         assert_eq!(dup.fade_in_ms, src.fade_in_ms);
         assert_eq!(dup.fade_out_ms, src.fade_out_ms);
+        assert_eq!(dup.title_text, src.title_text);
         assert_eq!(dup.duration_ms, src.duration_ms);
     }
 

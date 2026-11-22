@@ -1,0 +1,181 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue50/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue50",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 4,
+          "name": "scene",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "scene.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": ""
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.4, timeline.track.2, preview, media-bin
+media prepared: scene.mp4 -> 80 frames
+media bin: bg.mp4, interview.mp4, opening.mp4, scene.mp4
+preview textures loaded: 80
+preview: source=scene.mp4 playhead=0 source_time=0 frame=0
+preview: source=scene.mp4 playhead=139 source_time=139 frame=1
+preview: source=scene.mp4 playhead=211 source_time=211 frame=2
+preview: source=scene.mp4 playhead=300 source_time=300 frame=3
+preview: source=scene.mp4 playhead=427 source_time=427 frame=4
+preview: source=scene.mp4 playhead=502 source_time=502 frame=5
+preview: source=scene.mp4 playhead=607 source_time=607 frame=6
+preview: source=scene.mp4 playhead=722 source_time=722 frame=7
+preview: source=scene.mp4 playhead=824 source_time=824 frame=8
+preview: source=scene.mp4 playhead=926 source_time=926 frame=9
+preview: source=scene.mp4 playhead=1001 source_time=1001 frame=10
+preview: source=scene.mp4 playhead=1101 source_time=1101 frame=11
+preview: source=scene.mp4 playhead=1222 source_time=1222 frame=12
+preview: source=scene.mp4 playhead=1318 source_time=1318 frame=13
+preview: source=scene.mp4 playhead=1408 source_time=1408 frame=14
+preview: source=scene.mp4 playhead=1541 source_time=1541 frame=15
+preview: source=scene.mp4 playhead=1616 source_time=1616 frame=16
+preview: source=scene.mp4 playhead=1715 source_time=1715 frame=17
+preview: source=scene.mp4 playhead=1893 source_time=1893 frame=18
+preview: source=scene.mp4 playhead=1983 source_time=1983 frame=19
+preview: source=scene.mp4 playhead=2012 source_time=2012 frame=20
+preview: source=scene.mp4 playhead=2108 source_time=2108 frame=21
+preview: source=scene.mp4 playhead=2203 source_time=2203 frame=22
+title input begin: clip 4
+preview: source=scene.mp4 playhead=2320 source_time=2320 frame=23
+preview: source=scene.mp4 playhead=2413 source_time=2413 frame=24
+preview: source=scene.mp4 playhead=2507 source_time=2507 frame=25
+preview: source=scene.mp4 playhead=2616 source_time=2616 frame=26
+preview: source=scene.mp4 playhead=2709 source_time=2709 frame=27
+preview: source=scene.mp4 playhead=2812 source_time=2812 frame=28
+preview: source=scene.mp4 playhead=2974 source_time=2974 frame=29
+preview: source=scene.mp4 playhead=3001 source_time=3001 frame=30
+preview: source=scene.mp4 playhead=3173 source_time=3173 frame=31
+preview: source=scene.mp4 playhead=3201 source_time=3201 frame=32
+preview: source=scene.mp4 playhead=3371 source_time=3371 frame=33
+preview: source=scene.mp4 playhead=3461 source_time=3461 frame=34
+preview: source=scene.mp4 playhead=3508 source_time=3508 frame=35
+preview: source=scene.mp4 playhead=3668 source_time=3668 frame=36
+preview: source=scene.mp4 playhead=3762 source_time=3762 frame=37
+preview: source=scene.mp4 playhead=3857 source_time=3857 frame=38
+preview: source=scene.mp4 playhead=3955 source_time=3955 frame=39
+preview: source=scene.mp4 playhead=4064 source_time=4064 frame=40
+preview: source=scene.mp4 playhead=4155 source_time=4155 frame=41
+preview: source=scene.mp4 playhead=4211 source_time=4211 frame=42
+preview: source=scene.mp4 playhead=4307 source_time=4307 frame=43
+preview: source=scene.mp4 playhead=4420 source_time=4420 frame=44
+preview: source=scene.mp4 playhead=4549 source_time=4549 frame=45
+preview: source=scene.mp4 playhead=4666 source_time=4666 frame=46
+preview: source=scene.mp4 playhead=4767 source_time=4767 frame=47
+preview: source=scene.mp4 playhead=4851 source_time=4851 frame=48
+after title: {
+  "name": "issue50",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 4,
+          "name": "scene",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "scene.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "Op3n"
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=scene.mp4 playhead=4946 source_time=4946 frame=49
+preview: source=scene.mp4 playhead=5056 source_time=5056 frame=50
+preview: source=scene.mp4 playhead=5153 source_time=5153 frame=51
+preview: source=scene.mp4 playhead=5255 source_time=5255 frame=52
+preview: source=scene.mp4 playhead=5346 source_time=5346 frame=53
+preview: source=scene.mp4 playhead=5401 source_time=5401 frame=54
+preview: source=scene.mp4 playhead=5550 source_time=5550 frame=55
+preview: source=scene.mp4 playhead=5651 source_time=5651 frame=56
+preview: source=scene.mp4 playhead=5735 source_time=5735 frame=57
+preview: source=scene.mp4 playhead=5840 source_time=5840 frame=58
+preview: source=scene.mp4 playhead=5935 source_time=5935 frame=59
+preview: source=scene.mp4 playhead=6037 source_time=6037 frame=60
+preview: source=scene.mp4 playhead=6138 source_time=6138 frame=61
+preview: source=scene.mp4 playhead=6256 source_time=6256 frame=62
+preview: source=scene.mp4 playhead=6354 source_time=6354 frame=63
+preview: source=scene.mp4 playhead=6457 source_time=6457 frame=64
+preview: source=scene.mp4 playhead=6558 source_time=6558 frame=65
+preview: source=scene.mp4 playhead=6632 source_time=6632 frame=66
+preview: source=scene.mp4 playhead=6737 source_time=6737 frame=67
+preview: source=scene.mp4 playhead=6842 source_time=6842 frame=68
+title input begin: clip 4
+preview: source=scene.mp4 playhead=6933 source_time=6933 frame=69
+preview: source=scene.mp4 playhead=7033 source_time=7033 frame=70
+preview: source=scene.mp4 playhead=7143 source_time=7143 frame=71
+preview: source=scene.mp4 playhead=7222 source_time=7222 frame=72
+preview: source=scene.mp4 playhead=7332 source_time=7332 frame=73
+preview: source=scene.mp4 playhead=7426 source_time=7426 frame=74
+preview: source=scene.mp4 playhead=7563 source_time=7563 frame=75
+preview: source=scene.mp4 playhead=7632 source_time=7632 frame=76
+preview: source=scene.mp4 playhead=7726 source_time=7726 frame=77
+preview: source=scene.mp4 playhead=7823 source_time=7823 frame=78
+title input cancelled

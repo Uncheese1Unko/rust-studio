@@ -36,6 +36,9 @@ struct Model {
     header_clicks: edit::ClickTracker,
     rename: Option<edit::RenameSession>,
     selected_track: Option<u64>,
+    // Issue #50: タイトル編集セッションと T キーの前回状態。
+    title_input: Option<edit::TitleSession>,
+    prev_t_down: bool,
     // Issue #10: プレビュー再生の状態。
     frames: media::FrameStore,
     textures: std::collections::HashMap<std::path::PathBuf, wgpu::Texture>,
@@ -267,6 +270,8 @@ fn model(app: &App) -> Model {
         clicks: edit::ClickTracker::new(),
         header_clicks: edit::ClickTracker::new(),
         rename: None,
+        title_input: None,
+        prev_t_down: false,
         selected_track: initial_selected,
         frames,
         textures,
@@ -464,7 +469,7 @@ fn event(app: &App, model: &mut Model, event: Event) {
         mouse_wheel(app, model, delta);
         return;
     }
-    if model.rename.is_none() {
+    if model.rename.is_none() && model.title_input.is_none() {
         return;
     }
     let Event::WindowEvent {
@@ -481,6 +486,27 @@ fn event(app: &App, model: &mut Model, event: Event) {
         WindowEvent::KeyPressed(Key::Escape) => edit::RenameInput::Escape,
         _ => return,
     };
+    // タイトル編集中（Issue #50）はそちらへ先に流す（リネームとは
+    // 同時に始まらない）。
+    if let Some(session) = model.title_input.as_mut() {
+        let action = session.handle(input);
+        match action {
+            edit::RenameAction::Continue => {}
+            edit::RenameAction::Cancel => {
+                model.title_input = None;
+                println!("title input cancelled");
+            }
+            edit::RenameAction::Commit(cmd) => match model.history.apply(&cmd) {
+                Ok(_) => {
+                    model.title_input = None;
+                    println!("after title: {}", model.history.project().dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("title rejected: {e}"),
+            },
+        }
+        return;
+    }
     let action = model.rename.as_mut().expect("checked above").handle(input);
     match action {
         edit::RenameAction::Continue => {}
@@ -500,9 +526,9 @@ fn event(app: &App, model: &mut Model, event: Event) {
 }
 
 fn update(app: &App, model: &mut Model, update: Update) {
-    if model.rename.is_some() {
-        // リネーム編集中はポインタ操作と切り抜きキーを受け付けない
-        // （Issue #57）。再生ヘッドとプレビューは進み続ける。
+    if model.rename.is_some() || model.title_input.is_some() {
+        // リネーム／タイトル編集中はポインタ操作と切り抜きキーを受け
+        // 付けない（Issue #57 / #50）。再生ヘッドとプレビューは進み続ける。
         model.prev_left_down = app.mouse.buttons.left().is_down();
         // エッジ検出用の prev は編集中も同期する（バグ #60: 同期しないと
         // K を押したままリネームを確定した直後に切り抜きが誤発する）。
@@ -517,6 +543,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
             app.keys.down.contains(&Key::V),
         );
         model.bin_reload_key_down = app.keys.down.contains(&Key::R);
+        model.prev_t_down = app.keys.down.contains(&Key::T);
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
@@ -528,6 +555,34 @@ fn update(app: &App, model: &mut Model, update: Update) {
             reload_media_bin(model);
         }
         model.bin_reload_key_down = r_down;
+        // タイトル編集の開始（Issue #50）: T キーの離しエッジ。
+        // 押下エッジで始めると、同じ押下の文字イベント（'t'）が
+        // セッション開始後に届いてバッファへ混入しうるため、離して
+        // から始める（文字イベントは押下時に届き、その時点では
+        // セッションが無いので捨てられる）。
+        // 対象は選択中トラックの再生ヘッド位置にあるクリップ
+        // （複製・コピペと同じ対象規則）。
+        let t_down = app.keys.down.contains(&Key::T);
+        if !t_down && model.prev_t_down {
+            let target = model.selected_track.and_then(|track_id| {
+                model
+                    .history
+                    .project()
+                    .track(track_id)?
+                    .clips
+                    .iter()
+                    .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+                    .map(|c| (c.id, c.title_text.clone()))
+            });
+            match target {
+                Some((clip_id, current)) => {
+                    model.title_input = Some(edit::TitleSession::begin(clip_id, &current));
+                    println!("title input begin: clip {clip_id}");
+                }
+                None => println!("title input: no clip at playhead on selected track"),
+            }
+        }
+        model.prev_t_down = t_down;
     }
     watch_project_file(app, model);
 
@@ -1358,6 +1413,34 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .font_size(12)
                 .color(rgb(0.45, 0.45, 0.50));
         }
+    }
+
+    // タイトル（Issue #50）: 再生区間のクリップにタイトルがあれば、
+    // プレビューの画面下部中央に白・28px 固定で重ねる。
+    if let Some(clip) = media::active_video_clip(model.history.project(), model.playhead_ms) {
+        if !clip.title_text.is_empty() {
+            let (tx, ty) = rect_center(
+                win,
+                PREVIEW_X,
+                PREVIEW_Y + PREVIEW_H - 36.0,
+                PREVIEW_W,
+                32.0,
+            );
+            draw.text(&clip.title_text)
+                .x_y(tx, ty)
+                .font_size(28)
+                .color(rgb(1.0, 1.0, 1.0));
+        }
+    }
+
+    // タイトル編集中は入力バッファをプレビュー上部に表示する
+    // （Issue #50）。確定は Enter、中止は Esc（event 側）。
+    if let Some(session) = &model.title_input {
+        let (tx, ty) = rect_center(win, PREVIEW_X, PREVIEW_Y - 24.0, PREVIEW_W, 18.0);
+        draw.text(&format!("TITLE: {}_", session.text))
+            .x_y(tx, ty)
+            .font_size(13)
+            .color(rgb(0.95, 0.85, 0.40));
     }
 
     // 切り抜きジョブの進捗（実行中のみ、プレビューの下に表示する）。

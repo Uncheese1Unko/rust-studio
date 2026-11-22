@@ -53,6 +53,7 @@ fn tools_list_exposes_all_commands() {
         "set_bpm",
         "remove_clip",
         "set_clip_gain",
+        "set_clip_title",
         "set_track_volume",
         "set_track_pan",
         "set_track_mute",
@@ -733,4 +734,56 @@ fn set_bpm_tool_applies_via_tools_call() {
     assert_eq!(res["result"]["isError"], true, "{res}");
     let dump_after = project_dump_via_tool(&server);
     assert_eq!(dump, dump_after, "rejected call must not change state");
+}
+
+#[test]
+fn set_clip_title_tool_applies_via_tools_call() {
+    // Issue #50: set_clip_title が tools/call 経由で適用でき、ダンプで
+    // title_text が観測できる。空文字で消去。存在しないクリップは
+    // エラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        80,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        81,
+        "add_clip",
+        json!({"track_id": 1, "name": "opening", "start_ms": 0, "duration_ms": 4000, "source": "opening.mp4"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        82,
+        "set_clip_title",
+        json!({"clip_id": 2, "title": "Opening Scene"}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].clips[0].title_text, "Opening Scene");
+    // 存在しないクリップはエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        83,
+        "set_clip_title",
+        json!({"clip_id": 999, "title": "x"}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    // 空文字で消去できる
+    let res = call_tool(
+        &server,
+        84,
+        "set_clip_title",
+        json!({"clip_id": 2, "title": ""}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].clips[0].title_text, "");
 }

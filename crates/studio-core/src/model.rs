@@ -62,6 +62,11 @@ pub struct Clip {
     /// 旧形式の JSON では 0。
     #[serde(default)]
     pub fade_out_ms: i64,
+    /// タイトル文字列（Issue #50）。空文字 = タイトルなし。
+    /// プレビューでは再生区間の画面下部中央に重ねて表示する。
+    /// 旧形式の JSON では空文字。
+    #[serde(default)]
+    pub title_text: String,
 }
 
 impl Clip {
