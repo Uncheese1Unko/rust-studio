@@ -1,0 +1,163 @@
+project file mode: /tmp/daw62/project.json
+daw (issue #14: timeline UI)
+{
+  "name": "offset duplicate drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "phrase",
+          "start_ms": 0,
+          "duration_ms": 8500,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 1500,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 2.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 3
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.2
+after duplicate: {
+  "name": "offset duplicate drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "phrase",
+          "start_ms": 0,
+          "duration_ms": 8500,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 1500,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 2.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 3,
+          "name": "phrase",
+          "start_ms": 8500,
+          "duration_ms": 8500,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 1500,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 2.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 4
+}
+copied clip: phrase
+after paste: {
+  "name": "offset duplicate drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "phrase",
+          "start_ms": 0,
+          "duration_ms": 8500,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 1500,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 2.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 3,
+          "name": "phrase",
+          "start_ms": 8500,
+          "duration_ms": 8500,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 1500,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 2.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        },
+        {
+          "id": 4,
+          "name": "phrase",
+          "start_ms": 4241,
+          "duration_ms": 8500,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 1500,
+          "gain": 0.5,
+          "cutout": false,
+          "pitch_semitones": 2.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
