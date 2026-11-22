@@ -62,7 +62,7 @@ pub enum MidiImportError {
     SequentialFormatNotSupported,
     /// ノートが1つも無い（何も取り込めない）。
     NoNotes,
-    /// コマンド適用の失敗（事前検証を通るため通常は起きない）。
+    /// コマンド適用の失敗（変換結果は検証済みのため通常は起きない）。
     Command(CommandError),
 }
 
@@ -264,8 +264,8 @@ fn convert_track(
 }
 
 /// 変換したコマンド列をプロジェクトへ適用する共通処理。
-/// `apply_fn` はコマンド適用の実体（シミュレーション用と実適用で
-/// 切り替える）。作成された ID を後続コマンドが使う。
+/// `apply_fn` はコマンド適用の実体（組み立て先のプロジェクトへの
+/// 適用）。作成された ID を後続コマンドが使う。
 fn run<F>(apply_fn: &mut F, import: &MidiImport) -> Result<ImportSummary, CommandError>
 where
     F: FnMut(&Command) -> Result<Option<u64>, CommandError>,
