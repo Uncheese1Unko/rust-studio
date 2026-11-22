@@ -237,6 +237,43 @@ pub fn advance_playhead(current_ms: i64, dt_ms: i64, end_ms: i64) -> i64 {
     }
 }
 
+/// ループ範囲を考慮して再生ヘッドを進める（Issue #40）。
+/// ループが有効で範囲が空でない間は、範囲の終端で始端＋余りに
+/// 巻き戻る。それ以外は advance_playhead と同じ。
+pub fn advance_playhead_in_loop(
+    current_ms: i64,
+    dt_ms: i64,
+    end_ms: i64,
+    loop_range: Option<(i64, i64)>,
+    loop_on: bool,
+) -> i64 {
+    if loop_on {
+        if let Some((start, end)) = loop_range {
+            if end > start {
+                let next = current_ms + dt_ms;
+                if next >= end {
+                    return start + (next - end) % (end - start);
+                }
+                return next;
+            }
+        }
+    }
+    advance_playhead(current_ms, dt_ms, end_ms)
+}
+
+/// ルーラーのドラッグ（始点と現在位置）からループ範囲を作る
+/// （Issue #40）。向きは正規化し、始点は 0 未満にならない。
+/// 50ms 未満のドラッグは範囲にしない（誤操作のクリックとみなす）。
+pub fn loop_range_from_drag(anchor_ms: i64, current_ms: i64) -> Option<(i64, i64)> {
+    let start = anchor_ms.min(current_ms).max(0);
+    let end = anchor_ms.max(current_ms);
+    if end - start >= 50 {
+        Some((start, end))
+    } else {
+        None
+    }
+}
+
 /// タイムライン全体の識別子（ADR-0005: UI 要素には安定した識別子）。
 pub fn timeline_id() -> &'static str {
     "timeline"
@@ -394,6 +431,54 @@ mod tests {
         // スクロールは 0 未満にならない
         assert_eq!(base.scroll_by(-500).offset_ms, 0);
         assert_eq!(base.scroll_by(700).offset_ms, 700);
+    }
+
+    #[test]
+    fn transport_loops_back_at_range_end() {
+        // Issue #40（イシュー指定名）: ループ範囲の終端を越える
+        // advance は始端＋余りに戻る。
+        let range = Some((1_000, 3_000));
+        assert_eq!(
+            advance_playhead_in_loop(2_900, 200, 10_000, range, true),
+            1_100
+        );
+        assert_eq!(
+            advance_playhead_in_loop(1_000, 500, 10_000, range, true),
+            1_500
+        );
+        // 大きく越えても範囲内に収まる
+        assert_eq!(
+            advance_playhead_in_loop(2_900, 5_200, 10_000, range, true),
+            2_100
+        );
+        // ループ OFF / 範囲なしでは通常の前進（終端で全体を巻き戻す）
+        assert_eq!(
+            advance_playhead_in_loop(2_900, 200, 10_000, range, false),
+            3_100
+        );
+        assert_eq!(
+            advance_playhead_in_loop(2_900, 200, 10_000, None, true),
+            3_100
+        );
+        assert_eq!(
+            advance_playhead_in_loop(9_900, 200, 10_000, range, false),
+            100
+        );
+        // 空の範囲（start >= end）はループとして扱わない
+        assert_eq!(
+            advance_playhead_in_loop(2_900, 200, 10_000, Some((3_000, 1_000)), true),
+            3_100
+        );
+    }
+
+    #[test]
+    fn loop_range_from_drag_normalizes_and_needs_length() {
+        // Issue #40: ルーラーのドラッグから範囲を作る（向きは正規化、
+        // 短すぎるドラッグは範囲にしない）。
+        assert_eq!(loop_range_from_drag(3_000, 1_000), Some((1_000, 3_000)));
+        assert_eq!(loop_range_from_drag(1_000, 3_000), Some((1_000, 3_000)));
+        assert_eq!(loop_range_from_drag(1_000, 1_020), None);
+        assert_eq!(loop_range_from_drag(-500, 1_000), Some((0, 1_000)));
     }
 
     #[test]

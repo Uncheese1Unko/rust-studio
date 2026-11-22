@@ -170,6 +170,14 @@ struct Model {
     // Issue #38: タイムラインの表示スケール（倍率と左端オフセット。
     // 表示状態で、プロジェクトには保存しない）。
     view_scale: timeline::ViewScale,
+    // Issue #40: ループ再生の範囲と ON/OFF（再生状態。プロジェクト
+    // には保存しない）。OFF にすると範囲も消える。
+    loop_range: Option<(i64, i64)>,
+    loop_on: bool,
+    // Issue #40: ルーラーで範囲をドラッグ中の始点と現在位置（ms）。
+    loop_drag_anchor_ms: Option<i64>,
+    loop_drag_pointer_ms: i64,
+    prev_esc_down: bool,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -299,6 +307,9 @@ fn compute_audio_map(project: &Project, dropped_source: &str) -> HashMap<String,
 }
 
 fn model(app: &App) -> Model {
+    // Esc はループ解除（Issue #40）とリネーム／BPM 編集のキャンセル
+    // （Issue #56/#35）で使うため、nannou 既定の「Esc で終了」を切る。
+    app.set_exit_on_escape(false);
     let (tone220, tone440, dropped) = prepare_demo_media();
     let (project, project_file, file_stamp) = initial_project(&tone220, &tone440);
     println!("daw (issue #14: timeline UI)");
@@ -351,6 +362,11 @@ fn model(app: &App) -> Model {
         bpm_edit: None,
         metronome_on: false,
         view_scale: timeline::ViewScale::default(),
+        loop_range: None,
+        loop_on: false,
+        loop_drag_anchor_ms: None,
+        loop_drag_pointer_ms: 0,
+        prev_esc_down: false,
     }
 }
 
@@ -652,7 +668,21 @@ fn update(app: &App, model: &mut Model, update: Update) {
         sampler.advance(dt_ms);
     }
     let end = timeline::project_end_ms(model.history.project());
-    model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end);
+    model.playhead_ms = timeline::advance_playhead_in_loop(
+        model.playhead_ms,
+        dt_ms,
+        end,
+        model.loop_range,
+        model.loop_on,
+    );
+    // ループ解除（Issue #40）: Esc で範囲と ON を消す。
+    let esc_down = app.keys.down.contains(&Key::Escape);
+    if esc_down && !model.prev_esc_down && (model.loop_on || model.loop_range.is_some()) {
+        model.loop_on = false;
+        model.loop_range = None;
+        println!("loop: cleared");
+    }
+    model.prev_esc_down = esc_down;
     // レベルメーター（Issue #27）: 再生位置の直後のミックスを
     // レンダリングしてピークを取る（読み取り専用。音声処理には
     // 手を入れない）。再生位置が 50ms 以上動いたときだけ再計算する。
@@ -1113,6 +1143,17 @@ fn handle_pointer(app: &App, model: &mut Model) {
             model.prev_left_down = left_down;
             return;
         }
+        // ループトグル（Issue #40）: OFF にすると範囲も消える。
+        let l_r = loop_rect(model.history.project().tracks.len());
+        if lx >= l_r.x && lx < l_r.x + l_r.w && ly >= l_r.y && ly < l_r.y + l_r.h {
+            model.loop_on = !model.loop_on;
+            if !model.loop_on {
+                model.loop_range = None;
+            }
+            println!("loop: {}", if model.loop_on { "on" } else { "off" });
+            model.prev_left_down = left_down;
+            return;
+        }
         // BPM 表示（Issue #35）: クリックで入力モードに入る。
         let bpm_r = bpm_rect(model.history.project().tracks.len());
         if lx >= bpm_r.x && lx < bpm_r.x + bpm_r.w && ly >= bpm_r.y && ly < bpm_r.y + bpm_r.h {
@@ -1192,6 +1233,14 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 println!("rename begin: track {}", track.id);
             }
         }
+        // ループ範囲の指定（Issue #40）: ルーラー上のドラッグで範囲を
+        // 作る。クリップのドラッグとは領域が重ならない。
+        if ly < timeline::RULER_HEIGHT_PX && lx >= timeline::HEADER_WIDTH_PX {
+            model.loop_drag_anchor_ms = Some(pointer_ms);
+            model.loop_drag_pointer_ms = pointer_ms;
+            model.prev_left_down = left_down;
+            return;
+        }
         let target = edit::hit_test(model.history.project(), win.w(), &model.view_scale, lx, ly);
         if let Some(drag) = edit::Drag::begin(model.history.project(), &target, pointer_ms) {
             model.drag = Some(drag);
@@ -1253,6 +1302,20 @@ fn handle_pointer(app: &App, model: &mut Model) {
             println!("command rejected during drag: {rejection}");
         }
         model.last_drag_cmd = None;
+    }
+
+    // ループ範囲ドラッグの追随と確定（Issue #40）。
+    if let Some(anchor) = model.loop_drag_anchor_ms {
+        if left_down {
+            model.loop_drag_pointer_ms = pointer_ms;
+        } else {
+            model.loop_drag_anchor_ms = None;
+            if let Some((start, end)) = timeline::loop_range_from_drag(anchor, pointer_ms) {
+                model.loop_range = Some((start, end));
+                model.loop_on = true;
+                println!("loop range: {start}..{end}");
+            }
+        }
     }
 
     model.prev_left_down = left_down;
@@ -1339,6 +1402,16 @@ fn metronome_rect(track_count: usize) -> mixer::Rect {
     }
 }
 
+/// ループトグルのチップ（Issue #40）。メトロノームチップの右隣。
+fn loop_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 228.0,
+        y: transport_top(track_count) + 38.0,
+        w: 180.0,
+        h: 16.0,
+    }
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     let win = app.window_rect();
@@ -1376,6 +1449,31 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(nx + 10.0, win.h() / 2.0 - timeline::RULER_HEIGHT_PX / 2.0)
             .font_size(10)
             .color(rgb(r, g, b));
+    }
+    // ループ範囲（Issue #40）: ルーラー上に淡いピンクの帯を重ねる。
+    // ドラッグ中は仮の範囲も同じ見た目で出す。
+    {
+        let shown = match (model.loop_drag_anchor_ms, model.loop_range) {
+            (Some(anchor), _) => Some((
+                anchor.min(model.loop_drag_pointer_ms).max(0),
+                anchor.max(model.loop_drag_pointer_ms),
+            )),
+            (None, range) => range,
+        };
+        if let Some((start, end)) = shown {
+            let x0 = timeline::time_to_x(start, win.w(), &model.view_scale);
+            let x1 = timeline::time_to_x(end, win.w(), &model.view_scale);
+            let (cx, cy) = rect_center(win, x0, 0.0, (x1 - x0).max(1.0), timeline::RULER_HEIGHT_PX);
+            draw.rect()
+                .x_y(cx, cy)
+                .w_h((x1 - x0).max(1.0), timeline::RULER_HEIGHT_PX)
+                .color(rgb(
+                    theme::ACCENT_SOFT.0,
+                    theme::ACCENT_SOFT.1,
+                    theme::ACCENT_SOFT.2,
+                ));
+            draw_hline(&draw, win, timeline::RULER_HEIGHT_PX - 2.0, theme::ACCENT);
+        }
     }
     // トラック行（timeline.track.<id>）。
     for (index, track) in model.history.project().tracks.iter().enumerate() {
@@ -1870,6 +1968,19 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .x_y(mcx, mcy)
         .font_size(10)
         .color(rgb(m_text_color.0, m_text_color.1, m_text_color.2));
+        // ループトグル（Issue #40）: ON はピンクのチップ。
+        let l_r = loop_rect(count);
+        let (l_face, l_text_color) = if model.loop_on {
+            (theme::ACCENT, theme::PANEL)
+        } else {
+            (theme::PANEL_SUNK, theme::TEXT_SUB)
+        };
+        draw_rounded_rect(&draw, win, l_r, 4.0, l_face);
+        let (lcx, lcy) = rect_center(win, l_r.x, l_r.y, l_r.w, l_r.h);
+        draw.text(if model.loop_on { "LOOP ON" } else { "LOOP OFF" })
+            .x_y(lcx, lcy)
+            .font_size(10)
+            .color(rgb(l_text_color.0, l_text_color.1, l_text_color.2));
     }
 
     // 色選択パネル（Issue #58）: トランスポートの下。TRACK 行は選択中
