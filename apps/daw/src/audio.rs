@@ -1586,3 +1586,89 @@ mod note_render_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod note_solo_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{apply, Command, Instrument, TrackKind};
+
+    #[test]
+    fn render_mix_note_track_respects_solo() {
+        // レビュー Minor-2（Issue #68）: ソロ（#39）の規則もノートに
+        // 波形クリップと同じに効く。ソロしたトラックのノートだけが
+        // 鳴り、非ソロ側のノートは鳴らない。
+        let mut p = Project::new("solo-notes");
+        let mut audio = HashMap::new();
+        audio.insert("tone.wav".to_string(), sine(220.0, 3_000, 0.4));
+        audio.insert("other.wav".to_string(), sine(330.0, 3_000, 0.4));
+        let mut track_ids = Vec::new();
+        for source in ["tone.wav", "other.wav"] {
+            let track = apply(
+                &mut p,
+                &Command::AddTrack {
+                    name: source.into(),
+                    kind: TrackKind::Audio,
+                },
+            )
+            .unwrap()
+            .unwrap();
+            apply(
+                &mut p,
+                &Command::SetTrackInstrument {
+                    track_id: track,
+                    instrument: Some(Instrument::Sampler {
+                        source: source.into(),
+                        root_note: 60,
+                    }),
+                },
+            )
+            .unwrap();
+            let clip = apply(
+                &mut p,
+                &Command::AddClip {
+                    track_id: track,
+                    name: "melody".into(),
+                    start_ms: 0,
+                    duration_ms: 1_000,
+                    source: String::new(),
+                },
+            )
+            .unwrap()
+            .unwrap();
+            apply(
+                &mut p,
+                &Command::AddNote {
+                    clip_id: clip,
+                    pitch: 60,
+                    start_ms: 0,
+                    duration_ms: 1_000,
+                    velocity: 127,
+                },
+            )
+            .unwrap();
+            track_ids.push(track);
+        }
+        // ソロなしでは両方のノートが鳴る
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(goertzel(&w, RATE, 220.0) > 0.05);
+        assert!(goertzel(&w, RATE, 330.0) > 0.05);
+        // other.wav のトラックをソロにすると 330Hz だけが残る
+        apply(
+            &mut p,
+            &Command::SetTrackSolo {
+                track_id: track_ids[1],
+                solo: true,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(goertzel(&w, RATE, 330.0) > 0.05, "solo track must sound");
+        assert!(
+            goertzel(&w, RATE, 220.0) < 0.01,
+            "non-solo track must be silent"
+        );
+    }
+}

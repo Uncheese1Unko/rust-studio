@@ -633,6 +633,15 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             track_id,
             instrument,
         } => {
+            // 楽器の不変条件（ADR-0016）: サンプラーの root_note は
+            // 素材の原音の MIDI ノート番号（0–127）。
+            if let Some(Instrument::Sampler { root_note, .. }) = instrument {
+                if *root_note > 127 {
+                    return Err(CommandError::InvalidRange(
+                        "root_note must be within 0..=127",
+                    ));
+                }
+            }
             let track = project
                 .track_mut(*track_id)
                 .ok_or(CommandError::TrackNotFound(*track_id))?;
@@ -672,7 +681,9 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .iter_mut()
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
-            if start_ms + duration_ms > clip.duration_ms {
+            // 加算ではなく減算で比べる（start_ms が巨大な入力でも
+            // オーバーフローで検証を素通り／panic しないため）。
+            if *duration_ms > clip.duration_ms - *start_ms {
                 return Err(CommandError::InvalidRange("note must fit within the clip"));
             }
             clip.notes.push(Note {

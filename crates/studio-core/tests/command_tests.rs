@@ -1475,3 +1475,52 @@ fn legacy_json_without_notes_and_instrument_loads_with_defaults() {
     assert!(p.tracks[0].clips[0].notes.is_empty());
     assert_eq!(p.tracks[0].instrument, None);
 }
+
+#[test]
+fn add_note_rejects_overflowing_range_and_keeps_state() {
+    // レビュー Major-1（Issue #68）: start_ms + duration_ms の加算が
+    // オーバーフローすると検証を素通り／panic する。巨大値でも
+    // InvalidRange で状態不変でなければならない。
+    let (mut project, _track, clip) = project_with_note_clip();
+    let before = project.dump_json();
+    let err = apply(
+        &mut project,
+        &Command::AddNote {
+            clip_id: clip,
+            pitch: 60,
+            start_ms: i64::MAX - 10,
+            duration_ms: 100,
+            velocity: 100,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CommandError::InvalidRange("note must fit within the clip")
+    );
+    assert_eq!(project.dump_json(), before);
+}
+
+#[test]
+fn set_track_instrument_rejects_out_of_range_root_note() {
+    // レビュー Major-2（Issue #68）: root_note は MIDI ノート番号
+    // （0–127）。範囲外は InvalidRange で状態不変。
+    let (mut project, track, _clip) = project_with_note_clip();
+    let before = project.dump_json();
+    let err = apply(
+        &mut project,
+        &Command::SetTrackInstrument {
+            track_id: track,
+            instrument: Some(Instrument::Sampler {
+                source: "x.wav".into(),
+                root_note: 200,
+            }),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CommandError::InvalidRange("root_note must be within 0..=127")
+    );
+    assert_eq!(project.dump_json(), before);
+}
