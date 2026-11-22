@@ -1756,24 +1756,27 @@ fn set_track_instrument_plugin_rejects_empty_plugin_path() {
 #[test]
 fn set_track_instrument_plugin_rejects_empty_preset_path() {
     // プリセットパスは None（既定状態）か非空のパスのどちらか。
+    // 空白のみも plugin_path と同じく弾く（Issue #72 レビュー Minor）。
     let (mut p, track_id, _clip_id) = project_with_note_clip();
     let before = p.dump_json();
-    let err = apply(
-        &mut p,
-        &Command::SetTrackInstrument {
-            track_id,
-            instrument: Some(Instrument::Plugin {
-                format: PluginFormat::Clap,
-                plugin_path: "/plugins/Vital.clap".into(),
-                preset_path: Some(String::new()),
-            }),
-        },
-    )
-    .unwrap_err();
-    assert_eq!(
-        err,
-        CommandError::InvalidRange("preset_path must not be empty")
-    );
+    for preset in ["", "   "] {
+        let err = apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id,
+                instrument: Some(Instrument::Plugin {
+                    format: PluginFormat::Clap,
+                    plugin_path: "/plugins/Vital.clap".into(),
+                    preset_path: Some(preset.into()),
+                }),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            CommandError::InvalidRange("preset_path must not be empty")
+        );
+    }
     assert_eq!(p.dump_json(), before);
 }
 

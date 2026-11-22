@@ -195,6 +195,9 @@ struct Model {
     // Issue #72: プラグイントラックのレンダリング失敗（明示的な
     // エラー状態。空なら正常）。トラック名＋理由の文字列で持つ。
     plugin_errors: Vec<String>,
+    // Issue #72: プラグイン関連状態の指紋の前回値。変化したら
+    // 事前レンダリングをやり直す（レビュー Major 対応）。
+    plugin_fingerprint: u64,
     // Issue #42: 直近のドロップ処理時刻（秒）。複数ファイルの
     // ドロップは先頭1件だけ処理するためのバースト判定に使う。
     last_drop_at: Option<f32>,
@@ -366,6 +369,7 @@ fn model(app: &App) -> Model {
     // 配置用素材も波形を用意しておく（配置直後から波形が出るように）
     refresh_waveforms(&project, &dropped, &mut waveforms, &mut source_durations);
     let (audio_map, initial_plugin_errors) = compute_audio_map(&project, &dropped);
+    let initial_fingerprint = plugin::plugin_fingerprint(&project);
     for error in &initial_plugin_errors {
         println!("plugin error [{}]: {}", error.track_name, error.message);
     }
@@ -424,6 +428,7 @@ fn model(app: &App) -> Model {
         prev_esc_down: false,
         export_status: None,
         plugin_errors: format_plugin_errors(&initial_plugin_errors),
+        plugin_fingerprint: initial_fingerprint,
         last_drop_at: None,
     }
 }
@@ -909,6 +914,21 @@ fn update(app: &App, model: &mut Model, update: Update) {
         handle_roll_keys(app, model);
         handle_edit_keys(app, model);
         handle_pitch_keys(app, model);
+    }
+    // Issue #72 レビュー対応: プラグイン関連の状態（楽器・
+    // プリセット・ノート・クリップ配置）が変わったら事前
+    // レンダリングをやり直す。ピアノロール編集・タイムライン
+    // 編集・Undo/Redo・外部再読込の全経路をここで一括りにする。
+    // ドラッグ中（左ボタン押下中）は確定まで遅らせる。
+    let fp = plugin::plugin_fingerprint(model.history.project());
+    if fp != model.plugin_fingerprint && !app.mouse.buttons.left().is_down() {
+        model.plugin_fingerprint = fp;
+        let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
+        model.audio_map = map;
+        model.plugin_errors = format_plugin_errors(&errors);
+        for error in &errors {
+            println!("plugin error [{}]: {}", error.track_name, error.message);
+        }
     }
     let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
     if !renaming {

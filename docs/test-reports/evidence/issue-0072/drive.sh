@@ -82,21 +82,63 @@ sleep 1
 shot shot1-timeline-plugin-error.png
 kill -0 $GUI_PID 2>/dev/null || { echo "FAIL: GUI died"; kill $XVFB_PID 2>/dev/null; exit 1; }
 # トランスポートのエラー表示は ACCENT (#FF2E88) で描かれる。
-# エラー文字列の想定域（x>=612, チップ行）にピンク画素があること。
+# 実測域（x 500..730, y 304..320）にピンク画素があること。
+# 小さい文字のアンチエイリアスで淡くなるため閾値は緩めにする。
 python3 - "$OUT/shot1-timeline-plugin-error.png" <<'PYEOF' || { echo "FAIL: no accent pixels in error area"; kill $GUI_PID $XVFB_PID 2>/dev/null; exit 1; }
 from PIL import Image
 import sys
 im = Image.open(sys.argv[1]).convert('RGB')
-w, h = im.size
 hits = 0
-for y in range(h):
-    for x in range(612, w):
+for y in range(304, 320):
+    for x in range(500, 730):
         r, g, b = im.getpixel((x, y))
-        if r > 200 and g < 110 and 100 < b < 190:
+        if r > 190 and g < 185 and 110 < b < 215 and r - b > 35:
             hits += 1
-print(f"accent pixels in error area: {hits}")
-sys.exit(0 if hits > 30 else 1)
+print(f"accent pixels in error band: {hits}")
+sys.exit(0 if hits > 100 else 1)
 PYEOF
+
+# --- 3) 外部変更（監視経路）: 起動中にプロジェクトファイルを
+#         書き換えて壊れたプラグインパスを直し、再読込後に
+#         エラー表示が消えることを確認する（Issue #72 レビュー
+#         Major の再現テスト: 再読込だけでは事前レンダリングと
+#         エラー状態が更新されなかった経路）。
+python3 - "$LIVE" "$FIXTURE" <<'PYEOF'
+import json, sys
+path, plugin = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    project = json.load(f)
+for track in project["tracks"]:
+    inst = track.get("instrument")
+    if isinstance(inst, dict) and inst.get("type") == "plugin":
+        if "nonexistent" in inst.get("plugin_path", ""):
+            inst["plugin_path"] = plugin
+with open(path, "w") as f:
+    json.dump(project, f)
+PYEOF
+for i in $(seq 1 40); do grep -q "project reloaded:" "$OUT/gui-stdout.txt" && break; sleep 0.5; done
+grep -q "project reloaded:" "$OUT/gui-stdout.txt" \
+  || { echo "FAIL: watch reload did not happen"; kill $GUI_PID $XVFB_PID 2>/dev/null; exit 1; }
+sleep 3
+shot shot2-after-external-fix.png
+python3 - "$OUT/shot1-timeline-plugin-error.png" "$OUT/shot2-after-external-fix.png" <<'PYEOF' || { echo "FAIL: error display did not clear"; kill $GUI_PID $XVFB_PID 2>/dev/null; exit 1; }
+from PIL import Image
+import sys
+def hits(path):
+    im = Image.open(path).convert('RGB')
+    n = 0
+    for y in range(304, 320):
+        for x in range(500, 730):
+            r, g, b = im.getpixel((x, y))
+            if r > 190 and g < 185 and 110 < b < 215 and r - b > 35:
+                n += 1
+    return n
+before, after = hits(sys.argv[1]), hits(sys.argv[2])
+print(f"accent pixels in error band before/after external fix: {before} -> {after}")
+sys.exit(0 if after < 20 else 1)
+PYEOF
+[ "$(grep -c 'plugin error \[BROKEN\]' "$OUT/gui-stdout.txt")" = "1" ] \
+  || { echo "FAIL: broken error re-reported or missing"; kill $GUI_PID $XVFB_PID 2>/dev/null; exit 1; }
 kill $GUI_PID 2>/dev/null
 kill $XVFB_PID 2>/dev/null
 echo "DRIVE OK"

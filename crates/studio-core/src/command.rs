@@ -667,7 +667,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     return Err(CommandError::InvalidRange("plugin_path must not be empty"));
                 }
                 if let Some(preset) = preset_path {
-                    if preset.is_empty() {
+                    if preset.trim().is_empty() {
                         return Err(CommandError::InvalidRange("preset_path must not be empty"));
                     }
                 }

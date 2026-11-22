@@ -189,6 +189,58 @@ pub fn default_helper_path() -> PathBuf {
     PathBuf::from("plugin-host")
 }
 
+/// プラグインの事前レンダリングに影響する状態の指紋（FNV-1a）。
+/// 楽器・プリセット（参照先ファイルの内容を含む）・クリップ配置・
+/// ノートが変われば値が変わる。音量やゲインのように render_mix が
+/// その場で適用する値は含めない。GUI はこの値の変化を見て
+/// 事前レンダリングをやり直す（Issue #72 レビュー Major 対応:
+/// GUI 編集・Undo・外部再読込の全経路で無効化を効かせるため）。
+pub fn plugin_fingerprint(project: &Project) -> u64 {
+    let mut text = String::new();
+    for track in &project.tracks {
+        let Some(Instrument::Plugin {
+            format,
+            plugin_path,
+            preset_path,
+        }) = &track.instrument
+        else {
+            continue;
+        };
+        text.push_str(&format!(
+            "track:{}:{:?}:{}:{:?}:",
+            track.id, format, plugin_path, preset_path
+        ));
+        if let Some(path) = preset_path {
+            match std::fs::read(path) {
+                Ok(bytes) => text.push_str(&format!("preset#{};", fnv1a(&bytes))),
+                Err(_) => text.push_str("preset#missing;"),
+            }
+        }
+        for clip in &track.clips {
+            text.push_str(&format!(
+                "clip:{}:{}:{};",
+                clip.id, clip.start_ms, clip.duration_ms
+            ));
+            for note in &clip.notes {
+                text.push_str(&format!(
+                    "n{}:{}:{}:{};",
+                    note.pitch, note.start_ms, note.duration_ms, note.velocity
+                ));
+            }
+        }
+    }
+    fnv1a(text.as_bytes())
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
 /// プロジェクト内の全プラグイントラックを事前レンダリングする。
 /// 戻り値は（音声マップへの追加分、トラック単位のエラー一覧）。
 /// ノートの無いプラグイントラックは対象外（鳴らすものが無い）。
@@ -285,6 +337,10 @@ mod tests {
     /// 標準レイアウトではプロファイルディレクトリ（target/debug 等）の
     /// 直下に並ぶが、環境によっては build/<pkg>/<hash>/out/ に
     /// 置かれるため、直下に無ければ配下を再帰探索する。
+    fn temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("rs-plugin-{}-{}", name, std::process::id()))
+    }
+
     fn target_debug_file(name: &str) -> PathBuf {
         let exe = std::env::current_exe().unwrap();
         let profile_dir = exe
@@ -476,6 +532,141 @@ mod tests {
             "error must name the preset: {}",
             errors[0].message
         );
+    }
+
+    fn plugin_project(preset_path: Option<String>) -> (Project, u64, u64) {
+        let mut project = Project::new("fp-test");
+        let track = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "T".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let clip = apply(
+            &mut project,
+            &Command::AddClip {
+                track_id: track,
+                name: "melody".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: String::new(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: Some(Instrument::Plugin {
+                    format: PluginFormat::Clap,
+                    plugin_path: "/x.clap".into(),
+                    preset_path,
+                }),
+            },
+        )
+        .unwrap();
+        (project, track, clip)
+    }
+
+    #[test]
+    fn fingerprint_changes_with_plugin_relevant_state() {
+        // 楽器の設定・ノートの追加/移動・クリップの移動・プリセット
+        // ファイルの内容変更で指紋が変わる（Issue #72 レビュー
+        // Major: 事前レンダリングの無効化条件）。
+        let preset = temp_path("fp-preset");
+        std::fs::write(&preset, "{\"gain\": 0.5}").unwrap();
+        let mut bare = Project::new("fp-bare");
+        apply(
+            &mut bare,
+            &Command::AddTrack {
+                name: "T".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap();
+        let (mut project, _track, clip) =
+            plugin_project(Some(preset.to_string_lossy().into_owned()));
+        let plugin_fp = plugin_fingerprint(&project);
+        assert_ne!(plugin_fingerprint(&bare), plugin_fp);
+        apply(
+            &mut project,
+            &Command::AddNote {
+                clip_id: clip,
+                pitch: 69,
+                start_ms: 0,
+                duration_ms: 500,
+                velocity: 100,
+            },
+        )
+        .unwrap();
+        let note_fp = plugin_fingerprint(&project);
+        assert_ne!(plugin_fp, note_fp);
+        apply(
+            &mut project,
+            &Command::MoveNote {
+                clip_id: clip,
+                note_index: 0,
+                new_pitch: 69,
+                new_start_ms: 100,
+            },
+        )
+        .unwrap();
+        let moved_note_fp = plugin_fingerprint(&project);
+        assert_ne!(note_fp, moved_note_fp);
+        apply(
+            &mut project,
+            &Command::MoveClip {
+                clip_id: clip,
+                new_start_ms: 300,
+            },
+        )
+        .unwrap();
+        let moved_clip_fp = plugin_fingerprint(&project);
+        assert_ne!(moved_note_fp, moved_clip_fp);
+        std::fs::write(&preset, "{\"gain\": 0.25}").unwrap();
+        assert_ne!(moved_clip_fp, plugin_fingerprint(&project));
+        std::fs::remove_file(&preset).ok();
+    }
+
+    #[test]
+    fn fingerprint_ignores_unrelated_changes() {
+        // 音量・クリップゲイン（どちらも render_mix がその場で
+        // 適用する）では指紋は変わらない。無駄な再レンダリングを
+        // 避けるための確認。
+        let (mut project, track, clip) = plugin_project(None);
+        apply(
+            &mut project,
+            &Command::AddNote {
+                clip_id: clip,
+                pitch: 69,
+                start_ms: 0,
+                duration_ms: 500,
+                velocity: 100,
+            },
+        )
+        .unwrap();
+        let fp = plugin_fingerprint(&project);
+        apply(
+            &mut project,
+            &Command::SetTrackVolume {
+                track_id: track,
+                volume: 0.5,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::SetClipGain {
+                clip_id: clip,
+                gain: 0.5,
+            },
+        )
+        .unwrap();
+        assert_eq!(fp, plugin_fingerprint(&project));
     }
 
     #[test]

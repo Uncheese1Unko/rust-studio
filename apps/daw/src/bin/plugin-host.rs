@@ -134,7 +134,11 @@ fn run(req: &Request) -> Result<(), Box<dyn std::error::Error>> {
         let block_frames = BLOCK.min(total_frames - frame_pos);
         // このブロックにかかるノートイベントを集める。
         let mut events = EventBuffer::new();
-        for note in &req.notes {
+        // ノート ID は連番にする（Issue #72 レビュー Minor: 音高を
+        // 流用すると同音高の重なりで ID が衝突し、実プラグインが
+        // 2つ目を無視したり両方止めたりしうる）。
+        for (index, note) in req.notes.iter().enumerate() {
+            let note_id = index as u32;
             let on = (note.start_ms * req.sample_rate as f64 / 1000.0).round() as i64;
             let off = ((note.start_ms + note.duration_ms) * req.sample_rate as f64 / 1000.0).round()
                 as i64;
@@ -143,14 +147,14 @@ fn run(req: &Request) -> Result<(), Box<dyn std::error::Error>> {
             if on >= block_start && on < block_end {
                 events.push(&NoteOnEvent::new(
                     (on - block_start) as u32,
-                    Pckn::new(0u16, 0u16, note.pitch as u16, note.pitch as u32),
+                    Pckn::new(0u16, 0u16, note.pitch as u16, note_id),
                     note.velocity as f64 / 127.0,
                 ));
             }
             if off >= block_start && off < block_end {
                 events.push(&NoteOffEvent::new(
                     (off - block_start) as u32,
-                    Pckn::new(0u16, 0u16, note.pitch as u16, note.pitch as u32),
+                    Pckn::new(0u16, 0u16, note.pitch as u16, note_id),
                     0.0,
                 ));
             }
