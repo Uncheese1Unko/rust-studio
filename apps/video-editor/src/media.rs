@@ -437,7 +437,7 @@ fn extract_frames_sized(
         }
     }
     clear_frame_files(out_dir);
-    let pattern = out_dir.join("f%03d.png");
+    let pattern = out_dir.join("f%05d.png");
     let status = ProcCommand::new("ffmpeg")
         .arg("-y")
         .arg("-loglevel")
@@ -469,8 +469,21 @@ fn extract_frames_sized(
                 .collect()
         })
         .unwrap_or_default();
-    paths.sort();
+    sort_frame_paths(&mut paths);
     paths
+}
+
+/// フレーム列を数値順に並べる（Issue #54 レビュー Medium）。
+/// 文字列ソートでは f1000.png が f101.png より前に来てしまう。
+pub fn sort_frame_paths(paths: &mut [PathBuf]) {
+    fn frame_number(p: &Path) -> u64 {
+        p.file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.strip_prefix('f'))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(u64::MAX)
+    }
+    paths.sort_by_key(|p| frame_number(p));
 }
 
 /// プロジェクトの映像クリップについてフレーム列を準備する。
@@ -590,16 +603,16 @@ pub fn export_frame_at(project: &Project, t_ms: i64) -> ExportFrame {
     let Some(clip) = active_video_clip(project, t_ms) else {
         return ExportFrame::Black;
     };
-    if let Some(blend) = transition_blend(project, t_ms) {
-        return ExportFrame::Blend(blend);
-    }
     let source_time_ms =
         source_time_ms(clip, t_ms).unwrap_or_else(|| clip.offset_ms + (t_ms - clip.start_ms));
+    // プレビューの優先順位と同じ: 切り抜き合成 ＞ ブレンド ＞ 素フレーム
     if clip.cutout {
         ExportFrame::Cutout {
             source: clip.source.clone(),
             source_time_ms,
         }
+    } else if let Some(blend) = transition_blend(project, t_ms) {
+        ExportFrame::Blend(blend)
     } else {
         ExportFrame::Clip {
             source: clip.source.clone(),
@@ -663,7 +676,9 @@ fn sample_at(audio: &DecodedAudio, pos: f64, out_ch: usize) -> f32 {
     let i0 = pos.floor().max(0.0) as usize;
     let frac = (pos - pos.floor()) as f32;
     let pick = |frame: usize| -> f32 {
-        let frame = frame.min(frames - 1);
+        if frame >= frames {
+            return 0.0; // 素材の終端を超えたら無音（DAW と同じ）
+        }
         let src_ch = if channels == 1 {
             0
         } else {
@@ -883,6 +898,23 @@ pub struct ExportReport {
     pub out_path: PathBuf,
 }
 
+/// 書き出しの作業ディレクトリ（出力先＋設定から決定的に決まる）。
+pub fn export_work_dir(out_path: &Path, settings: &ExportSettings) -> PathBuf {
+    media_dir().join(format!(
+        "export-{:016x}",
+        fnv1a(
+            format!(
+                "{}-{}x{}@{}",
+                out_path.display(),
+                settings.width,
+                settings.height,
+                settings.fps
+            )
+            .as_bytes()
+        )
+    ))
+}
+
 /// タイムライン全体を mp4 に書き出す（ADR-0015）。進捗は
 /// （済みフレーム数, 全フレーム数）でコールバックへ知らせる。
 /// 出力は一時ファイルへ書いてからリネームする。
@@ -896,19 +928,7 @@ pub fn export_mp4(
     if plan.frame_count == 0 {
         return Err("書き出す内容がありません（タイムラインが空です）".into());
     }
-    let work = media_dir().join(format!(
-        "export-{:016x}",
-        fnv1a(
-            format!(
-                "{}-{}x{}@{}",
-                out_path.display(),
-                settings.width,
-                settings.height,
-                settings.fps
-            )
-            .as_bytes()
-        )
-    ));
+    let work = export_work_dir(out_path, &settings);
     std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     let store = prepare_export_frames(project, &settings, &work);
     let preview_store = prepare_media(project);
@@ -917,6 +937,11 @@ pub fn export_mp4(
         .save(&black)
         .map_err(|e| e.to_string())?;
     let frames_dir = work.join("frames");
+    // Issue #54 レビュー Major: 前回の書き出しのフレームが残ると
+    // 連番に混入して出力が長くなる。開始時に必ず空にする。
+    if frames_dir.exists() {
+        std::fs::remove_dir_all(&frames_dir).map_err(|e| e.to_string())?;
+    }
     std::fs::create_dir_all(&frames_dir).map_err(|e| e.to_string())?;
     for i in 0..plan.frame_count {
         let t_ms = (i as i64 * 1000) / settings.fps as i64;
@@ -936,7 +961,9 @@ pub fn export_mp4(
     let mix = mix_audio(project, plan.duration_ms);
     let wav = work.join("mix.wav");
     write_mix_wav(&wav, &mix)?;
-    let tmp_out = work.join("encoded.mp4");
+    // 一時ファイルは書き出し先と同じディレクトリに作る
+    // （別ファイルシステム越しの rename は失敗するため。ADR-0015）
+    let tmp_out = out_path.with_extension("tmp.mp4");
     let pattern = frames_dir.join("f%05d.png");
     let status = ProcCommand::new("ffmpeg")
         .arg("-y")
@@ -960,6 +987,7 @@ pub fn export_mp4(
         .status()
         .map_err(|e| format!("ffmpeg を起動できません: {e}"))?;
     if !status.success() {
+        let _ = std::fs::remove_file(&tmp_out);
         return Err(format!("ffmpeg が失敗しました（{status}）"));
     }
     if let Some(parent) = out_path.parent() {
@@ -1313,6 +1341,131 @@ mod tests {
         // 左チャンネルと右チャンネルは同じ（パン中央、モノラル素材）
         assert_eq!(mix[(500 * 48) * 2], mix[(500 * 48) * 2 + 1]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn sort_frame_paths_orders_numerically() {
+        // Issue #54 レビュー Medium: フレーム列の並びは数値順。
+        // 文字列ソートでは f1000.png が f101.png より前に来て、
+        // 30fps では約33秒超の素材で順序が入れ替わってしまう。
+        let mut paths: Vec<PathBuf> = ["f1000.png", "f101.png", "f099.png", "f100.png", "f009.png"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        sort_frame_paths(&mut paths);
+        let names: Vec<String> = paths
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            names,
+            ["f009.png", "f099.png", "f100.png", "f101.png", "f1000.png"]
+        );
+    }
+
+    #[test]
+    fn sample_at_returns_silence_beyond_source_end() {
+        // Issue #54 レビュー Minor: 素材の終端を超えたら DAW の
+        // render_mix と同じく無音（最後のサンプルの保持ではない）。
+        let audio = DecodedAudio {
+            channels: 1,
+            sample_rate: 48_000,
+            samples: vec![0.5; 4],
+        };
+        assert_eq!(sample_at(&audio, 1.0, 0), 0.5);
+        assert_eq!(sample_at(&audio, 10.0, 0), 0.0);
+    }
+
+    #[test]
+    fn export_frame_at_prefers_cutout_over_blend() {
+        // Issue #54 レビュー Minor: プレビューの優先順位は
+        // 切り抜き合成 ＞ ブレンド。書き出しも同じ規則にする。
+        let mut p = project();
+        let interview = active_video_clip(&p, 3_000).unwrap().clone();
+        apply(
+            &mut p,
+            &Command::MoveClip {
+                clip_id: interview.id,
+                new_start_ms: 2_000,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetClipTransition {
+                clip_id: interview.id,
+                kind: studio_core::TransitionKind::CrossDissolve,
+                duration_ms: 500,
+            },
+        )
+        .unwrap();
+        for track in &mut p.tracks {
+            for clip in &mut track.clips {
+                if clip.id == interview.id {
+                    clip.cutout = true;
+                }
+            }
+        }
+        assert!(matches!(
+            export_frame_at(&p, 2_250),
+            ExportFrame::Cutout { .. }
+        ));
+    }
+
+    #[test]
+    fn export_mp4_reexport_does_not_mix_stale_frames() {
+        // Issue #54 レビュー Major: 同じ出力先へ短くして再書き出し
+        // しても、前回のフレームが作業ディレクトリに残って混入
+        // しない（開始時にフレーム置き場を空にする）。
+        let settings = ExportSettings {
+            width: 160,
+            height: 90,
+            fps: 10,
+        };
+        let out = std::env::temp_dir().join(format!(
+            "rust-studio-test-reexport-{}.mp4",
+            std::process::id()
+        ));
+        let work = export_work_dir(&out, &settings);
+        let frames_dir = work.join("frames");
+        std::fs::create_dir_all(&frames_dir).unwrap();
+        // 前回の長い書き出しの残骸を置く
+        for i in 0..20 {
+            std::fs::write(frames_dir.join(format!("f{i:05}.png")), b"stale").unwrap();
+        }
+        // 500ms のプロジェクト（10fps で 5 フレーム）
+        let mut p = Project::new("short");
+        let v = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: v,
+                name: "c".into(),
+                start_ms: 0,
+                duration_ms: 500,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap();
+        // エンコード成否は環境依存のため見ない（フレーム列の衛生が対象）
+        let _ = export_mp4(&p, &out, settings, &mut |_, _| {});
+        let remaining: Vec<String> = std::fs::read_dir(&frames_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".png"))
+            .collect();
+        assert_eq!(remaining.len(), 5, "残ったフレーム: {remaining:?}");
+        std::fs::remove_dir_all(&work).ok();
+        std::fs::remove_file(&out).ok();
     }
 }
 
