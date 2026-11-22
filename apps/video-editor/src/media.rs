@@ -128,9 +128,12 @@ pub fn active_video_clip(project: &Project, playhead_ms: i64) -> Option<&Clip> {
 }
 
 /// クリップ内でのソース時刻。範囲外なら None。
+/// 素材時刻は「offset_ms + クリップ内位置」（Issue #43）。分割や
+/// 左トリムで進んだ offset を加味しないと、右クリップが素材の頭
+/// から再生し直してしまう。
 pub fn source_time_ms(clip: &Clip, playhead_ms: i64) -> Option<i64> {
     if playhead_ms >= clip.start_ms && playhead_ms < clip.end_ms() {
-        Some(playhead_ms - clip.start_ms)
+        Some(clip.offset_ms + (playhead_ms - clip.start_ms))
     } else {
         None
     }
@@ -470,6 +473,40 @@ mod tests {
         assert_eq!(frame_index(100, 10), 1);
         assert_eq!(frame_index(2_500, 10), 25);
         assert_eq!(frame_index(-100, 10), 0);
+    }
+
+    #[test]
+    fn frame_at_uses_clip_offset() {
+        // Issue #43: 分割した右クリップは素材の続きを表示する。
+        // フレーム選択は「素材時刻 = offset_ms + クリップ内位置」。
+        let mut p = project();
+        let opening = active_video_clip(&p, 0).unwrap().clone();
+        // opening は 0..2000。これを 500 で分割すると右クリップは
+        // start 500 / offset 500 になる。
+        apply(
+            &mut p,
+            &Command::SplitClip {
+                clip_id: opening.id,
+                at_ms: 500,
+            },
+        )
+        .unwrap();
+        let right = p.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.start_ms == 500)
+            .expect("right clip exists");
+        assert_eq!(right.offset_ms, 500);
+        // 右クリップの先頭（再生ヘッド 500）は素材時刻 500
+        // ＝フレーム 5（10fps）であって、素材の頭（フレーム 0）
+        // ではない。
+        let st = source_time_ms(right, 500).unwrap();
+        assert_eq!(st, 500);
+        assert_eq!(frame_index(st, 10), 5);
+        // 右クリップの途中も続きになる。
+        let st = source_time_ms(right, 1_500).unwrap();
+        assert_eq!(st, 1_500);
+        assert_eq!(frame_index(st, 10), 15);
     }
 
     #[test]

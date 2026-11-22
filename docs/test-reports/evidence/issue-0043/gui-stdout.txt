@@ -1,0 +1,178 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue43/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue43",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "long",
+          "start_ms": 0,
+          "duration_ms": 6000,
+          "source": "/tmp/split43/long.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": ""
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 4
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.track.2, preview, media-bin
+sample media generated: /tmp/rust-studio-video-editor-media/opening.mp4
+sample media generated: /tmp/rust-studio-video-editor-media/interview.mp4
+sample media generated: /tmp/rust-studio-video-editor-media/bgm.wav
+sample media generated: /tmp/rust-studio-video-editor-media/bg.mp4
+media prepared: /tmp/split43/long.mp4 -> 60 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 60
+preview: source=/tmp/split43/long.mp4 playhead=0 source_time=0 frame=0
+preview: source=/tmp/split43/long.mp4 playhead=125 source_time=125 frame=1
+preview: source=/tmp/split43/long.mp4 playhead=214 source_time=214 frame=2
+preview: source=/tmp/split43/long.mp4 playhead=320 source_time=320 frame=3
+preview: source=/tmp/split43/long.mp4 playhead=416 source_time=416 frame=4
+preview: source=/tmp/split43/long.mp4 playhead=500 source_time=500 frame=5
+preview: source=/tmp/split43/long.mp4 playhead=614 source_time=614 frame=6
+preview: source=/tmp/split43/long.mp4 playhead=702 source_time=702 frame=7
+preview: source=/tmp/split43/long.mp4 playhead=807 source_time=807 frame=8
+preview: source=/tmp/split43/long.mp4 playhead=912 source_time=912 frame=9
+preview: source=/tmp/split43/long.mp4 playhead=1017 source_time=1017 frame=10
+preview: source=/tmp/split43/long.mp4 playhead=1104 source_time=1104 frame=11
+preview: source=/tmp/split43/long.mp4 playhead=1205 source_time=1205 frame=12
+preview: source=/tmp/split43/long.mp4 playhead=1305 source_time=1305 frame=13
+preview: source=/tmp/split43/long.mp4 playhead=1402 source_time=1402 frame=14
+preview: source=/tmp/split43/long.mp4 playhead=1510 source_time=1510 frame=15
+preview: source=/tmp/split43/long.mp4 playhead=1604 source_time=1604 frame=16
+preview: source=/tmp/split43/long.mp4 playhead=1706 source_time=1706 frame=17
+preview: source=/tmp/split43/long.mp4 playhead=1814 source_time=1814 frame=18
+preview: source=/tmp/split43/long.mp4 playhead=1903 source_time=1903 frame=19
+preview: source=/tmp/split43/long.mp4 playhead=2016 source_time=2016 frame=20
+preview: source=/tmp/split43/long.mp4 playhead=2105 source_time=2105 frame=21
+preview: source=/tmp/split43/long.mp4 playhead=2218 source_time=2218 frame=22
+preview: source=/tmp/split43/long.mp4 playhead=2315 source_time=2315 frame=23
+preview: source=/tmp/split43/long.mp4 playhead=2411 source_time=2411 frame=24
+preview: source=/tmp/split43/long.mp4 playhead=2502 source_time=2502 frame=25
+preview: source=/tmp/split43/long.mp4 playhead=2617 source_time=2617 frame=26
+preview: source=/tmp/split43/long.mp4 playhead=2703 source_time=2703 frame=27
+preview: source=/tmp/split43/long.mp4 playhead=2878 source_time=2878 frame=28
+preview: source=/tmp/split43/long.mp4 playhead=2968 source_time=2968 frame=29
+preview: source=/tmp/split43/long.mp4 playhead=3065 source_time=3065 frame=30
+preview: source=/tmp/split43/long.mp4 playhead=3177 source_time=3177 frame=31
+preview: source=/tmp/split43/long.mp4 playhead=3269 source_time=3269 frame=32
+preview: source=/tmp/split43/long.mp4 playhead=3363 source_time=3363 frame=33
+preview: source=/tmp/split43/long.mp4 playhead=3462 source_time=3462 frame=34
+preview: source=/tmp/split43/long.mp4 playhead=3500 source_time=3500 frame=35
+media prepared: /tmp/split43/long.mp4 -> 60 frames
+preview textures loaded: 60
+after split: {
+  "name": "issue43",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "long",
+          "start_ms": 0,
+          "duration_ms": 3562,
+          "source": "/tmp/split43/long.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": ""
+        },
+        {
+          "id": 4,
+          "name": "long",
+          "start_ms": 3562,
+          "duration_ms": 2438,
+          "source": "/tmp/split43/long.mp4",
+          "offset_ms": 3562,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": ""
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=/tmp/split43/long.mp4 playhead=3581 source_time=3581 frame=35
+preview: source=/tmp/split43/long.mp4 playhead=5417 source_time=5417 frame=54
+preview: source=/tmp/split43/long.mp4 playhead=5565 source_time=5565 frame=55
+preview: source=/tmp/split43/long.mp4 playhead=5676 source_time=5676 frame=56
+preview: source=/tmp/split43/long.mp4 playhead=5756 source_time=5756 frame=57
+preview: source=/tmp/split43/long.mp4 playhead=5803 source_time=5803 frame=58
+preview: source=/tmp/split43/long.mp4 playhead=5954 source_time=5954 frame=59
+preview: source=/tmp/split43/long.mp4 playhead=66 source_time=66 frame=0
+preview: source=/tmp/split43/long.mp4 playhead=158 source_time=158 frame=1
+preview: source=/tmp/split43/long.mp4 playhead=258 source_time=258 frame=2
+preview: source=/tmp/split43/long.mp4 playhead=360 source_time=360 frame=3
+preview: source=/tmp/split43/long.mp4 playhead=457 source_time=457 frame=4
+preview: source=/tmp/split43/long.mp4 playhead=556 source_time=556 frame=5
+preview: source=/tmp/split43/long.mp4 playhead=655 source_time=655 frame=6
+preview: source=/tmp/split43/long.mp4 playhead=755 source_time=755 frame=7
+preview: source=/tmp/split43/long.mp4 playhead=844 source_time=844 frame=8
+preview: source=/tmp/split43/long.mp4 playhead=912 source_time=912 frame=9
+preview: source=/tmp/split43/long.mp4 playhead=1052 source_time=1052 frame=10
+preview: source=/tmp/split43/long.mp4 playhead=1142 source_time=1142 frame=11
+preview: source=/tmp/split43/long.mp4 playhead=1253 source_time=1253 frame=12
+preview: source=/tmp/split43/long.mp4 playhead=1356 source_time=1356 frame=13
+preview: source=/tmp/split43/long.mp4 playhead=1452 source_time=1452 frame=14

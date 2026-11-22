@@ -39,6 +39,8 @@ struct Model {
     // Issue #50: タイトル編集セッションと T キーの前回状態。
     title_input: Option<edit::TitleSession>,
     prev_t_down: bool,
+    // Issue #43: S キー（分割）の前回状態。
+    prev_s_down: bool,
     // Issue #53: 直近のドロップ時刻（複数ファイルのバースト判定）。
     last_drop_at: Option<f32>,
     // Issue #10: プレビュー再生の状態。
@@ -274,6 +276,7 @@ fn model(app: &App) -> Model {
         rename: None,
         title_input: None,
         prev_t_down: false,
+        prev_s_down: false,
         last_drop_at: None,
         selected_track: initial_selected,
         frames,
@@ -414,6 +417,43 @@ fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
             save_project_file(model);
         }
         Err(e) => println!("drop rejected: {} ({e})", path.display()),
+    }
+}
+
+/// 再生ヘッド位置でのクリップ分割（Issue #43）。選択中トラックで
+/// 再生ヘッドが内側にあるクリップを SplitClip コマンドで分ける。
+/// 分割後は素材展開・テクスチャを取り直し、右クリップが素材の
+/// 続きを表示できるようにする（フレーム選択は media.rs が
+/// offset_ms を加味する）。対象が無い・コアが拒否した場合は
+/// 理由をログに出して状態を変えない。
+fn split_at_playhead(app: &App, model: &mut Model) {
+    let target = model.selected_track.and_then(|track_id| {
+        model
+            .history
+            .project()
+            .track(track_id)?
+            .clips
+            .iter()
+            .find(|c| model.playhead_ms > c.start_ms && model.playhead_ms < c.end_ms())
+            .map(|c| c.id)
+    });
+    let Some(clip_id) = target else {
+        println!("split: no clip interior at playhead on selected track");
+        return;
+    };
+    let cmd = studio_core::Command::SplitClip {
+        clip_id,
+        at_ms: model.playhead_ms,
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            model.frames = media::prepare_media(model.history.project());
+            model.textures = load_textures(app, model.history.project(), &model.frames);
+            model.last_preview = None;
+            println!("after split: {}", model.history.project().dump_json());
+            save_project_file(model);
+        }
+        Err(e) => println!("split rejected: {e}"),
     }
 }
 
@@ -626,6 +666,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
         );
         model.bin_reload_key_down = app.keys.down.contains(&Key::R);
         model.prev_t_down = app.keys.down.contains(&Key::T);
+        model.prev_s_down = app.keys.down.contains(&Key::S);
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
@@ -665,6 +706,13 @@ fn update(app: &App, model: &mut Model, update: Update) {
             }
         }
         model.prev_t_down = t_down;
+        // 分割（Issue #43）: S キーの押下エッジ。対象は選択中
+        // トラックで再生ヘッドが内側（両端を除く）にあるクリップ。
+        let s_down = app.keys.down.contains(&Key::S);
+        if s_down && !model.prev_s_down {
+            split_at_playhead(app, model);
+        }
+        model.prev_s_down = s_down;
     }
     watch_project_file(app, model);
 
