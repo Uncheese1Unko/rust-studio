@@ -149,6 +149,18 @@ pub enum Command {
         duration_ms: i64,
         velocity: u8,
     },
+    /// ノートを移動する（音高と開始位置。長さは変えない、Issue #69）
+    MoveNote {
+        clip_id: u64,
+        note_index: usize,
+        new_pitch: u8,
+        new_start_ms: i64,
+    },
+    /// ノートを1つ削除する（Issue #69）
+    RemoveNote {
+        clip_id: u64,
+        note_index: usize,
+    },
     /// テスト専用（Issue #61）：状態を変更してから失敗するコマンド。
     /// 実コマンドは全て「検証 → 変更」の順で失敗時に状態を変えないため、
     /// `History::apply_transient` の失敗時復元を再現するにはこの
@@ -692,6 +704,62 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 duration_ms: *duration_ms,
                 velocity: *velocity,
             });
+            Ok(None)
+        }
+        Command::MoveNote {
+            clip_id,
+            note_index,
+            new_pitch,
+            new_start_ms,
+        } => {
+            // 移動後もノートの不変条件（ADR-0016）を保つ。長さは
+            // 既存のノートのものをそのまま使う。
+            if *new_pitch > 127 {
+                return Err(CommandError::InvalidRange("pitch must be within 0..=127"));
+            }
+            if *new_start_ms < 0 {
+                return Err(CommandError::InvalidRange("note start_ms must be >= 0"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            let note = clip
+                .notes
+                .get_mut(*note_index)
+                .ok_or(CommandError::InvalidRange("note index out of range"))?;
+            // 減算形で比べる（AddNote と同じくオーバーフロー回避）。
+            if note.duration_ms > clip.duration_ms - *new_start_ms {
+                return Err(CommandError::InvalidRange("note must fit within the clip"));
+            }
+            note.pitch = *new_pitch;
+            note.start_ms = *new_start_ms;
+            Ok(None)
+        }
+        Command::RemoveNote {
+            clip_id,
+            note_index,
+        } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            if *note_index >= clip.notes.len() {
+                return Err(CommandError::InvalidRange("note index out of range"));
+            }
+            clip.notes.remove(*note_index);
             Ok(None)
         }
         // テスト専用（Issue #61）：トラックを追加（id も消費）してから

@@ -36,6 +36,7 @@ pub const TIMELINE_LABEL: &str = "02 TIMELINE";
 pub const MIXER_LABEL: &str = "03 MIXER";
 pub const SAMPLER_LABEL: &str = "04 SAMPLER";
 pub const COLOR_LABEL: &str = "05 COLOR";
+pub const PIANO_ROLL_LABEL: &str = "06 PIANO ROLL";
 
 /// ユーザー色の固定パレット（Issue #58、ADR-0013）。(タグ, 面, 縁)。
 /// テーマの2色相（ピンク系・ティール系）と暖色の中間色から作る淡色で
@@ -153,6 +154,8 @@ mod tests {
         assert_eq!(TIMELINE_LABEL, "02 TIMELINE");
         assert_eq!(MIXER_LABEL, "03 MIXER");
         assert_eq!(SAMPLER_LABEL, "04 SAMPLER");
+        assert_eq!(COLOR_LABEL, "05 COLOR");
+        assert_eq!(PIANO_ROLL_LABEL, "06 PIANO ROLL");
     }
 }
 

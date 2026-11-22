@@ -15,6 +15,7 @@ mod audio;
 mod edit;
 mod mixer;
 mod palette;
+mod pianoroll;
 mod sampler;
 // theme は配色表の全色を先に定義する土台（Issue #23）。アクセント系と
 // トランスポート系の定数は後続 PBI（#24〜#27）で使うため、未使用の
@@ -174,6 +175,16 @@ struct Model {
     // には保存しない）。OFF にすると範囲も消える。
     loop_range: Option<(i64, i64)>,
     loop_on: bool,
+    // Issue #69: ピアノロール（開いているクリップと編集状態。
+    // プロジェクトには保存しない GUI 状態）。roll_before は
+    // ノートのドラッグジェスチャ開始時のスナップショット（#31 と
+    // 同じ方式で、履歴への記録はジェスチャ終了時に行う）。
+    piano_roll: Option<pianoroll::PianoRoll>,
+    roll_before: Option<Project>,
+    last_roll_cmd: Option<Command>,
+    prev_note_delete_down: bool,
+    /// ロールを開くダブルクリック判定（配置用 clicks とは分ける）。
+    roll_clicks: edit::ClickTracker,
     // Issue #40: ルーラーで範囲をドラッグ中の始点と現在位置（ms）。
     loop_drag_anchor_ms: Option<i64>,
     loop_drag_pointer_ms: i64,
@@ -376,6 +387,11 @@ fn model(app: &App) -> Model {
         view_scale: timeline::ViewScale::default(),
         loop_range: None,
         loop_on: false,
+        piano_roll: None,
+        roll_before: None,
+        last_roll_cmd: None,
+        prev_note_delete_down: false,
+        roll_clicks: edit::ClickTracker::new(),
         loop_drag_anchor_ms: None,
         loop_drag_pointer_ms: 0,
         prev_esc_down: false,
@@ -756,12 +772,15 @@ fn update(app: &App, model: &mut Model, update: Update) {
             app.keys.down.contains(&Key::C),
             app.keys.down.contains(&Key::V),
         );
+        model.prev_note_delete_down =
+            app.keys.down.contains(&Key::Delete) || app.keys.down.contains(&Key::Back);
     } else {
         handle_pointer(app, model);
     }
     watch_project_file(app, model);
     if !renaming {
         handle_history_keys(app, model);
+        handle_roll_keys(app, model);
         handle_edit_keys(app, model);
         handle_pitch_keys(app, model);
     }
@@ -789,18 +808,21 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.loop_range,
         model.loop_on,
     );
-    // ループ解除（Issue #40）: Esc で範囲と ON を消す。テキスト編集中の
-    // Esc は編集のキャンセルが優先する（レビュー所見への対応）。
+    // Esc の処理: ピアノロールが開いていればまずそれを閉じ（Issue
+    // #69）、次にループ解除（Issue #40）。テキスト編集中の Esc は
+    // 編集のキャンセルが優先する（レビュー所見への対応）。
     let esc_down = app.keys.down.contains(&Key::Escape);
-    if esc_down
-        && !model.prev_esc_down
-        && model.rename.is_none()
-        && model.bpm_edit.is_none()
-        && (model.loop_on || model.loop_range.is_some())
-    {
-        model.loop_on = false;
-        model.loop_range = None;
-        println!("loop: cleared");
+    if esc_down && !model.prev_esc_down && model.rename.is_none() && model.bpm_edit.is_none() {
+        if model.piano_roll.is_some() {
+            model.piano_roll = None;
+            model.roll_before = None;
+            model.last_roll_cmd = None;
+            println!("piano roll: closed");
+        } else if model.loop_on || model.loop_range.is_some() {
+            model.loop_on = false;
+            model.loop_range = None;
+            println!("loop: cleared");
+        }
     }
     model.prev_esc_down = esc_down;
     // レベルメーター（Issue #27）: 再生位置の直後のミックスを
@@ -855,7 +877,11 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     let applied = edit::apply_history_key(
         &mut model.history,
         op,
-        &mut [&mut model.drag_before, &mut model.mixer_before],
+        &mut [
+            &mut model.drag_before,
+            &mut model.mixer_before,
+            &mut model.roll_before,
+        ],
     );
     if !applied {
         return;
@@ -867,6 +893,20 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     model.mixer_active = None;
     model.last_mixer_cmd = None;
     model.mixer_before = None;
+    // ピアノロール（Issue #69）: 履歴が動いたらドラッグと選択を
+    // 打ち切り、対象クリップが消えていたら閉じる。
+    model.last_roll_cmd = None;
+    let roll_clip_gone = match &mut model.piano_roll {
+        Some(roll) => {
+            roll.drag = None;
+            roll.selected = None;
+            model.history.project().clip(roll.clip_id).is_none()
+        }
+        None => false,
+    };
+    if roll_clip_gone {
+        model.piano_roll = None;
+    }
     if model
         .selected_track
         .is_some_and(|id| model.history.project().track(id).is_none())
@@ -1189,6 +1229,132 @@ fn finish_gesture_snapshot(history: &mut History, before: &mut Option<Project>) 
     *before = None;
 }
 
+/// ピアノロールを開けるクリップかどうか（Issue #69）。
+/// ノートクリップ、素材なしクリップ、楽器のあるトラックの
+/// クリップを対象とする。
+fn roll_openable(project: &Project, clip_id: u64) -> bool {
+    let Some((track, clip)) = project.clip(clip_id) else {
+        return false;
+    };
+    !clip.notes.is_empty() || clip.source.is_empty() || track.instrument.is_some()
+}
+
+/// ピアノロールのキー操作（Issue #69）: Delete / Backspace で
+/// 選択中のノートを削除する。押下エッジでのみ発火する。
+fn handle_roll_keys(app: &App, model: &mut Model) {
+    let delete_down = app.keys.down.contains(&Key::Delete) || app.keys.down.contains(&Key::Back);
+    if delete_down && !model.prev_note_delete_down && model.piano_roll.is_some() {
+        let (clip_id, selected) = {
+            let roll = model.piano_roll.as_ref().expect("checked above");
+            (roll.clip_id, roll.selected)
+        };
+        if let Some(note_index) = selected {
+            let cmd = Command::RemoveNote {
+                clip_id,
+                note_index,
+            };
+            match model.history.apply(&cmd) {
+                Ok(_) => {
+                    if let Some(roll) = model.piano_roll.as_mut() {
+                        roll.selected = None;
+                    }
+                    println!("after note remove: {}", model.history.project().dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+        }
+    }
+    model.prev_note_delete_down = delete_down;
+}
+
+/// ピアノロール表示中のポインタ操作（Issue #69）。クリックで配置、
+/// ノートのドラッグで移動（ジェスチャ終了時に履歴へ記録、#31 と
+/// 同じ方式）。状態変更はすべてコマンド層経由。
+fn handle_roll_pointer(app: &App, model: &mut Model, lx: f32, ly: f32, left_down: bool) {
+    let win = app.window_rect();
+    let clip_id = model
+        .piano_roll
+        .as_ref()
+        .map(|r| r.clip_id)
+        .expect("roll open");
+    // 対象クリップが消えていたら（Undo で削除された等）閉じる。
+    let Some((_, clip)) = model.history.project().clip(clip_id) else {
+        model.piano_roll = None;
+        model.roll_before = None;
+        model.last_roll_cmd = None;
+        println!("piano roll: closed (clip gone)");
+        return;
+    };
+    let clip = clip.clone();
+
+    if left_down && !model.prev_left_down {
+        // ドラッグ中の再押下は無視する（ドラッグは解放で終わる。
+        // 押下の取りこぼし・跳ね返りで配置が走るのを防ぐ）。
+        if model.piano_roll.as_ref().is_some_and(|r| r.drag.is_some()) {
+            return;
+        }
+        let roll = model.piano_roll.as_ref().expect("roll open");
+        if let Some(index) = roll.hit_note(win.w(), win.h(), &clip, lx, ly) {
+            let drag = roll.begin_drag(win.w(), win.h(), &clip, index, lx, ly);
+            let roll = model.piano_roll.as_mut().expect("roll open");
+            roll.selected = Some(index);
+            roll.drag = drag;
+            model.roll_before = Some(model.history.project().clone());
+            model.last_roll_cmd = None;
+        } else if let Some(cmd) = roll.place_command(win.w(), win.h(), &clip, lx, ly) {
+            match model.history.apply(&cmd) {
+                Ok(_) => {
+                    let placed_index = model
+                        .history
+                        .project()
+                        .clip(clip_id)
+                        .map(|(_, c)| c.notes.len().saturating_sub(1));
+                    if let Some(roll) = model.piano_roll.as_mut() {
+                        roll.selected = placed_index;
+                    }
+                    println!("after note add: {}", model.history.project().dump_json());
+                    save_project_file(model);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+        } else if let Some(roll) = model.piano_roll.as_mut() {
+            roll.selected = None;
+        }
+    }
+
+    if left_down {
+        let drag = model.piano_roll.as_ref().and_then(|r| r.drag.clone());
+        if let Some(drag) = drag {
+            let roll = model.piano_roll.as_ref().expect("roll open");
+            let cmd = drag.command_for(roll, win.w(), win.h(), &clip, lx, ly);
+            if model.last_roll_cmd.as_ref() != Some(&cmd) {
+                match model.history.apply_transient(&cmd) {
+                    Ok(_) => {
+                        model.last_roll_cmd = Some(cmd);
+                    }
+                    Err(e) => println!("command rejected: {e}"),
+                }
+            }
+        }
+    }
+
+    if !left_down && model.prev_left_down {
+        let had_drag = model
+            .piano_roll
+            .as_mut()
+            .map(|r| r.drag.take().is_some())
+            .unwrap_or(false);
+        if had_drag {
+            // ジェスチャ終了時にだけ履歴へ記録する（Issue #31）。
+            finish_gesture_snapshot(&mut model.history, &mut model.roll_before);
+            println!("after note move: {}", model.history.project().dump_json());
+            save_project_file(model);
+            model.last_roll_cmd = None;
+        }
+    }
+}
+
 /// ポインタ操作をポーリングし、コマンド経由で編集する（Issue #14、
 /// video-editor と同じ意味論）。押下でドラッグ開始（またはダブルクリック
 /// で配置）、ドラッグ中は候補コマンドが変わるたびに適用し、解放時に
@@ -1200,6 +1366,14 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let ly = win.h() / 2.0 - app.mouse.y;
     let left_down = app.mouse.buttons.left().is_down();
     let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
+
+    // ピアノロール（Issue #69）が開いている間は、ポインタ操作を
+    // すべてロール側で捌く（タイムラインとは画面モードが別）。
+    if model.piano_roll.is_some() {
+        handle_roll_pointer(app, model, lx, ly, left_down);
+        model.prev_left_down = left_down;
+        return;
+    }
 
     // ミキサー（Issue #15）: スライダーの押下・ドラッグで音量／パンを
     // コマンド経由で変える。タイムライン領域とは重ならない。
@@ -1387,6 +1561,35 @@ fn handle_pointer(app: &App, model: &mut Model) {
             return;
         }
         let target = edit::hit_test(model.history.project(), win.w(), &model.view_scale, lx, ly);
+        // ピアノロールを開く導線（Issue #69）: クリップの
+        // ダブルクリックで、そのクリップのロールを開く。対象は
+        // ノートクリップ、素材なしクリップ、楽器のあるトラックの
+        // クリップに限る（波形クリップを誤ってノートクリップ化
+        // しないため）。
+        let target_clip = match &target {
+            edit::HitTarget::ClipBody { clip_id }
+            | edit::HitTarget::ClipLeftEdge { clip_id }
+            | edit::HitTarget::ClipRightEdge { clip_id }
+            | edit::HitTarget::ClipFadeInCorner { clip_id }
+            | edit::HitTarget::ClipFadeOutCorner { clip_id } => Some(*clip_id),
+            _ => None,
+        };
+        if let Some(clip_id) = target_clip {
+            let now_ms = (app.time * 1_000.0) as u64;
+            if model.roll_clicks.register(now_ms, lx, ly)
+                && roll_openable(model.history.project(), clip_id)
+            {
+                let (_, clip) = model
+                    .history
+                    .project()
+                    .clip(clip_id)
+                    .expect("checked by roll_openable");
+                model.piano_roll = Some(pianoroll::PianoRoll::open(clip));
+                println!("piano roll opened: clip {clip_id}");
+                model.prev_left_down = left_down;
+                return;
+            }
+        }
         if let Some(drag) = edit::Drag::begin(model.history.project(), &target, pointer_ms) {
             model.drag = Some(drag);
             model.last_drag_cmd = None;
@@ -1474,6 +1677,134 @@ fn rect_center(win: Rect, x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
 /// パネルラベル（連番＋大文字の小ラベル）を、左上原点ピクセル座標の
 /// 点を中心に描く（デザイン文書「タイポグラフィとパネルラベル」、
 /// Issue #23）。色はグレージュ、サイズは theme の定数。
+/// ピアノロールの描画（Issue #69）。テーマ（ADR-0012）に従い、
+/// ノートはティール、選択中と発音中（現在状態）だけホットピンクで
+/// 示す。鍵盤列には C の行に音名を出す。
+fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::PianoRoll) {
+    let project = model.history.project();
+    let Some((track, clip)) = project.clip(roll.clip_id) else {
+        return;
+    };
+    let grid_rect = pianoroll::grid(win.w(), win.h());
+    let row_h = roll.row_h(win.h());
+
+    // 見出し帯: ラベル＋クリップ名と楽器、右に操作ヒント。
+    draw_panel_label(
+        draw,
+        win,
+        theme::PIANO_ROLL_LABEL,
+        52.0,
+        timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0,
+    );
+    let instrument = match &track.instrument {
+        Some(studio_core::Instrument::Sampler { source, root_note }) => {
+            let base = source.rsplit('/').next().unwrap_or(source);
+            format!(
+                "instrument: {base} root {}",
+                pianoroll::pitch_name(*root_note as i32)
+            )
+        }
+        None => "instrument: (none)".to_string(),
+    };
+    let (r, g, b) = theme::TEXT;
+    draw.text(&format!("{} — {}", clip.name, instrument))
+        .x_y(
+            120.0 - win.w() / 2.0,
+            win.h() / 2.0 - (timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0),
+        )
+        .left_justify()
+        .font_size(12)
+        .color(rgb(r, g, b));
+    let (r, g, b) = theme::TEXT_SUB;
+    draw.text("click: place · drag: move · Del: delete · Esc: close")
+        .x_y(
+            win.w() / 2.0 - 190.0,
+            win.h() / 2.0 - (timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0),
+        )
+        .font_size(11)
+        .color(rgb(r, g, b));
+
+    // 行（鍵盤列＋グリッド）: 黒鍵の行は一段沈んだ面にする。
+    for row in 0..pianoroll::ROWS {
+        let pitch = roll.top_pitch - row;
+        let y = grid_rect.y + row as f32 * row_h;
+        let black = pianoroll::is_black_key(pitch);
+        if black {
+            let (cx, cy) = rect_center(win, grid_rect.x, y, grid_rect.w, row_h);
+            let (r, g, b) = theme::PANEL_SUNK;
+            draw.rect()
+                .x_y(cx, cy)
+                .w_h(grid_rect.w, row_h)
+                .color(rgb(r, g, b));
+        }
+        // 鍵盤セル
+        let (kx, ky) = rect_center(win, 0.0, y, pianoroll::KEY_WIDTH_PX, row_h);
+        let (r, g, b) = if black { theme::TEXT } else { theme::PANEL };
+        draw.rect()
+            .x_y(kx, ky)
+            .w_h(pianoroll::KEY_WIDTH_PX, row_h)
+            .color(rgb(r, g, b));
+        if pitch.rem_euclid(12) == 0 {
+            let (r, g, b) = theme::TEXT_SUB;
+            draw.text(&pianoroll::pitch_name(pitch))
+                .x_y(kx, ky)
+                .font_size(10)
+                .color(rgb(r, g, b));
+        }
+        draw_hline(draw, win, y + row_h - 1.0, theme::LINE);
+    }
+    draw_hline(draw, win, grid_rect.y - 1.0, theme::LINE);
+
+    // 拍の縦線（プロジェクトの BPM 基準）。
+    let beat_ms = (60_000.0 / project.bpm.max(1.0)) as i64;
+    if beat_ms > 0 {
+        let (r, g, b) = theme::LINE;
+        let mut ms = 0;
+        while ms <= clip.duration_ms {
+            let x = roll.x_for_ms(win.w(), clip.duration_ms, ms) - win.w() / 2.0;
+            draw.line()
+                .start(pt2(x, win.h() / 2.0 - grid_rect.y))
+                .end(pt2(x, win.h() / 2.0 - (grid_rect.y + grid_rect.h)))
+                .weight(1.0)
+                .color(rgb(r, g, b));
+            ms += beat_ms;
+        }
+    }
+
+    // ノート: 通常はティール、選択中と発音中はホットピンク。
+    for (index, note) in clip.notes.iter().enumerate() {
+        let rect = roll.note_rect(win.w(), win.h(), clip, note);
+        let sounding = {
+            let start = clip.start_ms + note.start_ms;
+            model.playhead_ms >= start && model.playhead_ms < start + note.duration_ms
+        };
+        let face = if sounding || roll.selected == Some(index) {
+            theme::ACCENT
+        } else {
+            theme::TEAL
+        };
+        let chip = mixer::Rect {
+            x: rect.x + 1.0,
+            y: rect.y + 1.5,
+            w: (rect.w - 2.0).max(2.0),
+            h: (rect.h - 3.0).max(2.0),
+        };
+        draw_rounded_rect(draw, win, chip, 2.5, face);
+    }
+
+    // 再生ヘッド（クリップの区間内だけ、クリップ相対で引く）。
+    let rel = model.playhead_ms - clip.start_ms;
+    if rel >= 0 && rel <= clip.duration_ms {
+        let x = roll.x_for_ms(win.w(), clip.duration_ms, rel) - win.w() / 2.0;
+        let (r, g, b) = theme::TEXT;
+        draw.line()
+            .start(pt2(x, win.h() / 2.0 - grid_rect.y))
+            .end(pt2(x, win.h() / 2.0 - (grid_rect.y + grid_rect.h)))
+            .weight(2.0)
+            .color(rgb(r, g, b));
+    }
+}
+
 fn draw_panel_label(draw: &Draw, win: Rect, label: &str, cx: f32, cy: f32) {
     let (r, g, b) = theme::TEXT_SUB;
     draw.text(label)
@@ -1574,6 +1905,14 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let win = app.window_rect();
     let (bg_r, bg_g, bg_b) = theme::BACKGROUND;
     draw.background().color(rgb(bg_r, bg_g, bg_b));
+
+    // ピアノロール（Issue #69）が開いている間は画面モードを
+    // 切り替える（タイムライン以下のパネルは描かない）。
+    if let Some(roll) = &model.piano_roll {
+        draw_piano_roll(&draw, win, model, roll);
+        draw.to_frame(app, &frame).unwrap();
+        return;
+    }
 
     // ルーラー（timeline.ruler）: 帯＋1秒ごとの目盛りと秒ラベル。
     let (rx, ry) = rect_center(win, 0.0, 0.0, win.w(), timeline::RULER_HEIGHT_PX);

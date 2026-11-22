@@ -217,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド24種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド26種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -370,6 +370,32 @@ fn tool_definitions() -> Value {
                     "velocity": {"type": "integer", "minimum": 0, "maximum": 127},
                 },
                 "required": ["clip_id", "pitch", "start_ms", "duration_ms", "velocity"],
+            },
+        },
+        {
+            "name": "move_note",
+            "description": "クリップ内のノートを移動する（音高と開始位置。長さは変わらない。移動後もクリップの範囲内に収まること）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "note_index": {"type": "integer", "minimum": 0},
+                    "new_pitch": {"type": "integer", "minimum": 0, "maximum": 127},
+                    "new_start_ms": {"type": "integer", "minimum": 0},
+                },
+                "required": ["clip_id", "note_index", "new_pitch", "new_start_ms"],
+            },
+        },
+        {
+            "name": "remove_note",
+            "description": "クリップ内のノートを1つ削除する（インデックス指定）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "note_index": {"type": "integer", "minimum": 0},
+                },
+                "required": ["clip_id", "note_index"],
             },
         },
         {

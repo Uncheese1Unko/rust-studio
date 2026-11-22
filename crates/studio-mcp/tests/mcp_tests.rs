@@ -67,6 +67,8 @@ fn tools_list_exposes_all_commands() {
         "rename_track",
         "set_track_instrument",
         "add_note",
+        "move_note",
+        "remove_note",
         "get_project",
         "undo",
         "redo",
@@ -987,6 +989,72 @@ fn note_tools_apply_via_tools_call() {
         74,
         "add_note",
         json!({"clip_id": 2, "pitch": 62, "start_ms": 3900, "duration_ms": 500, "velocity": 90}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+}
+
+#[test]
+fn move_and_remove_note_tools_apply_via_tools_call() {
+    // Issue #69 / ADR-0016: move_note と remove_note が tools/call
+    // 経由で適用でき、ダンプで観測できる。範囲外の移動と
+    // インデックス範囲外の削除はエラーで状態不変。
+    let server = McpServer::new();
+    call_tool(
+        &server,
+        80,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    call_tool(
+        &server,
+        81,
+        "add_clip",
+        json!({"track_id": 1, "name": "melody", "start_ms": 0, "duration_ms": 4000, "source": ""}),
+    );
+    call_tool(
+        &server,
+        82,
+        "add_note",
+        json!({"clip_id": 2, "pitch": 60, "start_ms": 0, "duration_ms": 500, "velocity": 100}),
+    );
+    call_tool(
+        &server,
+        83,
+        "add_note",
+        json!({"clip_id": 2, "pitch": 64, "start_ms": 500, "duration_ms": 500, "velocity": 100}),
+    );
+    let res = call_tool(
+        &server,
+        84,
+        "move_note",
+        json!({"clip_id": 2, "note_index": 0, "new_pitch": 67, "new_start_ms": 250}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let res = call_tool(
+        &server,
+        85,
+        "remove_note",
+        json!({"clip_id": 2, "note_index": 1}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(
+        project.tracks[0].clips[0].notes,
+        vec![studio_core::Note {
+            pitch: 67,
+            start_ms: 250,
+            duration_ms: 500,
+            velocity: 100,
+        }]
+    );
+    // 範囲外への移動はエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        86,
+        "move_note",
+        json!({"clip_id": 2, "note_index": 0, "new_pitch": 67, "new_start_ms": 3900}),
     );
     assert_eq!(res["result"]["isError"], true, "{res}");
     assert_eq!(project_dump_via_tool(&server), dump);

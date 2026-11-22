@@ -1524,3 +1524,169 @@ fn set_track_instrument_rejects_out_of_range_root_note() {
     );
     assert_eq!(project.dump_json(), before);
 }
+
+#[test]
+fn move_note_changes_pitch_and_start_keeping_duration() {
+    // Issue #69 / ADR-0016: MoveNote は音高と開始だけを変え、
+    // 長さとベロシティは保つ。
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 500);
+    apply(
+        &mut p,
+        &Command::MoveNote {
+            clip_id,
+            note_index: 0,
+            new_pitch: 65,
+            new_start_ms: 300,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(
+        clip.notes,
+        vec![Note {
+            pitch: 65,
+            start_ms: 300,
+            duration_ms: 500,
+            velocity: 100,
+        }]
+    );
+}
+
+#[test]
+fn move_note_rejects_invalid_values_and_keeps_state() {
+    // Issue #69 / ADR-0016: 移動後もノートはクリップ範囲内に収まる
+    // ことが不変条件。インデックス範囲外・未知のクリップもエラーで
+    // 状態不変。巨大な開始位置でもオーバーフローしない。
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 500);
+    let before = p.dump_json();
+    for cmd in [
+        Command::MoveNote {
+            clip_id,
+            note_index: 0,
+            new_pitch: 128,
+            new_start_ms: 0,
+        },
+        Command::MoveNote {
+            clip_id,
+            note_index: 0,
+            new_pitch: 60,
+            new_start_ms: -1,
+        },
+        Command::MoveNote {
+            clip_id,
+            note_index: 0,
+            new_pitch: 60,
+            new_start_ms: 3_800, // 3800 + 500 > 4000（クリップ長）
+        },
+        Command::MoveNote {
+            clip_id,
+            note_index: 0,
+            new_pitch: 60,
+            new_start_ms: i64::MAX,
+        },
+        Command::MoveNote {
+            clip_id,
+            note_index: 9,
+            new_pitch: 60,
+            new_start_ms: 0,
+        },
+    ] {
+        assert!(apply(&mut p, &cmd).is_err(), "must reject: {cmd:?}");
+        assert_eq!(p.dump_json(), before, "state must not change: {cmd:?}");
+    }
+    let err = apply(
+        &mut p,
+        &Command::MoveNote {
+            clip_id: 999,
+            note_index: 0,
+            new_pitch: 60,
+            new_start_ms: 0,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ClipNotFound(999));
+}
+
+#[test]
+fn remove_note_deletes_by_index() {
+    // Issue #69 / ADR-0016: RemoveNote はインデックスで1音を消す。
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 500);
+    add_note(&mut p, clip_id, 64, 500, 500);
+    apply(
+        &mut p,
+        &Command::RemoveNote {
+            clip_id,
+            note_index: 0,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(
+        clip.notes,
+        vec![Note {
+            pitch: 64,
+            start_ms: 500,
+            duration_ms: 500,
+            velocity: 100,
+        }]
+    );
+}
+
+#[test]
+fn remove_note_rejects_bad_index_and_unknown_clip() {
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 500);
+    let before = p.dump_json();
+    assert!(apply(
+        &mut p,
+        &Command::RemoveNote {
+            clip_id,
+            note_index: 1,
+        }
+    )
+    .is_err());
+    assert_eq!(
+        apply(
+            &mut p,
+            &Command::RemoveNote {
+                clip_id: 999,
+                note_index: 0,
+            }
+        )
+        .unwrap_err(),
+        CommandError::ClipNotFound(999)
+    );
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn move_and_remove_note_round_trip_through_json() {
+    // Issue #69: コマンドの JSON 往復（タグは move_note / remove_note）。
+    for cmd in [
+        Command::MoveNote {
+            clip_id: 7,
+            note_index: 2,
+            new_pitch: 65,
+            new_start_ms: 300,
+        },
+        Command::RemoveNote {
+            clip_id: 7,
+            note_index: 2,
+        },
+    ] {
+        let json = serde_json::to_string(&cmd).unwrap();
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, cmd, "round trip failed for {json}");
+    }
+    let json = serde_json::to_string(&Command::MoveNote {
+        clip_id: 7,
+        note_index: 2,
+        new_pitch: 65,
+        new_start_ms: 300,
+    })
+    .unwrap();
+    assert!(json.contains("\"move_note\""), "{json}");
+}
