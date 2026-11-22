@@ -1,0 +1,1 @@
+{"name": "piano roll drive", "tracks": [{"id": 1, "name": "Keys", "kind": "audio", "instrument": {"type": "sampler", "source": "/tmp/tone220.wav", "root_note": 60}, "clips": [{"id": 2, "name": "melody", "start_ms": 0, "duration_ms": 4000, "source": "", "gain": 1.0, "notes": []}], "volume": 1.0, "pan": 0.0}], "next_id": 3}
