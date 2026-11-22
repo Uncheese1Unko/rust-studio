@@ -60,3 +60,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #46 動画編集のタイムラインをズームできる | [issue-0046-timeline-zoom.md](issue-0046-timeline-zoom.md) |
 | 2026-11-22 | #47 動画編集にメディアビンがある | [issue-0047-media-bin.md](issue-0047-media-bin.md) |
 | 2026-11-22 | #50 動画編集でクリップにテキスト（タイトル）を重ねられる | [issue-0050-clip-title.md](issue-0050-clip-title.md) |
+| 2026-11-22 | #53 動画編集へファイルをドラッグ＆ドロップで取り込める | [issue-0053-drag-drop-import.md](issue-0053-drag-drop-import.md) |
