@@ -1261,7 +1261,12 @@ fn handle_cutout(app: &App, model: &mut Model) {
     let bg_frames: Vec<Option<std::path::PathBuf>> = (0..frames.len())
         .map(|i| {
             let timeline_ms = clip.start_ms + (i as i64) * (1000 / model.frames.fps as i64);
-            background_frame_path(&model.frames, model.history.project(), fg_track, timeline_ms)
+            background_frame_path(
+                &model.frames,
+                model.history.project(),
+                fg_track,
+                timeline_ms,
+            )
         })
         .collect();
     let request = cutout::JobRequest {
