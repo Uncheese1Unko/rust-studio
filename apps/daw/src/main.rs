@@ -1972,11 +1972,13 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
     let row_h = roll.row_h(win.h());
 
     // 見出し帯: ラベル＋クリップ名と楽器、右に操作ヒント。
+    // タイトルはラベルとヒントの間の帯の中央に置く（Issue #74:
+    // 以前の left_justify 配置ではタイトルがラベルに重なった）。
     draw_panel_label(
         draw,
         win,
         theme::PIANO_ROLL_LABEL,
-        52.0,
+        pianoroll::HEADER_LABEL_CENTER_X,
         timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0,
     );
     let effective = project.effective_instrument(track);
@@ -2012,10 +2014,9 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
     let (r, g, b) = theme::TEXT;
     draw.text(&format!("{} — {}", clip.name, instrument))
         .x_y(
-            120.0 - win.w() / 2.0,
+            pianoroll::header_title_center_x(win.w()) - win.w() / 2.0,
             win.h() / 2.0 - (timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0),
         )
-        .left_justify()
         .font_size(12)
         .color(rgb(r, g, b));
     let (r, g, b) = theme::TEXT_SUB;

@@ -17,6 +17,28 @@ pub const KEY_WIDTH_PX: f32 = 46.0;
 pub const HEADER_HEIGHT_PX: f32 = 26.0;
 /// 下端の余白（px）。
 pub const BOTTOM_MARGIN_PX: f32 = 8.0;
+/// 見出し帯のパネルラベルの中心 x（px、Issue #74）。
+pub const HEADER_LABEL_CENTER_X: f32 = 52.0;
+/// 見出し帯のパネルラベルの半幅（px、"06 PIANO ROLL" を 11px で描く想定）。
+pub const HEADER_LABEL_HALF_W: f32 = 48.0;
+/// 見出し帯の操作ヒントの中心（右端からの px、Issue #74）。
+pub const HEADER_HINT_CENTER_FROM_RIGHT: f32 = 190.0;
+/// 見出し帯の操作ヒントの半幅（px）。
+pub const HEADER_HINT_HALF_W: f32 = 160.0;
+
+/// 見出し帯のタイトル（クリップ名＋楽器）の中心 x（Issue #74）。
+/// タイトルはラベルとヒントの間の帯の中央に置く。以前は x=120 に
+/// left_justify で置いていたが、nannou の left_justify はテキスト
+/// ブロックの左端アンカーとしては働かず、タイトルが左へ広がって
+/// ラベルに重なっていた（実測で確認）。
+pub fn header_title_center_x(win_w: f32) -> f32 {
+    let left = HEADER_LABEL_CENTER_X + HEADER_LABEL_HALF_W + 12.0;
+    let right = win_w - HEADER_HINT_CENTER_FROM_RIGHT - HEADER_HINT_HALF_W - 12.0;
+    if right <= left {
+        return left;
+    }
+    (left + right) / 2.0
+}
 /// 配置するノートの既定の長さ（ms）。
 pub const DEFAULT_NOTE_MS: i64 = 500;
 /// 配置するノートの既定のベロシティ。
@@ -285,6 +307,27 @@ impl NoteDrag {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn header_title_band_avoids_label_and_hint() {
+        // Issue #74: タイトル（最大 400px 幅を想定）を帯の中央に
+        // 置いても、ラベル域とヒント域に重ならない。
+        let cx = header_title_center_x(960.0);
+        let label_right = HEADER_LABEL_CENTER_X + HEADER_LABEL_HALF_W;
+        let hint_left = 960.0 - HEADER_HINT_CENTER_FROM_RIGHT - HEADER_HINT_HALF_W;
+        assert!(
+            cx - 200.0 >= label_right + 12.0,
+            "title left edge {} vs label right {label_right}",
+            cx - 200.0
+        );
+        assert!(
+            cx + 200.0 <= hint_left - 12.0,
+            "title right edge {} vs hint left {hint_left}",
+            cx + 200.0
+        );
+        // 狭い窓でもラベルの右から始まる。
+        assert!(header_title_center_x(500.0) >= label_right + 12.0);
+    }
 
     pub const W: f32 = 960.0;
     pub const H: f32 = 540.0;
