@@ -220,10 +220,8 @@ impl EditKeyTracker {
 /// コマンドを作らず、コピー元のパラメータを使った AddClip と、
 /// 適用で得た新クリップ id へのパラメータ設定コマンドで表す
 /// （DAW #33 と同一方針）。引き継ぐパラメータは gain / pitch /
-/// cutout / color / fade。ただし `offset_ms` は設定コマンドが
-/// 存在しないため引き継げない（分割したクリップの複製では素材の
-/// 先頭から再生される）。コア側の方式決定は #62、動画側の追随は
-/// フォローアップ PBI #63 で扱う。
+/// cutout / color / fade / title / offset（Issue #63。offset は
+/// #62 で新設された SetClipOffset で引き継ぐ）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipPlacement {
     pub add: Command,
@@ -235,6 +233,8 @@ pub struct ClipPlacement {
     fade_out_ms: i64,
     // Issue #50: タイトルも「全パラメータ」に含める。
     title_text: String,
+    // Issue #63: 素材内オフセットも引き継ぐ（#62 の SetClipOffset）。
+    offset_ms: i64,
 }
 
 impl ClipPlacement {
@@ -254,6 +254,7 @@ impl ClipPlacement {
             fade_in_ms: clip.fade_in_ms,
             fade_out_ms: clip.fade_out_ms,
             title_text: clip.title_text.clone(),
+            offset_ms: clip.offset_ms,
         }
     }
 
@@ -296,6 +297,12 @@ impl ClipPlacement {
             cmds.push(Command::SetClipTitle {
                 clip_id: new_clip_id,
                 title: self.title_text.clone(),
+            });
+        }
+        if self.offset_ms != 0 {
+            cmds.push(Command::SetClipOffset {
+                clip_id: new_clip_id,
+                offset_ms: self.offset_ms,
             });
         }
         cmds
@@ -1492,9 +1499,10 @@ mod tests {
         // Issue #44（イシュー指定のテスト）: 複製は元クリップの直後に
         // 置かれ、全パラメータ（cutout を含む）を引き継ぐ。ここでの
         // 「全パラメータ」は設定コマンドで復元できる gain / pitch /
-        // cutout / color / fade / title（#50 で追加）を指す。offset_ms は設定コマンドが
-        // 無く引き継げない既知の制限で、#63 で追跡している
-        // （レビュー指摘を受けて範囲を明記）。
+        // cutout / color / fade / title（#50 で追加）と offset
+        // （#63 で追加。このテストの元クリップは offset 0 で、
+        // offset > 0 の引き継ぎは duplicate_command_copies_clip_offset
+        // が担保する）。
         let (mut project, _track, clip_id) = project_with_tuned_clip();
         let placement = duplicate_placement(&project, clip_id).expect("clip exists");
         match &placement.add {
@@ -1526,7 +1534,47 @@ mod tests {
         assert_eq!(dup.fade_in_ms, src.fade_in_ms);
         assert_eq!(dup.fade_out_ms, src.fade_out_ms);
         assert_eq!(dup.title_text, src.title_text);
+        assert_eq!(dup.offset_ms, src.offset_ms);
         assert_eq!(dup.duration_ms, src.duration_ms);
+    }
+
+    #[test]
+    fn duplicate_command_copies_clip_offset() {
+        // Issue #63: 分割した右クリップ（offset_ms > 0）を複製・
+        // 貼り付けしても、コピー側の offset_ms が元と一致する
+        // （コアの方式は #62 の SetClipOffset に従う）。
+        let (mut project, track, clip_id) = project_with_tuned_clip();
+        // クリップ（start 1000 / duration 2000）を 2000 で分割し、
+        // offset 1000 の右クリップを得る。
+        let right_id = apply(
+            &mut project,
+            &Command::SplitClip {
+                clip_id,
+                at_ms: 2_000,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let (_, right) = project.clip(right_id).unwrap();
+        assert_eq!(right.offset_ms, 1_000);
+        // 複製: 配置計画と追随コマンドを適用すると offset が一致する。
+        let placement = duplicate_placement(&project, right_id).expect("clip exists");
+        let dup_id = apply(&mut project, &placement.add).unwrap().unwrap();
+        for cmd in placement.follow_up_commands(dup_id) {
+            apply(&mut project, &cmd).unwrap();
+        }
+        let (_, dup) = project.clip(dup_id).unwrap();
+        assert_eq!(dup.offset_ms, 1_000, "duplicate must keep the offset");
+        assert_eq!(dup.start_ms, 3_000, "元の右クリップの終端に接する");
+        // 貼り付け: クリップボード経由でも offset の追随コマンドが出る。
+        let (_, right) = project.clip(right_id).unwrap();
+        let paste = paste_placement(right, track, 6_000);
+        assert!(paste
+            .follow_up_commands(42)
+            .contains(&Command::SetClipOffset {
+                clip_id: 42,
+                offset_ms: 1_000,
+            }));
     }
 
     #[test]
