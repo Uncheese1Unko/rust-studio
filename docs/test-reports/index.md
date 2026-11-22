@@ -64,3 +64,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #43 動画編集でクリップを分割できる | [issue-0043-clip-split.md](issue-0043-clip-split.md) |
 | 2026-11-22 | #49 隣接クリップ境界にクロスディゾルブを設定できる | [issue-0049-clip-transition.md](issue-0049-clip-transition.md) |
 | 2026-11-22 | #51 動画編集でクリップの音量とフェードを編集できる | [issue-0051-clip-volume-fade.md](issue-0051-clip-volume-fade.md) |
+| 2026-11-22 | #54 タイムライン全体を mp4 に書き出す | [issue-0054-mp4-export.md](issue-0054-mp4-export.md) |
