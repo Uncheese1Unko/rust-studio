@@ -1132,6 +1132,33 @@ fn apply_placement(app: &App, model: &mut Model, placement: &edit::ClipPlacement
     save_project_file(model);
 }
 
+/// 切り抜き合成の背景フレーム選択（Issue #64 で handle_cutout から
+/// 切り出し）。前景トラックとは別の映像トラックで timeline_ms を
+/// 覆うクリップを探し、そのソースフレームを返す。ソース時刻は
+/// プレビュー経路と同じ `media::source_time_ms`（offset_ms +
+/// クリップ内位置）で求めるため、分割した右クリップが背景でも
+/// 素材の続きのフレームになる。覆うクリップがなければ None
+/// （背景なし）。
+fn background_frame_path(
+    frames: &media::FrameStore,
+    project: &Project,
+    fg_track_id: u64,
+    timeline_ms: i64,
+) -> Option<std::path::PathBuf> {
+    project
+        .tracks
+        .iter()
+        .filter(|t| t.kind == TrackKind::Video && t.id != fg_track_id)
+        .flat_map(|t| t.clips.iter())
+        .find(|c| timeline_ms >= c.start_ms && timeline_ms < c.end_ms())
+        .and_then(|bg| {
+            let source_time = media::source_time_ms(bg, timeline_ms)?;
+            frames
+                .frame_path(&bg.source, source_time)
+                .map(|p| p.to_path_buf())
+        })
+}
+
 /// 人物切り抜き（Issue #22）: K キーで再生ヘッド位置の映像クリップに
 /// 切り抜きをトグルし、有効化されたらワーカースレッドでオフライン
 /// 処理を開始する。完了したら合成済みフレームのテクスチャを読み込み、
@@ -1234,20 +1261,7 @@ fn handle_cutout(app: &App, model: &mut Model) {
     let bg_frames: Vec<Option<std::path::PathBuf>> = (0..frames.len())
         .map(|i| {
             let timeline_ms = clip.start_ms + (i as i64) * (1000 / model.frames.fps as i64);
-            model
-                .history
-                .project()
-                .tracks
-                .iter()
-                .filter(|t| t.kind == TrackKind::Video && t.id != fg_track)
-                .flat_map(|t| t.clips.iter())
-                .find(|c| timeline_ms >= c.start_ms && timeline_ms < c.end_ms())
-                .and_then(|bg| {
-                    model
-                        .frames
-                        .frame_path(&bg.source, timeline_ms - bg.start_ms)
-                        .map(|p| p.to_path_buf())
-                })
+            background_frame_path(&model.frames, model.history.project(), fg_track, timeline_ms)
         })
         .collect();
     let request = cutout::JobRequest {
@@ -2278,5 +2292,92 @@ mod tests {
             media::fnv1a(a.dump_json().as_bytes()),
             media::fnv1a(b.dump_json().as_bytes())
         );
+    }
+
+    #[test]
+    fn background_frame_selection_uses_clip_offset() {
+        // Issue #64: 切り抜き合成の背景フレーム選択は、背景クリップの
+        // offset_ms を加味したソース時刻で選ぶ。分割した右クリップ
+        // （offset 1000）を背景にすると、背景は素材の続きのフレーム
+        // になる。旧式（timeline_ms - start_ms）では素材の頭に戻る。
+        let mut project = Project::new("bg offset");
+        let fg = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::AddClip {
+                track_id: fg,
+                name: "fg".into(),
+                start_ms: 0,
+                duration_ms: 4_000,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap();
+        let bg_track = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "V2".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let bg_clip = apply(
+            &mut project,
+            &Command::AddClip {
+                track_id: bg_track,
+                name: "bg".into(),
+                start_ms: 1_000,
+                duration_ms: 3_000,
+                source: "demo/bg.mp4".into(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        // 2000 で分割し、offset 1000 の右クリップ（2000〜4000）を得る。
+        apply(
+            &mut project,
+            &Command::SplitClip {
+                clip_id: bg_clip,
+                at_ms: 2_000,
+            },
+        )
+        .unwrap();
+        // 背景ソースのフレーム列（10fps、40フレーム）をダミーパスで用意。
+        let frames = media::FrameStore::from_frames(
+            10,
+            std::collections::BTreeMap::from([(
+                "demo/bg.mp4".to_string(),
+                (0..40)
+                    .map(|i| std::path::PathBuf::from(format!("f{i:03}.png")))
+                    .collect::<Vec<_>>(),
+            )]),
+        );
+        let at = |t: i64| background_frame_path(&frames, &project, fg, t);
+        // 左クリップ（offset 0）の範囲: 従来どおり素材内位置そのまま。
+        assert_eq!(
+            at(1_500),
+            Some(std::path::PathBuf::from("f005.png")),
+            "offset 0 の背景は従来どおり"
+        );
+        // 右クリップの先頭（2000）: ソース時刻は offset 1000 から。
+        assert_eq!(
+            at(2_000),
+            Some(std::path::PathBuf::from("f010.png")),
+            "分割した右クリップの背景は素材の続きから"
+        );
+        // 右クリップの途中（3000）: ソース時刻 2000。
+        assert_eq!(at(3_000), Some(std::path::PathBuf::from("f020.png")));
+        // 背景クリップの範囲外は背景なし。
+        assert_eq!(at(500), None);
+        assert_eq!(at(4_500), None);
     }
 }
