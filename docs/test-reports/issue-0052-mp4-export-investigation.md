@@ -60,7 +60,7 @@
 - [ ] `cargo test` が 0 で終わった — 対象外（同上。本体コードを変更していないため、ワークスペースの状態は main のまま）
 - [ ] 画面で観測できる受け入れ条件は実アプリで確認し、証拠を残した — 対象外（書き出しファイルと ffprobe・画素照合で確認した。実機プレイヤーでの再生は未検証であり、その旨を本レポートに明記した）
 - [x] push の前に独立した `code-reviewer` が `APPROVE` を返した（1ラウンド。指摘と対応は上記「コードレビュー」）
-- [ ] この変更の commit で CI が緑
+- [x] この変更の commit で CI が緑（https://github.com/Uncheese1Unko/rust-studio/actions/runs/45004832183）
 - [x] 判断があれば ADR を同じ commit で足した（ADR-0015）
-- [ ] 試験レポートを `docs/test-reports/` に、証拠を `docs/test-reports/evidence/` に置いて push し、CI が緑
-- [ ] 全部にチェックを入れ、commit・CI の URL・試験レポートへのリンクをコメントに書いて閉じた
+- [x] 試験レポートを `docs/test-reports/` に、証拠を `docs/test-reports/evidence/` に置いて push し、CI が緑（本チェック記入の commit の CI も確認してから close する）
+- [x] 全部にチェックを入れ、commit・CI の URL・試験レポートへのリンクをコメントに書いて閉じた
