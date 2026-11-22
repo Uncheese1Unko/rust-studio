@@ -244,5 +244,86 @@ after redo: {
   ],
   "next_id": 3
 }
+after undo: {
+  "name": "undo-evidence-daw",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 2000,
+          "duration_ms": 2000,
+          "source": "/tmp/issue31-daw/tone.wav",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
+after redo: {
+  "name": "undo-evidence-daw",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 3000,
+          "duration_ms": 2000,
+          "source": "/tmp/issue31-daw/tone.wav",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
+after undo: {
+  "name": "undo-evidence-daw",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 2000,
+          "duration_ms": 2000,
+          "source": "/tmp/issue31-daw/tone.wav",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
 rename begin: track 1
 rename cancelled

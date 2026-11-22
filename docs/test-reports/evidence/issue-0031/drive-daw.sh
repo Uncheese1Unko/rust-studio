@@ -89,6 +89,21 @@ xdotool keyup shift; sleep 0.9; xdotool keyup z; sleep 0.3; xdotool keyup ctrl; 
 UNDO_AFTER=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
 echo "undo lines after shift-first release: before=$UNDO_BEFORE after=$UNDO_AFTER (expect equal)"
 echo "start_ms after shift-first release: $(start_ms) (expect 2000)"
+# ジェスチャ途中の Ctrl+Z（#31 レビュー round 3 対応）: ドラッグで
+# 3000 へ動かす途中（マウスを押したまま）で Ctrl+Z を押すと、先に
+# ジェスチャが確定されてから undo されるため、戻り先は確定編集の
+# 前（1000）ではなくジェスチャ開始位置（2000）。redo で途中状態
+# （3000）へ進め、undo で 2000 に戻して後段へつなぐ。
+xdotool mousemove 372 48; sleep 0.2
+xdotool mousedown 1; sleep 0.45
+xdotool mousemove 456 48; sleep 0.6
+key_hold ctrl+z
+xdotool mouseup 1; sleep 0.8
+echo "after ctrl+z mid-gesture start_ms: $(start_ms) (expect 2000)"
+key_hold ctrl+shift+z
+echo "after redo mid-gesture start_ms: $(start_ms) (expect 3000)"
+key_hold ctrl+z
+echo "after undo again start_ms: $(start_ms) (expect 2000)"
 # 編集中ガード（DAW）: リネーム開始 → Ctrl+Z → 履歴は動かず、編集も継続する
 dblclick() { # x y
   xdotool mousemove "$1" "$2"; sleep 0.2

@@ -611,6 +611,14 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     ) else {
         return;
     };
+    // 進行中ジェスチャ（ドラッグ／ミキサー）があれば、履歴操作の前に
+    // 確定させる。記録をジェスチャ終了時まで遅延しているため、この
+    // まま undo すると未確定の途中状態ではなく直前の確定編集が消費
+    // され、確定状態が undo/redo どちらのスタックにも残らなくなる
+    // （#31 レビュー round 3 対応）。先に確定させれば、undo は
+    // ジェスチャ自身のエントリを消費して開始状態へ戻る。
+    finish_gesture_snapshot(&mut model.history, &mut model.drag_before);
+    finish_gesture_snapshot(&mut model.history, &mut model.mixer_before);
     if !edit::apply_history_op(&mut model.history, op) {
         return;
     }
@@ -1899,6 +1907,60 @@ mod tests {
         assert!(!history.can_undo());
         assert!(history.can_redo());
         assert!(!history.undo());
+    }
+
+    #[test]
+    fn undo_during_gesture_consumes_the_gesture_itself() {
+        // Issue #31 レビュー round 3 対応: ジェスチャの途中で undo
+        // する場合、`handle_history_keys` は履歴操作の前にジェスチャを
+        // 確定させる。そのため消費されるのは直前の確定編集ではなく
+        // ジェスチャ自身であり、確定状態（500）は失われず、redo で
+        // 途中状態（900）へ進める。確定させないと undo は確定編集を
+        // 消費して 0 に戻り、500 が復元不能になる。
+        let mut project = Project::new("gesture undo test");
+        let track_id = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::AddClip {
+                track_id,
+                name: "c".into(),
+                start_ms: 0,
+                duration_ms: 1_000,
+                source: "demo/c.wav".into(),
+            },
+        )
+        .unwrap();
+        let mut history = History::new(project);
+        let clip_id = history.project().tracks[0].clips[0].id;
+        // 確定編集: 0 → 500
+        history
+            .apply(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 500,
+            })
+            .unwrap();
+        // ジェスチャ開始: スナップショットを控え、逐次適用で 900 へ
+        let mut before = Some(history.project().clone());
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 900,
+            })
+            .unwrap();
+        // handle_history_keys と同じ順序: ジェスチャ確定 → undo
+        finish_gesture_snapshot(&mut history, &mut before);
+        assert!(edit::apply_history_op(&mut history, edit::HistoryOp::Undo));
+        assert_eq!(history.project().tracks[0].clips[0].start_ms, 500);
+        assert!(edit::apply_history_op(&mut history, edit::HistoryOp::Redo));
+        assert_eq!(history.project().tracks[0].clips[0].start_ms, 900);
     }
 
     #[test]
