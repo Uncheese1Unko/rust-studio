@@ -52,6 +52,70 @@ media prepared: demo/opening.mp4 -> 40 frames
 media bin: bg.mp4, extra.mp4, interview.mp4, opening.mp4
 preview textures loaded: 40
 media bin selected: extra.mp4
-media bin placed: extra.mp4 at 1652ms (duration 3000ms)
+media bin placed: extra.mp4 at 1214ms (duration 3000ms)
 media prepared: demo/opening.mp4 -> 40 frames
 media prepared: extra.mp4 -> 30 frames
+preview textures loaded: 70
+project after edit: {
+  "name": "issue47",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 4,
+          "name": "filler",
+          "start_ms": 6000,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0
+        },
+        {
+          "id": 5,
+          "name": "extra",
+          "start_ms": 1214,
+          "duration_ms": 3000,
+          "source": "extra.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 6
+}
+preview: source=extra.mp4 playhead=1235 source_time=21 frame=0
+preview: source=extra.mp4 playhead=3852 source_time=2638 frame=26
+preview: source=extra.mp4 playhead=3937 source_time=2723 frame=27
+preview: source=extra.mp4 playhead=4027 source_time=2813 frame=28
+preview: source=extra.mp4 playhead=4117 source_time=2903 frame=29

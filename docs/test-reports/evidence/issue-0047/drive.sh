@@ -103,7 +103,11 @@ echo "double-click extra.mp4 row at y=$ROW_Y"
 hold_click 100 $ROW_Y
 sleep 0.15
 hold_click 100 $ROW_Y
-sleep 0.8
+# 配置直後のフレーム展開（prepare_media）が終わり、状態ダンプが
+# 出るまで待ってから撮影・終了する（レビュー指摘: 0.8 秒固定では
+# ダンプも描画も間に合わない）。
+for i in $(seq 1 60); do grep -q "project after edit" "$OUT/stdout2.log" && break; sleep 0.5; done
+sleep 1
 grep -E "^media bin placed:" "$OUT/stdout2.log"
 grep -q "media bin placed: extra.mp4" "$OUT/stdout2.log" \
   && echo "OK placed via double-click" || echo "FAIL placement log missing"
