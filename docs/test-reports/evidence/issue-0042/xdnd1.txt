@@ -1,0 +1,5 @@
+target window: 0x200001
+selection served: text/uri-list
+XdndStatus: accepted=True
+XdndFinished received
+source done

@@ -332,6 +332,46 @@ pub enum HitTarget {
 }
 
 /// x ピクセルを時刻（ms）に変換する。ヘッダーより左では負になる。
+/// ドロップで取り込めるファイルかどうか（Issue #42）。
+/// 対応形式は WAV のみ（拡張子で判定、大文字小文字は問わない）。
+pub fn is_supported_drop_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .map(|e| e.to_string_lossy().eq_ignore_ascii_case("wav"))
+        .unwrap_or(false)
+}
+
+/// ドロップしたファイルの配置コマンド（Issue #42）。
+/// #30 の調査でドロップ座標は取得できないことが確定したため、
+/// 配置先は「選択中トラック（なければ先頭トラック）＋再生ヘッド
+/// 位置」とする。長さは素材のデコード結果を使う。トラックが無い・
+/// 長さが 0 なら配置できない（None）。
+pub fn drop_placement_command(
+    project: &Project,
+    selected_track: Option<u64>,
+    playhead_ms: i64,
+    source: &str,
+    duration_ms: i64,
+) -> Option<Command> {
+    if duration_ms <= 0 {
+        return None;
+    }
+    let track_id = selected_track
+        .filter(|id| project.tracks.iter().any(|t| t.id == *id))
+        .or_else(|| project.tracks.first().map(|t| t.id))?;
+    let name = std::path::Path::new(source)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "clip".to_string());
+    Some(Command::AddClip {
+        track_id,
+        name,
+        start_ms: playhead_ms.max(0),
+        duration_ms,
+        source: source.to_string(),
+    })
+}
+
 pub fn x_to_ms(x: f32, view_width_px: f32, scale: &timeline::ViewScale) -> i64 {
     scale.x_to_ms(x, view_width_px)
 }
@@ -871,6 +911,62 @@ mod tests {
     }
 
     // opening の矩形: x = 120 + 1000*0.084 = 204, w = 168, y = 24..72（幅 960）
+    #[test]
+    fn drop_position_maps_to_track_and_time() {
+        // Issue #42（イシュー指定名）: ドロップの配置先は選択中
+        // トラック＋再生ヘッド位置（#30 調査でドロップ座標は取得
+        // できないことが確定したための代替規則）。
+        let p = sample_project();
+        let first = p.tracks[0].id;
+        let cmd = drop_placement_command(&p, None, 1_500, "/tmp/takes/voice.wav", 2_000)
+            .expect("one track exists");
+        assert_eq!(
+            cmd,
+            Command::AddClip {
+                track_id: first,
+                name: "voice".to_string(),
+                start_ms: 1_500,
+                duration_ms: 2_000,
+                source: "/tmp/takes/voice.wav".to_string(),
+            }
+        );
+        // 選択中トラックがあればそちらが優先される
+        let mut p2 = sample_project();
+        let second = apply(
+            &mut p2,
+            &Command::AddTrack {
+                name: "A2".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let cmd = drop_placement_command(&p2, Some(second), 0, "/x.wav", 500).unwrap();
+        match cmd {
+            Command::AddClip { track_id, .. } => assert_eq!(track_id, second),
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        // 存在しない選択は先頭トラックへフォールバック
+        let cmd = drop_placement_command(&p2, Some(9999), 0, "/x.wav", 500).unwrap();
+        match cmd {
+            Command::AddClip { track_id, .. } => assert_eq!(track_id, first),
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        // トラックが無い・長さ 0 は配置できない
+        let empty = Project::new("empty");
+        assert!(drop_placement_command(&empty, None, 0, "/x.wav", 500).is_none());
+        assert!(drop_placement_command(&p, None, 0, "/x.wav", 0).is_none());
+    }
+
+    #[test]
+    fn drop_accepts_only_wav_paths() {
+        // Issue #42: 対応形式は WAV のみ（大文字小文字は問わない）。
+        assert!(is_supported_drop_path(std::path::Path::new("/a/b.wav")));
+        assert!(is_supported_drop_path(std::path::Path::new("/a/b.WAV")));
+        assert!(!is_supported_drop_path(std::path::Path::new("/a/b.mp3")));
+        assert!(!is_supported_drop_path(std::path::Path::new("/a/b")));
+    }
+
     #[test]
     fn x_to_ms_round_trips_at_any_zoom() {
         // Issue #38: 任意の倍率・オフセットで ms→px→ms が一致する

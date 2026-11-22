@@ -180,6 +180,9 @@ struct Model {
     prev_esc_down: bool,
     // Issue #41: WAV 書き出しの完了表示（画面と stdout に出す）。
     export_status: Option<String>,
+    // Issue #42: 直近のドロップ処理時刻（秒）。複数ファイルの
+    // ドロップは先頭1件だけ処理するためのバースト判定に使う。
+    last_drop_at: Option<f32>,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -370,6 +373,7 @@ fn model(app: &App) -> Model {
         loop_drag_pointer_ms: 0,
         prev_esc_down: false,
         export_status: None,
+        last_drop_at: None,
     }
 }
 
@@ -546,6 +550,75 @@ fn save_project_file(model: &mut Model) {
 /// ホイール操作（Issue #38）: Ctrl+ホイールでマウス位置の時刻を
 /// 中心にズーム、通常のホイールで水平スクロールする。テキスト入力中は
 /// 受け付けない。倍率とオフセットは表示状態で、保存はしない。
+/// ファイルドロップの取り込み（Issue #42）。配置先は選択中トラック＋
+/// 再生ヘッド位置（#30 調査: ドロップ座標は取得できない）。対応外・
+/// デコード不能・配置不能は何もせず理由をログに出す。複数ファイルの
+/// ドロップは先頭1件だけ処理し、残りはログに出す（1秒以内の連続
+/// ドロップを同じバーストとみなす）。
+fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
+    let now = app.time;
+    if let Some(last) = model.last_drop_at {
+        if now - last < 1.0 {
+            println!(
+                "drop skipped: {} (only the first file of a drop is imported)",
+                path.display()
+            );
+            return;
+        }
+    }
+    model.last_drop_at = Some(now);
+    if !edit::is_supported_drop_path(path) {
+        println!(
+            "drop rejected: {} (unsupported file type; only .wav)",
+            path.display()
+        );
+        return;
+    }
+    let decoded = match audio::decode_audio(path) {
+        Ok(d) => d,
+        Err(e) => {
+            println!("drop rejected: {} (cannot decode: {e})", path.display());
+            return;
+        }
+    };
+    let source = path.to_string_lossy().into_owned();
+    let cmd = match edit::drop_placement_command(
+        model.history.project(),
+        model.selected_track,
+        model.playhead_ms,
+        &source,
+        decoded.duration_ms(),
+    ) {
+        Some(cmd) => cmd,
+        None => {
+            println!(
+                "drop rejected: {} (no track to place on or empty audio)",
+                path.display()
+            );
+            return;
+        }
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            model.dropped_source = source;
+            refresh_waveforms(
+                model.history.project(),
+                &model.dropped_source,
+                &mut model.waveforms,
+                &mut model.source_durations,
+            );
+            model.audio_map = compute_audio_map(model.history.project(), &model.dropped_source);
+            save_project_file(model);
+            println!(
+                "dropped: {} -> {}",
+                path.display(),
+                model.history.project().dump_json()
+            );
+        }
+        Err(e) => println!("drop rejected: {} (command rejected: {e})", path.display()),
+    }
+}
+
 fn mouse_wheel(app: &App, model: &mut Model, delta: MouseScrollDelta) {
     if model.rename.is_some() || model.bpm_edit.is_some() {
         return;
@@ -574,6 +647,17 @@ fn mouse_wheel(app: &App, model: &mut Model, delta: MouseScrollDelta) {
 }
 
 fn event(app: &App, model: &mut Model, event: Event) {
+    // ファイルドロップ（Issue #42）はテキスト入力の有無によらず先に
+    // 捌く。パスだけが届き、座標は取得できない（#30 調査）。
+    if let Event::WindowEvent {
+        simple: Some(WindowEvent::DroppedFile(path)),
+        ..
+    } = &event
+    {
+        let path = path.clone();
+        handle_drop(app, model, &path);
+        return;
+    }
     // ホイール（Issue #38）はテキスト入力の有無によらず先に捌く
     // （入力中は mouse_wheel 側で無視する）。
     if let Event::WindowEvent {
