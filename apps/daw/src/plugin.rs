@@ -382,11 +382,31 @@ mod tests {
         None
     }
 
+    /// テスト用成果物（plugin-host とフィクスチャ .so）を確実に
+    /// ビルドしておく。`cargo test` だけでは両者はハッシュ付きの
+    /// 中間名でしか置かれず、正規名の成果物が無い環境（CI 等）で
+    /// テストが失敗したため、初回に一度だけワークスペース全体を
+    /// `cargo build` する（パッケージ指定のビルドでは cdylib の
+    /// 正規名成果物が出ない環境があることも確認済み）。
+    fn ensure_test_artifacts() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+            let status = std::process::Command::new(cargo)
+                .args(["build", "--offline", "--workspace"])
+                .status()
+                .expect("cargo build for test artifacts must run");
+            assert!(status.success(), "building test artifacts failed");
+        });
+    }
+
     fn helper_path() -> PathBuf {
+        ensure_test_artifacts();
         target_debug_file("plugin-host")
     }
 
     fn fixture_plugin_path() -> String {
+        ensure_test_artifacts();
         target_debug_file("libclap_test_synth.so")
             .to_string_lossy()
             .into_owned()
