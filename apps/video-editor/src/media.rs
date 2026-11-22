@@ -128,9 +128,11 @@ pub fn active_video_clip(project: &Project, playhead_ms: i64) -> Option<&Clip> {
 }
 
 /// クリップ内でのソース時刻。範囲外なら None。
-/// 素材時刻は「offset_ms + クリップ内位置」（Issue #43）。分割や
-/// 左トリムで進んだ offset を加味しないと、右クリップが素材の頭
-/// から再生し直してしまう。
+/// 素材時刻は「offset_ms + クリップ内位置」（Issue #43）。分割で
+/// 生じた右クリップは offset が分割点まで進んでいるため、これを
+/// 加味しないと素材の頭から再生し直してしまう（なお現行コアの
+/// TrimClip は offset を進めないので、左トリムした右クリップでは
+/// トリム量ぶんずれる制限が別に残る）。
 pub fn source_time_ms(clip: &Clip, playhead_ms: i64) -> Option<i64> {
     if playhead_ms >= clip.start_ms && playhead_ms < clip.end_ms() {
         Some(clip.offset_ms + (playhead_ms - clip.start_ms))
