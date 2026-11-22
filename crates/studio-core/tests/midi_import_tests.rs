@@ -375,3 +375,142 @@ fn import_midi_applies_as_one_undo_step_and_failures_keep_state() {
     assert!(history.redo());
     assert_eq!(history.project().tracks.len(), 1);
 }
+
+#[test]
+fn same_tick_tempo_points_agree_between_bpm_and_conversion() {
+    // Issue #70 レビュー対応: 同じ tick に複数のテンポ点がある場合、
+    // 実効テンポ（最後の点）で bpm と変換が一致すること。
+    // tick 0 に 500000us → 250000us と続くので実効は 240 BPM で、
+    // 480 tick = 250ms、bpm も 240 になる。
+    let bytes = smf(
+        0,
+        480,
+        vec![track(vec![
+            tempo(0, 500_000),
+            tempo(0, 250_000),
+            note_on(0, 0, 60, 100),
+            note_off(480, 0, 60),
+            end_of_track(0),
+        ])],
+    );
+    let import = parse_midi(&bytes).unwrap();
+    assert_eq!(import.bpm, Some(240.0));
+    assert_eq!(import.tracks[0].notes[0].duration_ms, 250);
+}
+
+#[test]
+fn format2_is_an_error() {
+    // Issue #70 レビュー対応: format 2（逐次ソング）は並行トラック
+    // として黙って取り込まずエラーにする（スコープは 0/1）。
+    let bytes = smf(
+        2,
+        480,
+        vec![
+            track(vec![
+                tempo(0, 500_000),
+                note_on(0, 0, 60, 100),
+                note_off(480, 0, 60),
+                end_of_track(0),
+            ]),
+            track(vec![
+                tempo(0, 500_000),
+                note_on(0, 0, 62, 100),
+                note_off(480, 0, 62),
+                end_of_track(0),
+            ]),
+        ],
+    );
+    assert_eq!(
+        parse_midi(&bytes),
+        Err(MidiImportError::SequentialFormatNotSupported)
+    );
+}
+
+#[test]
+fn tempo_starting_later_uses_the_default_tempo_before_it() {
+    // Issue #70 レビュー対応: 最初のテンポ点が tick 0 に無い場合、
+    // それより前は標準テンポ（500000us）で変換する。
+    // テンポ点は tick 480 の 250000us のみ: 前半 500ms + 後半 250ms。
+    let bytes = smf(
+        0,
+        480,
+        vec![track(vec![
+            note_on(0, 0, 60, 100),
+            tempo(480, 250_000),
+            note_off(480, 0, 60),
+            end_of_track(0),
+        ])],
+    );
+    let import = parse_midi(&bytes).unwrap();
+    assert_eq!(import.bpm, Some(240.0), "先頭テンポが bpm になる");
+    assert_eq!(import.tracks[0].notes[0].duration_ms, 750);
+}
+
+#[test]
+fn out_of_range_bpm_is_not_reflected_but_conversion_stays_exact() {
+    // Issue #70 レビュー対応: テンポ 100000us = 600 BPM は SetBpm の
+    // 範囲外なので bpm には入れないが、変換はテンポマップどおり
+    // 正確に行う（480 tick = 100ms）。
+    let bytes = smf(
+        0,
+        480,
+        vec![track(vec![
+            tempo(0, 100_000),
+            note_on(0, 0, 60, 100),
+            note_off(480, 0, 60),
+            end_of_track(0),
+        ])],
+    );
+    let import = parse_midi(&bytes).unwrap();
+    assert_eq!(import.bpm, None);
+    assert_eq!(import.tracks[0].notes[0].duration_ms, 100);
+}
+
+#[test]
+fn clip_starts_at_the_first_note() {
+    // Issue #70 レビュー対応: 最初のノートが 0 でない場合、クリップは
+    // その位置に置かれ、ノートはクリップ相対になる。
+    let bytes = smf(
+        0,
+        480,
+        vec![track(vec![
+            tempo(0, 500_000),
+            note_on(480, 0, 60, 100),
+            note_off(480, 0, 60),
+            end_of_track(0),
+        ])],
+    );
+    let import = parse_midi(&bytes).unwrap();
+    let t = &import.tracks[0];
+    assert_eq!(t.clip_start_ms, 500);
+    assert_eq!(t.clip_duration_ms, 500);
+    assert_eq!(t.notes[0].start_ms, 0);
+}
+
+#[test]
+fn format1_with_multiple_note_tracks_imports_each() {
+    // Issue #70 レビュー対応: format 1 でノートトラックが複数あれば
+    // それぞれ DAW トラックになる。
+    let bytes = smf(
+        1,
+        480,
+        vec![
+            track(vec![tempo(0, 500_000), end_of_track(0)]),
+            track(vec![
+                track_name(0, "A"),
+                note_on(0, 0, 60, 100),
+                note_off(480, 0, 60),
+                end_of_track(0),
+            ]),
+            track(vec![
+                track_name(0, "B"),
+                note_on(0, 0, 48, 90),
+                note_off(240, 0, 48),
+                end_of_track(0),
+            ]),
+        ],
+    );
+    let import = parse_midi(&bytes).unwrap();
+    let names: Vec<&str> = import.tracks.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, vec!["A", "B"]);
+}

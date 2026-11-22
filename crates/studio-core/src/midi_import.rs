@@ -3,9 +3,9 @@
 //!
 //! 変換は純粋関数 [`parse_midi`]（SMF バイト列 → [`MidiImport`]）と、
 //! 履歴への適用 [`import_midi`] に分ける。状態変更はコマンド層
-//! 経由のみ（ADR-0004）。適用は事前に複製で全コマンドを試して
-//! 原子性を確かめ、Undo 1回で取り込み前に戻れるよう、開始時の
-//! スナップショットを1件だけ履歴に積む（#31 のジェスチャ方式）。
+//! 経由のみ（ADR-0004）。適用は複製の上でコマンド列を組み立てて
+//! から [`History::commit_replacement`] で一度に差し替えるため、
+//! 部分適用の状態が残らず、Undo 1回で取り込み前に戻れる。
 //!
 //! 割り当て方針（イシュー記載）: SMF のトラックごとに DAW の
 //! トラックを1つ作り、同一トラック内のチャンネルは統合する
@@ -58,6 +58,8 @@ pub enum MidiImportError {
     InvalidFile(String),
     /// SMPTE division は未対応（スコープ外）。
     SmpteNotSupported,
+    /// format 2（逐次ソング）は未対応（スコープは format 0/1）。
+    SequentialFormatNotSupported,
     /// ノートが1つも無い（何も取り込めない）。
     NoNotes,
     /// コマンド適用の失敗（事前検証を通るため通常は起きない）。
@@ -70,6 +72,9 @@ impl fmt::Display for MidiImportError {
             MidiImportError::InvalidFile(msg) => write!(f, "invalid MIDI file: {msg}"),
             MidiImportError::SmpteNotSupported => {
                 write!(f, "SMPTE time division is not supported")
+            }
+            MidiImportError::SequentialFormatNotSupported => {
+                write!(f, "SMF format 2 (sequential songs) is not supported")
             }
             MidiImportError::NoNotes => write!(f, "no notes found in the MIDI file"),
             MidiImportError::Command(e) => write!(f, "command failed during import: {e}"),
@@ -111,6 +116,11 @@ impl TempoMap {
 /// SMF バイト列をノート列へ変換する純粋関数。
 pub fn parse_midi(bytes: &[u8]) -> Result<MidiImport, MidiImportError> {
     let smf = Smf::parse(bytes).map_err(|e| MidiImportError::InvalidFile(e.to_string()))?;
+    // スコープは format 0/1。format 2（逐次ソング）を並行トラック
+    // として黙って取り込まないよう明示的にエラーにする。
+    if matches!(smf.header.format, midly::Format::Sequential) {
+        return Err(MidiImportError::SequentialFormatNotSupported);
+    }
     let ticks_per_beat = match smf.header.timing {
         Timing::Metrical(t) => t.as_int() as u32,
         Timing::Timecode(..) => return Err(MidiImportError::SmpteNotSupported),
@@ -120,7 +130,7 @@ pub fn parse_midi(bytes: &[u8]) -> Result<MidiImport, MidiImportError> {
     }
 
     // テンポマップは全トラックから集める（format 1 では通常
-    // コンダクタートラックにある）。同 tick は後の点が勝つ。
+    // コンダクタートラックにある）。同 tick の複数点は下で正規化する。
     let mut points: Vec<(u64, u32)> = Vec::new();
     for track in &smf.tracks {
         let mut tick = 0u64;
@@ -132,13 +142,23 @@ pub fn parse_midi(bytes: &[u8]) -> Result<MidiImport, MidiImportError> {
         }
     }
     points.sort_by_key(|(tick, _)| *tick);
+    // 同じ tick に複数の点がある場合は最後の点が実効テンポになる。
+    // bpm 反映と変換が食い違わないよう、ここで正規化して単一の
+    // 点列から両方を導出する（#70 レビュー対応）。
+    let mut normalized: Vec<(u64, u32)> = Vec::new();
+    for point in points {
+        match normalized.last_mut() {
+            Some(last) if last.0 == point.0 => last.1 = point.1,
+            _ => normalized.push(point),
+        }
+    }
     let tempo_map = TempoMap {
         ticks_per_beat,
-        points,
+        points: normalized,
     };
 
-    // プロジェクトの bpm には先頭のテンポ（最も早い tick の点、
-    // 同点はファイル順で先のもの）を入れる。
+    // プロジェクトの bpm には先頭のテンポ（正規化済み点列の先頭
+    // ＝最も早い tick の実効テンポ）を入れる。
     let bpm = tempo_map.points.first().and_then(|(_, us)| {
         let bpm = 60_000_000.0 / *us as f32;
         (20.0..=300.0).contains(&bpm).then_some(bpm)
@@ -198,12 +218,14 @@ fn convert_track(
             _ => {}
         }
     }
-    // ノートオフの無いノートはトラック終端で閉じる。
+    // ノートオフの無いノートはトラック終端で閉じる。列挙順が
+    // HashMap の反復順に依存しないよう、後段で決定的に並べ直す。
     for ((_, key), queue) in &open {
         for (start, vel) in queue {
             done.push((*start, tick, *key, *vel));
         }
     }
+    done.sort_by_key(|(start, _, key, vel)| (*start, *key, *vel));
 
     let mut notes: Vec<Note> = done
         .iter()
@@ -223,7 +245,7 @@ fn convert_track(
     if notes.is_empty() {
         return None;
     }
-    notes.sort_by_key(|n| (n.start_ms, n.pitch));
+    notes.sort_by_key(|n| (n.start_ms, n.pitch, n.velocity));
     let clip_start = notes.iter().map(|n| n.start_ms).min().unwrap_or(0);
     let clip_end = notes
         .iter()
@@ -288,13 +310,11 @@ where
 /// 変わらない。成功時は Undo 1回で取り込み前に戻れる。
 pub fn import_midi(history: &mut History, bytes: &[u8]) -> Result<ImportSummary, MidiImportError> {
     let import = parse_midi(bytes)?;
-    // 原子性: まず複製の上で全コマンドを試す。ここを通れば、
-    // 同じ入力の実適用は成功する（コマンド適用は決定的）。
-    let mut sim = history.project().clone();
-    run(&mut |cmd| apply(&mut sim, cmd), &import).map_err(MidiImportError::Command)?;
-    let before = history.project().clone();
+    // 複製の上でコマンド列を最後まで適用してから一度に差し替える
+    // ため、失敗しても実プロジェクトに部分適用が残らない。
+    let mut built = history.project().clone();
     let summary =
-        run(&mut |cmd| history.apply_transient(cmd), &import).map_err(MidiImportError::Command)?;
-    history.record_undo_snapshot(before);
+        run(&mut |cmd| apply(&mut built, cmd), &import).map_err(MidiImportError::Command)?;
+    history.commit_replacement(built);
     Ok(summary)
 }

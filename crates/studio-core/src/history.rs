@@ -81,6 +81,20 @@ impl History {
         self.push_snapshot(snapshot);
     }
 
+    /// プロジェクト全体を差し替える（Issue #70: MIDI 取り込みの
+    /// ように、複製の上で組み立てた状態を一度に反映する用）。
+    /// 現在の状態を undo スナップショットとして積むため、差し替えは
+    /// Undo 1回で戻せる。差し替えが失敗することはなく、部分適用の
+    /// 状態が残らない。内容が同一なら何もしない
+    /// （[`History::record_undo_snapshot`] と同じ幽霊エントリ対策）。
+    pub fn commit_replacement(&mut self, new_project: Project) {
+        if new_project.dump_json() == self.project.dump_json() {
+            return;
+        }
+        let before = std::mem::replace(&mut self.project, new_project);
+        self.push_snapshot(before);
+    }
+
     /// スナップショットを undo スタックへ積み、上限を超えたら古い
     /// ものから捨て、redo スタックを消す。
     fn push_snapshot(&mut self, snapshot: Project) {

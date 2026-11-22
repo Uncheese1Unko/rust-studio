@@ -207,3 +207,31 @@ fn note_commands_round_trip_through_undo_and_redo() {
     assert!(history.undo());
     assert_eq!(history.project().dump_json(), moved, "undo remove");
 }
+
+#[test]
+fn commit_replacement_swaps_the_project_as_one_undo_step() {
+    // Issue #70 レビュー対応: 複製上で組み立てた状態を一度に反映する
+    // 差し替えは、Undo 1回で戻れる。同一内容の差し替えは何もしない
+    // （幽霊エントリを作らない）。
+    let mut history = History::new(Project::new("before"));
+    history.commit_replacement(Project::new("before"));
+    assert!(!history.can_undo(), "同一内容では履歴を積まない");
+    let mut replacement = Project::new("after");
+    studio_core::apply(
+        &mut replacement,
+        &Command::AddTrack {
+            name: "T".into(),
+            kind: studio_core::TrackKind::Audio,
+        },
+    )
+    .unwrap();
+    history.commit_replacement(replacement);
+    assert_eq!(history.project().name, "after");
+    assert_eq!(history.project().tracks.len(), 1);
+    assert!(history.can_undo());
+    assert!(history.undo());
+    assert_eq!(history.project().name, "before");
+    assert!(history.project().tracks.is_empty());
+    assert!(history.redo());
+    assert_eq!(history.project().name, "after");
+}
