@@ -51,5 +51,6 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #36 DAW の再生でメトロノームが鳴らせる | [issue-0036-metronome.md](issue-0036-metronome.md) |
 | 2026-11-22 | #37 DAW のクリップ移動・トリムがグリッドや端にスナップする | [issue-0037-clip-snap.md](issue-0037-clip-snap.md) |
 | 2026-11-22 | #38 DAW のタイムラインをズームできる | [issue-0038-timeline-zoom.md](issue-0038-timeline-zoom.md) |
+| 2026-11-22 | #39 DAW でトラックをミュート／ソロにできる | [issue-0039-mute-solo.md](issue-0039-mute-solo.md) |
 | 2026-11-22 | #44 動画編集でクリップの複製とコピー＆ペーストができる | [issue-0044-duplicate-copy-paste.md](issue-0044-duplicate-copy-paste.md) |
 | 2026-11-22 | #45 動画編集のクリップ移動・トリムがスナップする | [issue-0045-clip-snap.md](issue-0045-clip-snap.md) |
