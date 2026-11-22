@@ -56,3 +56,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #44 動画編集でクリップの複製とコピー＆ペーストができる | [issue-0044-duplicate-copy-paste.md](issue-0044-duplicate-copy-paste.md) |
 | 2026-11-22 | #45 動画編集のクリップ移動・トリムがスナップする | [issue-0045-clip-snap.md](issue-0045-clip-snap.md) |
 | 2026-11-22 | #46 動画編集のタイムラインをズームできる | [issue-0046-timeline-zoom.md](issue-0046-timeline-zoom.md) |
+| 2026-11-22 | #47 動画編集にメディアビンがある | [issue-0047-media-bin.md](issue-0047-media-bin.md) |
