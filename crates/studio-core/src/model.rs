@@ -91,6 +91,13 @@ pub struct Track {
     /// （既定の種別色）。旧形式の JSON では None。
     #[serde(default)]
     pub color: Option<ColorTag>,
+    /// ミュート（消音。Issue #39）。旧形式の JSON では false。
+    #[serde(default)]
+    pub muted: bool,
+    /// ソロ（このトラックだけ鳴らす。Issue #39）。複数可。
+    /// 旧形式の JSON では false。
+    #[serde(default)]
+    pub solo: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

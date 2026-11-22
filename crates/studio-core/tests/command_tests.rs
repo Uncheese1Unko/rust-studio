@@ -183,6 +183,54 @@ fn trim_clip_command_round_trips_through_json() {
 }
 
 #[test]
+fn set_track_mute_and_solo_apply() {
+    // Issue #39: ミュート／ソロのコマンド。
+    let (mut p, track_id, _clip_id) = project_with_clip();
+    assert!(!p.tracks[0].muted && !p.tracks[0].solo, "既定は両方 false");
+
+    apply(
+        &mut p,
+        &Command::SetTrackMute {
+            track_id,
+            muted: true,
+        },
+    )
+    .unwrap();
+    assert!(p.tracks[0].muted);
+    apply(
+        &mut p,
+        &Command::SetTrackSolo {
+            track_id,
+            solo: true,
+        },
+    )
+    .unwrap();
+    assert!(p.tracks[0].solo);
+
+    // 存在しないトラックは弾いて状態を変えない
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackMute {
+            track_id: 9999,
+            muted: true,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::TrackNotFound(9999));
+    let err = apply(
+        &mut p,
+        &Command::SetTrackSolo {
+            track_id: 9999,
+            solo: true,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::TrackNotFound(9999));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
 fn set_track_volume_and_pan_apply_and_validate() {
     // Issue #15: トラック音量・パンのコマンド。
     let (mut p, track_id, _clip_id) = project_with_clip();

@@ -55,6 +55,8 @@ fn tools_list_exposes_all_commands() {
         "set_clip_gain",
         "set_track_volume",
         "set_track_pan",
+        "set_track_mute",
+        "set_track_solo",
         "set_clip_cutout",
         "set_clip_pitch",
         "set_track_color",
@@ -458,6 +460,37 @@ fn project_file_save_failure_is_reported_in_result() {
     let text = res["result"]["content"][0]["text"].as_str().unwrap();
     let payload: serde_json::Value = serde_json::from_str(text).unwrap();
     assert_eq!(payload["persisted"], false);
+}
+
+#[test]
+fn set_mute_solo_tools_apply_via_tools_call() {
+    // Issue #39: set_track_mute / set_track_solo が tools/call 経由で
+    // ダンプに反映されること。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        50,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        51,
+        "set_track_mute",
+        json!({"track_id": 1, "muted": true}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let res = call_tool(
+        &server,
+        52,
+        "set_track_solo",
+        json!({"track_id": 1, "solo": true}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert!(project.tracks[0].muted && project.tracks[0].solo);
 }
 
 #[test]

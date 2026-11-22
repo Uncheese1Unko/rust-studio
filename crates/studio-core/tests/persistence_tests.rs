@@ -36,6 +36,44 @@ fn temp_path(tag: &str) -> PathBuf {
 }
 
 #[test]
+fn mute_and_solo_survive_save_load_and_legacy_json_defaults() {
+    // Issue #39: ミュート／ソロが保存・復元され、旧 JSON（フィールド
+    // なし）では false として読める。
+    let mut p = sample_project();
+    let track_id = p.tracks[0].id;
+    apply(
+        &mut p,
+        &Command::SetTrackMute {
+            track_id,
+            muted: true,
+        },
+    )
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SetTrackSolo {
+            track_id,
+            solo: true,
+        },
+    )
+    .unwrap();
+    let path = temp_path("mute-solo");
+    p.save_to_path(&path).unwrap();
+    let loaded = Project::load_from_path(&path).unwrap();
+    assert!(loaded.tracks[0].muted && loaded.tracks[0].solo);
+    let _ = std::fs::remove_file(&path);
+
+    let legacy = r#"{
+        "name": "legacy", "bpm": 120.0,
+        "tracks": [{"id": 1, "name": "A1", "kind": "audio", "clips": [],
+                    "volume": 1.0, "pan": 0.0, "color": null}],
+        "next_id": 2
+    }"#;
+    let parsed: Project = serde_json::from_str(legacy).unwrap();
+    assert!(!parsed.tracks[0].muted && !parsed.tracks[0].solo);
+}
+
+#[test]
 fn save_and_load_round_trip_restores_identical_state() {
     let project = sample_project();
     let path = temp_path("round-trip");

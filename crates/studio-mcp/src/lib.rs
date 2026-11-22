@@ -217,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド17種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド19種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -421,6 +421,30 @@ fn tool_definitions() -> Value {
                     "pan": {"type": "number"},
                 },
                 "required": ["track_id", "pan"],
+            },
+        },
+        {
+            "name": "set_track_mute",
+            "description": "トラックのミュートを設定する（Issue #39）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "muted": {"type": "boolean"},
+                },
+                "required": ["track_id", "muted"],
+            },
+        },
+        {
+            "name": "set_track_solo",
+            "description": "トラックのソロを設定する（Issue #39、複数可）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "solo": {"type": "boolean"},
+                },
+                "required": ["track_id", "solo"],
             },
         },
         {

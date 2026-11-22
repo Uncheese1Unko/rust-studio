@@ -66,6 +66,16 @@ pub enum Command {
         track_id: u64,
         pan: f32,
     },
+    /// トラックのミュートを設定する（Issue #39）。
+    SetTrackMute {
+        track_id: u64,
+        muted: bool,
+    },
+    /// トラックのソロを設定する（Issue #39）。複数ソロ可。
+    SetTrackSolo {
+        track_id: u64,
+        solo: bool,
+    },
     SetClipCutout {
         clip_id: u64,
         enabled: bool,
@@ -147,6 +157,8 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 volume: 1.0,
                 pan: 0.0,
                 color: None,
+                muted: false,
+                solo: false,
             });
             Ok(Some(id))
         }
@@ -356,6 +368,24 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             track.pan = *pan;
             Ok(None)
         }
+        Command::SetTrackMute { track_id, muted } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == *track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.muted = *muted;
+            Ok(None)
+        }
+        Command::SetTrackSolo { track_id, solo } => {
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == *track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.solo = *solo;
+            Ok(None)
+        }
         Command::SetClipCutout { clip_id, enabled } => {
             let track = project
                 .tracks
@@ -452,6 +482,8 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 volume: 1.0,
                 pan: 0.0,
                 color: None,
+                muted: false,
+                solo: false,
             });
             Err(CommandError::InvalidRange("mutate then fail (test only)"))
         }

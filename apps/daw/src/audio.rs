@@ -91,6 +91,16 @@ pub fn fade_envelope(clip: &studio_core::Clip, within_ms: f64) -> f32 {
 
 /// プロジェクトのミックスを指定範囲でレンダリングする（ステレオ出力）。
 /// 配置位置・ゲインはプロジェクトの状態どおりに反映される。
+/// トラックが再生ミックスで鳴るかどうか（Issue #39）。
+/// ミュートは常に出ない。ソロが1つでもあるプロジェクトでは
+/// ソロでないトラックは出ない（ミュート優先）。
+pub fn is_track_audible(track: &studio_core::Track, any_solo: bool) -> bool {
+    if track.muted {
+        return false;
+    }
+    !any_solo || track.solo
+}
+
 pub fn render_mix(
     project: &Project,
     audio: &HashMap<String, ClipAudio>,
@@ -100,6 +110,8 @@ pub fn render_mix(
 ) -> Vec<f32> {
     let frames = (duration_ms.max(0) as u64 * out_rate as u64 / 1000) as usize;
     let mut out = vec![0.0f32; frames * 2];
+    // ミュート／ソロの判定（Issue #39）: ソロの有無はプロジェクト全体で決まる。
+    let any_solo = project.tracks.iter().any(|t| t.solo);
     // ピッチ変更済みクリップ音声のキャッシュ（このレンダリング内のみ）。
     let mut pitch_cache: HashMap<(String, u32), ClipAudio> = HashMap::new();
     for (i, frame) in out.chunks_mut(2).enumerate() {
@@ -108,6 +120,9 @@ pub fn render_mix(
         let t_ms = start_ms as f64 + i as f64 * 1000.0 / out_rate as f64;
         for track in &project.tracks {
             if track.kind != studio_core::TrackKind::Audio {
+                continue;
+            }
+            if !is_track_audible(track, any_solo) {
                 continue;
             }
             // トラック音量とパン（Issue #15）。パンはバランス方式:
@@ -619,7 +634,7 @@ mod mixer_tests {
 mod pitch_tests {
     use super::tests::*;
     use super::*;
-    use studio_core::{apply, Command};
+    use studio_core::{apply, Command, TrackKind};
 
     /// 50ms 窓の Goertzel 平均。長い窓の位相崩れを避ける測定用。
     fn segmented_goertzel(samples: &[f32], rate: u32, freq: f32) -> f32 {
@@ -756,6 +771,133 @@ mod pitch_tests {
             (after - 730.0).abs() < 200.0,
             "formant must stay near 730 after +12, got {after}"
         );
+    }
+
+    #[test]
+    fn muted_track_is_silent_and_solo_isolates() {
+        // Issue #39: 2トラック（A=440Hz、B=880Hz）。ミュートした
+        // トラックはミックスに出ず、ソロがあればソロ以外は出ない。
+        // ミュートはソロより優先する。
+        let mut p = Project::new("mute solo");
+        let ta = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let tb = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "B".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        for (tid, src) in [(ta, "a.wav"), (tb, "b.wav")] {
+            apply(
+                &mut p,
+                &Command::AddClip {
+                    track_id: tid,
+                    name: src.into(),
+                    start_ms: 0,
+                    duration_ms: 2_000,
+                    source: src.into(),
+                },
+            )
+            .unwrap();
+        }
+        let mut audio = HashMap::new();
+        audio.insert("a.wav".to_string(), sine(440.0, 3_000, 0.4));
+        audio.insert("b.wav".to_string(), sine(880.0, 3_000, 0.4));
+        let mag = |p: &Project, freq: f32| {
+            let mix = render_mix(p, &audio, 0, 1_000, RATE);
+            goertzel(&window(&mix, 2, 0, 1_000, RATE), RATE, freq)
+        };
+        assert!(
+            mag(&p, 440.0) > 0.05 && mag(&p, 880.0) > 0.05,
+            "both audible"
+        );
+        apply(
+            &mut p,
+            &Command::SetTrackMute {
+                track_id: ta,
+                muted: true,
+            },
+        )
+        .unwrap();
+        assert!(mag(&p, 440.0) < 0.005, "muted A must be silent");
+        assert!(mag(&p, 880.0) > 0.05, "B still audible");
+        apply(
+            &mut p,
+            &Command::SetTrackMute {
+                track_id: ta,
+                muted: false,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackSolo {
+                track_id: tb,
+                solo: true,
+            },
+        )
+        .unwrap();
+        assert!(mag(&p, 440.0) < 0.005, "solo B must isolate");
+        assert!(mag(&p, 880.0) > 0.05);
+        apply(
+            &mut p,
+            &Command::SetTrackMute {
+                track_id: tb,
+                muted: true,
+            },
+        )
+        .unwrap();
+        assert!(mag(&p, 880.0) < 0.005, "mute wins over solo");
+    }
+
+    #[test]
+    fn track_audibility_rules() {
+        // Issue #39: 鳴らすトラックの判定（純粋関数）の真理値表。
+        let mut p = Project::new("audible");
+        let t = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let track = p.tracks[0].clone();
+        assert!(is_track_audible(&track, false));
+        assert!(
+            !is_track_audible(&track, true),
+            "ソロが他にある間はソロでないトラックは鳴らない"
+        );
+        apply(
+            &mut p,
+            &Command::SetTrackSolo {
+                track_id: t,
+                solo: true,
+            },
+        )
+        .unwrap();
+        assert!(is_track_audible(&p.tracks[0], true));
+        apply(
+            &mut p,
+            &Command::SetTrackMute {
+                track_id: t,
+                muted: true,
+            },
+        )
+        .unwrap();
+        assert!(!is_track_audible(&p.tracks[0], true), "mute wins");
+        assert!(!is_track_audible(&p.tracks[0], false));
     }
 
     #[test]

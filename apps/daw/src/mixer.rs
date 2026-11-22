@@ -63,6 +63,82 @@ pub fn pan_rect(track_count: usize, track_index: usize) -> Rect {
     }
 }
 
+/// M/S ボタンの左端（px、ヘッダーの右の空き帯。Issue #39）。
+/// 右端に置くと選択中トラックの大きな現在値表示（#25）と重なるため
+/// ここに置く。
+pub const BUTTON_X: f32 = timeline::HEADER_WIDTH_PX + 6.0;
+/// M/S ボタンの一辺（px）。
+pub const BUTTON_SIZE_PX: f32 = 22.0;
+
+/// ミュートボタンの矩形（Issue #39）。
+pub fn mute_rect(track_count: usize, track_index: usize) -> Rect {
+    Rect {
+        x: BUTTON_X,
+        y: strip_y(track_count, track_index) + 7.0,
+        w: BUTTON_SIZE_PX,
+        h: BUTTON_SIZE_PX,
+    }
+}
+
+/// ソロボタンの矩形（Issue #39）。
+pub fn solo_rect(track_count: usize, track_index: usize) -> Rect {
+    Rect {
+        x: BUTTON_X + BUTTON_SIZE_PX + 4.0,
+        y: strip_y(track_count, track_index) + 7.0,
+        w: BUTTON_SIZE_PX,
+        h: BUTTON_SIZE_PX,
+    }
+}
+
+/// ミキサーの M/S ボタンの種類（Issue #39）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixerButton {
+    Mute,
+    Solo,
+}
+
+/// M/S ボタンのヒット結果（Issue #39）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MixerButtonHit {
+    pub track_id: u64,
+    pub button: MixerButton,
+}
+
+/// 座標に対する M/S ボタンのヒットテスト（Issue #39）。
+pub fn hit_mixer_button(project: &Project, x: f32, y: f32) -> Option<MixerButtonHit> {
+    let track_count = project.tracks.len();
+    for (index, track) in project.tracks.iter().enumerate() {
+        if mute_rect(track_count, index).contains(x, y) {
+            return Some(MixerButtonHit {
+                track_id: track.id,
+                button: MixerButton::Mute,
+            });
+        }
+        if solo_rect(track_count, index).contains(x, y) {
+            return Some(MixerButtonHit {
+                track_id: track.id,
+                button: MixerButton::Solo,
+            });
+        }
+    }
+    None
+}
+
+/// ボタンのヒットから、現在状態を反転させるコマンドを作る（Issue #39）。
+pub fn toggle_command(project: &Project, hit: &MixerButtonHit) -> Option<Command> {
+    let track = project.tracks.iter().find(|t| t.id == hit.track_id)?;
+    Some(match hit.button {
+        MixerButton::Mute => Command::SetTrackMute {
+            track_id: hit.track_id,
+            muted: !track.muted,
+        },
+        MixerButton::Solo => Command::SetTrackSolo {
+            track_id: hit.track_id,
+            solo: !track.solo,
+        },
+    })
+}
+
 /// x から音量（0.0〜2.0、範囲外はクランプ）。
 pub fn volume_at(rect: Rect, x: f32) -> f32 {
     let frac = ((x - rect.x) / rect.w).clamp(0.0, 1.0);
@@ -201,6 +277,58 @@ mod tests {
         )
         .unwrap();
         p
+    }
+
+    #[test]
+    fn mute_solo_buttons_hit_and_toggle() {
+        // Issue #39: ミキサー帯の M / S ボタンのヒットテストと、
+        // 現在状態から作るトグルコマンド。
+        let mut p = sample_project();
+        let track_id = p.tracks[0].id;
+        let m = mute_rect(1, 0);
+        let s = solo_rect(1, 0);
+        assert_eq!(
+            hit_mixer_button(&p, m.x + 2.0, m.y + 2.0),
+            Some(MixerButtonHit {
+                track_id,
+                button: MixerButton::Mute,
+            })
+        );
+        assert_eq!(
+            hit_mixer_button(&p, s.x + 2.0, s.y + 2.0),
+            Some(MixerButtonHit {
+                track_id,
+                button: MixerButton::Solo,
+            })
+        );
+        assert_eq!(hit_mixer_button(&p, m.x - 30.0, m.y + 2.0), None);
+        // トグル: 現在 false なら true にするコマンドになる
+        let hit = MixerButtonHit {
+            track_id,
+            button: MixerButton::Mute,
+        };
+        assert_eq!(
+            toggle_command(&p, &hit),
+            Some(Command::SetTrackMute {
+                track_id,
+                muted: true,
+            })
+        );
+        apply(
+            &mut p,
+            &Command::SetTrackMute {
+                track_id,
+                muted: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            toggle_command(&p, &hit),
+            Some(Command::SetTrackMute {
+                track_id,
+                muted: false,
+            })
+        );
     }
 
     #[test]

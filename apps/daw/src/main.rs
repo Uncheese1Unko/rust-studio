@@ -1054,6 +1054,21 @@ fn handle_pointer(app: &App, model: &mut Model) {
     // ミキサー（Issue #15）: スライダーの押下・ドラッグで音量／パンを
     // コマンド経由で変える。タイムライン領域とは重ならない。
     if left_down && !model.prev_left_down {
+        // M/S ボタン（Issue #39）: 押下で現在状態を反転させる。
+        if let Some(hit) = mixer::hit_mixer_button(model.history.project(), lx, ly) {
+            if let Some(cmd) = mixer::toggle_command(model.history.project(), &hit) {
+                match model.history.apply(&cmd) {
+                    Ok(_) => {
+                        save_project_file(model);
+                        println!(
+                            "after mixer button: {}",
+                            model.history.project().dump_json()
+                        );
+                    }
+                    Err(e) => println!("command rejected: {e}"),
+                }
+            }
+        }
         if let Some(hit) = mixer::hit_mixer(model.history.project(), lx, ly) {
             model.mixer_active = Some((hit.track_id, hit.param));
             model.mixer_before = Some(model.history.project().clone());
@@ -1672,6 +1687,34 @@ fn view(app: &App, model: &Model, frame: Frame) {
             )
             .font_size(11)
             .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        // M/S ボタン（Issue #39）: ON のときだけ色面になる
+        // （M はアクセント、S は副色）。OFF は沈み面＋補助文字。
+        for (rect, label, active, active_face) in [
+            (
+                mixer::mute_rect(count, index),
+                "M",
+                track.muted,
+                theme::ACCENT,
+            ),
+            (mixer::solo_rect(count, index), "S", track.solo, theme::TEAL),
+        ] {
+            let face = if active {
+                active_face
+            } else {
+                theme::PANEL_SUNK
+            };
+            draw_rounded_rect(&draw, win, rect, 4.0, face);
+            let (lx, ly) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+            let tc = if active {
+                theme::BACKGROUND
+            } else {
+                theme::TEXT_SUB
+            };
+            draw.text(label)
+                .x_y(lx, ly)
+                .font_size(11)
+                .color(rgb(tc.0, tc.1, tc.2));
+        }
         // 選択中トラックの現在値は大きく出す（Issue #25、デザイン
         // 文書「タイポグラフィとパネルラベル」: 階層はサイズで作る）。
         if selected_id == Some(track.id) {
