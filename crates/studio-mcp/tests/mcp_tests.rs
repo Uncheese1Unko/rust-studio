@@ -48,6 +48,7 @@ fn tools_list_exposes_all_commands() {
         "add_clip",
         "move_clip",
         "trim_clip",
+        "split_clip",
         "remove_clip",
         "set_clip_gain",
         "set_track_volume",
