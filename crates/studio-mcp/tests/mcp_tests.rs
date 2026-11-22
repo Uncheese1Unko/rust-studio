@@ -65,6 +65,8 @@ fn tools_list_exposes_all_commands() {
         "set_track_color",
         "set_clip_color",
         "rename_track",
+        "set_track_instrument",
+        "add_note",
         "get_project",
         "undo",
         "redo",
@@ -922,6 +924,69 @@ fn set_clip_offset_tool_applies_via_tools_call() {
         63,
         "set_clip_offset",
         json!({"clip_id": 2, "offset_ms": -1}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+}
+
+#[test]
+fn note_tools_apply_via_tools_call() {
+    // Issue #68 / ADR-0016: set_track_instrument と add_note が
+    // tools/call 経由で適用でき、ダンプで楽器とノートが観測できる。
+    // 範囲外のノートはエラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        70,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        71,
+        "add_clip",
+        json!({"track_id": 1, "name": "melody", "start_ms": 0, "duration_ms": 4000, "source": ""}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        72,
+        "set_track_instrument",
+        json!({"track_id": 1, "instrument": {"type": "sampler", "source": "piano.wav", "root_note": 60}}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let res = call_tool(
+        &server,
+        73,
+        "add_note",
+        json!({"clip_id": 2, "pitch": 62, "start_ms": 250, "duration_ms": 500, "velocity": 90}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(
+        project.tracks[0].instrument,
+        Some(studio_core::Instrument::Sampler {
+            source: "piano.wav".into(),
+            root_note: 60,
+        })
+    );
+    assert_eq!(
+        project.tracks[0].clips[0].notes,
+        vec![studio_core::Note {
+            pitch: 62,
+            start_ms: 250,
+            duration_ms: 500,
+            velocity: 90,
+        }]
+    );
+    // クリップ範囲を超えるノートはエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        74,
+        "add_note",
+        json!({"clip_id": 2, "pitch": 62, "start_ms": 3900, "duration_ms": 500, "velocity": 90}),
     );
     assert_eq!(res["result"]["isError"], true, "{res}");
     assert_eq!(project_dump_via_tool(&server), dump);

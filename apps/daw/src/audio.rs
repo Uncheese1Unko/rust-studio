@@ -136,6 +136,68 @@ pub fn render_mix(
                 {
                     continue;
                 }
+                if !clip.notes.is_empty() {
+                    // ノートクリップ（Issue #68、ADR-0016）: 波形では
+                    // なく、トラックの楽器でノートごとに発音する。
+                    // 楽器が無いトラックのノートは鳴らない。
+                    let Some(studio_core::Instrument::Sampler { source, root_note }) =
+                        &track.instrument
+                    else {
+                        continue;
+                    };
+                    let Some(base_audio) = audio.get(source) else {
+                        continue;
+                    };
+                    if base_audio.channels == 0 || base_audio.sample_rate == 0 {
+                        continue;
+                    }
+                    for note in &clip.notes {
+                        let note_start = clip.start_ms as f64 + note.start_ms as f64;
+                        let note_end = note_start + note.duration_ms as f64;
+                        if t_ms < note_start || t_ms >= note_end {
+                            continue;
+                        }
+                        // 音高シフト量は note.pitch - root_note（半音）。
+                        // ピッチ変更済み音声はクリップのピッチと
+                        // キャッシュを共有する（キーは素材＋半音数）。
+                        let semitones = (note.pitch as i32 - *root_note as i32) as f32;
+                        let note_audio: &ClipAudio = if semitones != 0.0 {
+                            pitch_cache
+                                .entry((source.clone(), semitones.to_bits()))
+                                .or_insert_with(|| pitch_shift(base_audio, semitones))
+                        } else {
+                            base_audio
+                        };
+                        // 素材はノートの先頭から鳴らす（クリップの
+                        // offset_ms は波形クリップ専用で、ノートには
+                        // 適用しない）。素材が尽きたら無音に倒れる。
+                        let pos = (t_ms - note_start) * note_audio.sample_rate as f64 / 1000.0;
+                        let i0 = pos.floor() as usize;
+                        let frac = (pos - i0 as f64) as f32;
+                        let ch = note_audio.channels as usize;
+                        // ベロシティは 0–127 を 0.0–1.0 のゲインに
+                        // 線形変換する。クリップのゲインとフェードも
+                        // 波形クリップと同じに効く。
+                        let note_gain = clip.gain
+                            * (note.velocity as f32 / 127.0)
+                            * fade_envelope(clip, t_ms - clip.start_ms as f64);
+                        for (out_ch, slot) in frame.iter_mut().enumerate() {
+                            let src_ch = out_ch.min(ch - 1);
+                            let a = note_audio
+                                .samples
+                                .get(i0 * ch + src_ch)
+                                .copied()
+                                .unwrap_or(0.0);
+                            let b = note_audio
+                                .samples
+                                .get((i0 + 1) * ch + src_ch)
+                                .copied()
+                                .unwrap_or(0.0);
+                            *slot += (a + (b - a) * frac) * note_gain * channel_factor[out_ch];
+                        }
+                    }
+                    continue;
+                }
                 let Some(base_audio) = audio.get(&clip.source) else {
                     continue;
                 };
@@ -1283,5 +1345,244 @@ mod review_fix_tests {
         assert!(peak_in(0, 30) > 0.3);
         assert!(peak_in(1000, 1030) > 0.3);
         assert!(peak_in(490, 510) < 0.01, "no click at 500ms when bpm=60");
+    }
+}
+
+#[cfg(test)]
+mod note_render_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{apply, Command, Instrument, TrackKind};
+
+    /// ノートクリップとサンプラー楽器を持つプロジェクト。
+    /// 素材は 220Hz サイン（tone.wav）と比較用の 330Hz（other.wav）。
+    fn project_with_melody() -> (Project, HashMap<String, ClipAudio>, u64, u64) {
+        let mut p = Project::new("melody");
+        let track = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: Some(Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 60,
+                }),
+            },
+        )
+        .unwrap();
+        let clip = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: track,
+                name: "melody".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: String::new(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let mut audio = HashMap::new();
+        audio.insert("tone.wav".to_string(), sine(220.0, 3_000, 0.4));
+        audio.insert("other.wav".to_string(), sine(330.0, 3_000, 0.4));
+        (p, audio, track, clip)
+    }
+
+    fn add_note(p: &mut Project, clip: u64, pitch: u8, start: i64, dur: i64, vel: u8) {
+        apply(
+            p,
+            &Command::AddNote {
+                clip_id: clip,
+                pitch,
+                start_ms: start,
+                duration_ms: dur,
+                velocity: vel,
+            },
+        )
+        .unwrap();
+    }
+
+    /// 50ms 窓の Goertzel 平均（pitch_tests と同じ測定法）。
+    /// ピッチ変更後の信号は周波数の微小な誤差で長い窓だと位相が
+    /// 崩れて過小評価になるため、短い窓の平均で測る。
+    fn segmented_goertzel(samples: &[f32], rate: u32, freq: f32) -> f32 {
+        let seg = rate as usize / 20;
+        let mut total = 0.0f32;
+        let mut count = 0usize;
+        for chunk in samples.chunks(seg) {
+            if chunk.len() == seg {
+                total += goertzel(chunk, rate, freq);
+                count += 1;
+            }
+        }
+        total / count.max(1) as f32
+    }
+
+    #[test]
+    fn render_mix_plays_notes_with_sampler() {
+        // Issue #68: ノートの区間だけ、素材の音が鳴る。前後は無音。
+        let (mut p, audio, _, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 500, 500, 127);
+        let mix = render_mix(&p, &audio, 0, 2_000, RATE);
+        let before = window(&mix, 2, 0, 400, RATE);
+        assert!(rms(&before) < 1e-4, "before the note must be silent");
+        let during = window(&mix, 2, 600, 900, RATE);
+        assert!(
+            goertzel(&during, RATE, 220.0) > 0.1,
+            "root note must sound at the source pitch"
+        );
+        let after = window(&mix, 2, 1_100, 1_900, RATE);
+        assert!(rms(&after) < 1e-4, "after the note must be silent");
+    }
+
+    #[test]
+    fn render_mix_note_pitch_follows_instrument_root() {
+        // Issue #68: 音高シフト量は note.pitch - instrument.root_note。
+        // 同じノート（60）でもルートを 48 にすると +12 半音で鳴る。
+        let (mut p, audio, track, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 0, 1_000, 127);
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(goertzel(&w, RATE, 220.0) > 0.1, "root 60: 220Hz");
+        assert!(goertzel(&w, RATE, 440.0) < 0.03);
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: Some(Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 48,
+                }),
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(
+            segmented_goertzel(&w, RATE, 440.0) > 0.05,
+            "root 48: +12 -> 440Hz"
+        );
+        assert!(segmented_goertzel(&w, RATE, 220.0) < 0.01);
+    }
+
+    #[test]
+    fn render_mix_swapping_instrument_changes_the_sound() {
+        // Issue #68: 同じノート列でも、instrument の素材を差し替えると
+        // 別の素材音で鳴る（音色とメロディーの分離）。
+        let (mut p, audio, track, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 0, 1_000, 127);
+        let mix_a = render_mix(&p, &audio, 0, 1_000, RATE);
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: Some(Instrument::Sampler {
+                    source: "other.wav".into(),
+                    root_note: 60,
+                }),
+            },
+        )
+        .unwrap();
+        let mix_b = render_mix(&p, &audio, 0, 1_000, RATE);
+        let wa = window(&mix_a, 2, 300, 700, RATE);
+        let wb = window(&mix_b, 2, 300, 700, RATE);
+        assert!(goertzel(&wa, RATE, 220.0) > 0.1);
+        assert!(goertzel(&wa, RATE, 330.0) < 0.03);
+        assert!(goertzel(&wb, RATE, 330.0) > 0.1);
+        assert!(goertzel(&wb, RATE, 220.0) < 0.03);
+    }
+
+    #[test]
+    fn render_mix_note_velocity_scales_gain() {
+        // Issue #68: ベロシティは 0–127 を 0.0–1.0 のゲインに線形変換。
+        let (mut p, audio, _, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 0, 1_000, 127);
+        let loud = render_mix(&p, &audio, 0, 1_000, RATE);
+        let (mut p2, _, _, clip2) = project_with_melody();
+        add_note(&mut p2, clip2, 60, 0, 1_000, 64);
+        let quiet = render_mix(&p2, &audio, 0, 1_000, RATE);
+        let ratio =
+            rms(&window(&quiet, 2, 100, 900, RATE)) / rms(&window(&loud, 2, 100, 900, RATE));
+        assert!(
+            (ratio - 64.0 / 127.0).abs() < 0.03,
+            "velocity ratio was {ratio}"
+        );
+    }
+
+    #[test]
+    fn render_mix_notes_silent_without_instrument_or_when_muted() {
+        // Issue #68: 楽器のないトラックのノートは鳴らない。
+        // ミュート（#39）の規則も波形クリップと同じに効く。
+        let (mut p, audio, track, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 0, 1_000, 127);
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: None,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        assert!(
+            rms(&window(&mix, 2, 100, 900, RATE)) < 1e-4,
+            "no instrument -> silent"
+        );
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: Some(Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 60,
+                }),
+            },
+        )
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackMute {
+                track_id: track,
+                muted: true,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        assert!(
+            rms(&window(&mix, 2, 100, 900, RATE)) < 1e-4,
+            "muted -> silent"
+        );
+    }
+
+    #[test]
+    fn export_wav_contains_melody() {
+        // Issue #68: WAV 書き出し（#41 の経路）でも再生と同じ
+        // メロディーが書き出される。
+        let (mut p, audio, _, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 0, 1_000, 127);
+        add_note(&mut p, clip, 72, 1_000, 1_000, 127);
+        let path =
+            std::env::temp_dir().join(format!("daw-export-melody-{}.wav", std::process::id()));
+        export_wav(&p, &audio, &path).unwrap();
+        let back = decode_audio(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let first = window(&back.samples, 2, 300, 700, back.sample_rate);
+        assert!(
+            goertzel(&first, back.sample_rate, 220.0) > 0.1,
+            "first note (root) must be in the export"
+        );
+        let second = window(&back.samples, 2, 1_300, 1_700, back.sample_rate);
+        assert!(
+            segmented_goertzel(&second, back.sample_rate, 440.0) > 0.05,
+            "second note (+12) must be in the export"
+        );
     }
 }

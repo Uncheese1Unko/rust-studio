@@ -293,6 +293,8 @@ fn compute_waveforms(project: &Project) -> (HashMap<String, Vec<f32>>, HashMap<S
 /// プロジェクトのソース集合をデコードした音声マップ（Issue #27）。
 /// レベルメーターが `render_mix` でピークを取るために保持する
 /// （読み取り専用。波形と同じくソース単位でデコードする）。
+/// ノートクリップの発音（Issue #68）にはトラックの楽器の素材も
+/// 必要なので、楽器のソースも集合に含める。
 fn compute_audio_map(project: &Project, dropped_source: &str) -> HashMap<String, audio::ClipAudio> {
     let mut map = HashMap::new();
     let mut sources: Vec<&str> = project
@@ -300,6 +302,11 @@ fn compute_audio_map(project: &Project, dropped_source: &str) -> HashMap<String,
         .iter()
         .flat_map(|t| t.clips.iter().map(|c| c.source.as_str()))
         .collect();
+    for track in &project.tracks {
+        if let Some(studio_core::Instrument::Sampler { source, .. }) = &track.instrument {
+            sources.push(source.as_str());
+        }
+    }
     sources.push(dropped_source);
     sources.sort();
     sources.dedup();

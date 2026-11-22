@@ -217,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド19種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド24種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -340,6 +340,36 @@ fn tool_definitions() -> Value {
                     "offset_ms": {"type": "integer", "minimum": 0},
                 },
                 "required": ["clip_id", "offset_ms"],
+            },
+        },
+        {
+            "name": "set_track_instrument",
+            "description": "トラックの音色（楽器）を設定する（instrument を null にすると楽器なしに戻す）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "instrument": {
+                        "type": ["object", "null"],
+                        "description": "楽器。サンプラーは {\"type\": \"sampler\", \"source\": \"素材パス\", \"root_note\": 60（素材の原音の MIDI ノート番号）}",
+                    },
+                },
+                "required": ["track_id"],
+            },
+        },
+        {
+            "name": "add_note",
+            "description": "クリップにノートを1つ追加する（音高は MIDI ノート番号、開始はクリップ相対。ノートはクリップの範囲内に収まること）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "pitch": {"type": "integer", "minimum": 0, "maximum": 127},
+                    "start_ms": {"type": "integer", "minimum": 0},
+                    "duration_ms": {"type": "integer", "minimum": 1},
+                    "velocity": {"type": "integer", "minimum": 0, "maximum": 127},
+                },
+                "required": ["clip_id", "pitch", "start_ms", "duration_ms", "velocity"],
             },
         },
         {

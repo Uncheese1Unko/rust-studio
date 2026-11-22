@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Clip, ColorTag, Project, Track, TrackKind, TransitionKind};
+use crate::model::{Clip, ColorTag, Instrument, Note, Project, Track, TrackKind, TransitionKind};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -132,6 +132,23 @@ pub enum Command {
         clip_id: u64,
         color: Option<ColorTag>,
     },
+    /// トラックの音色（楽器）を設定する（Issue #68、ADR-0016）。
+    /// None は楽器なしに戻す。
+    SetTrackInstrument {
+        track_id: u64,
+        instrument: Option<Instrument>,
+    },
+    /// クリップにノートを1つ追加する（Issue #68、ADR-0016）。
+    /// ノートはクリップの範囲内に収まること（start_ms >= 0、
+    /// duration_ms > 0、終端 <= クリップ長）が不変条件で、
+    /// pitch・velocity は 0..=127。
+    AddNote {
+        clip_id: u64,
+        pitch: u8,
+        start_ms: i64,
+        duration_ms: i64,
+        velocity: u8,
+    },
     /// テスト専用（Issue #61）：状態を変更してから失敗するコマンド。
     /// 実コマンドは全て「検証 → 変更」の順で失敗時に状態を変えないため、
     /// `History::apply_transient` の失敗時復元を再現するにはこの
@@ -182,6 +199,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 color: None,
                 muted: false,
                 solo: false,
+                instrument: None,
             });
             Ok(Some(id))
         }
@@ -243,6 +261,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     title_text: String::new(),
                     transition_in_kind: TransitionKind::None,
                     transition_in_ms: 0,
+                    notes: Vec::new(),
                 });
             Ok(Some(id))
         }
@@ -295,6 +314,13 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             // トランジションも不変条件（<= クリップ長）を保つよう
             // クランプする（Issue #49 レビュー指摘、ADR-0014）。
             clip.transition_in_ms = clip.transition_in_ms.min(*new_duration_ms);
+            // ノートも不変条件（クリップ範囲内）を保つ（Issue #68、
+            // ADR-0016）: 範囲外に出たノートは削除し、終端が
+            // はみ出すノートは収まるようクランプする。
+            clip.notes.retain(|n| n.start_ms < *new_duration_ms);
+            for note in &mut clip.notes {
+                note.duration_ms = note.duration_ms.min(*new_duration_ms - note.start_ms);
+            }
             Ok(None)
         }
         Command::SplitClip { clip_id, at_ms } => {
@@ -319,6 +345,29 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             let clip = &project.tracks[track_idx].clips[clip_idx];
             let left_duration = *at_ms - clip.start_ms;
             let right_duration = clip.end_ms() - *at_ms;
+            // ノートの振り分け（Issue #68、ADR-0016）: 分割点 rel
+            // （クリップ相対）で分ける。境界を跨ぐノートは分割点で
+            // 切る（左は rel までで縮み、右は 0 から残りの長さに
+            // なる）ため、分割前後で鳴るメロディーは変わらない。
+            let rel = left_duration;
+            let mut left_notes: Vec<Note> = Vec::new();
+            let mut right_notes: Vec<Note> = Vec::new();
+            for note in &clip.notes {
+                if note.start_ms < rel {
+                    left_notes.push(Note {
+                        duration_ms: note.end_ms().min(rel) - note.start_ms,
+                        ..*note
+                    });
+                }
+                if note.end_ms() > rel {
+                    let start = note.start_ms.max(rel);
+                    right_notes.push(Note {
+                        start_ms: start - rel,
+                        duration_ms: note.end_ms() - start,
+                        ..*note
+                    });
+                }
+            }
             let right = Clip {
                 id: new_id,
                 name: clip.name.clone(),
@@ -344,6 +393,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 // 前の境界の属性をそのまま保持する。
                 transition_in_kind: TransitionKind::None,
                 transition_in_ms: 0,
+                notes: right_notes,
             };
             let track = &mut project.tracks[track_idx];
             // 左クリップはフェードインを外側の端として引き継ぎ、
@@ -354,6 +404,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             // 長さへクランプして不変条件を保つ（Issue #49、ADR-0014）。
             track.clips[clip_idx].transition_in_ms =
                 track.clips[clip_idx].transition_in_ms.min(left_duration);
+            track.clips[clip_idx].notes = left_notes;
             track.clips[clip_idx].duration_ms = left_duration;
             track.clips.insert(clip_idx + 1, right);
             Ok(Some(new_id))
@@ -578,6 +629,60 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             clip.color = *color;
             Ok(None)
         }
+        Command::SetTrackInstrument {
+            track_id,
+            instrument,
+        } => {
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.instrument = instrument.clone();
+            Ok(None)
+        }
+        Command::AddNote {
+            clip_id,
+            pitch,
+            start_ms,
+            duration_ms,
+            velocity,
+        } => {
+            // ノートの不変条件（ADR-0016）: 音高とベロシティは
+            // MIDI の範囲、ノートはクリップの範囲内に収まる。
+            if *pitch > 127 {
+                return Err(CommandError::InvalidRange("pitch must be within 0..=127"));
+            }
+            if *velocity > 127 {
+                return Err(CommandError::InvalidRange(
+                    "velocity must be within 0..=127",
+                ));
+            }
+            if *start_ms < 0 {
+                return Err(CommandError::InvalidRange("note start_ms must be >= 0"));
+            }
+            if *duration_ms <= 0 {
+                return Err(CommandError::InvalidRange("note duration_ms must be > 0"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            if start_ms + duration_ms > clip.duration_ms {
+                return Err(CommandError::InvalidRange("note must fit within the clip"));
+            }
+            clip.notes.push(Note {
+                pitch: *pitch,
+                start_ms: *start_ms,
+                duration_ms: *duration_ms,
+                velocity: *velocity,
+            });
+            Ok(None)
+        }
         // テスト専用（Issue #61）：トラックを追加（id も消費）してから
         // 失敗する。「変更してから失敗する」コマンドの再現。
         #[cfg(test)]
@@ -593,6 +698,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 color: None,
                 muted: false,
                 solo: false,
+                instrument: None,
             });
             Err(CommandError::InvalidRange("mutate then fail (test only)"))
         }

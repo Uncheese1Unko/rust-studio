@@ -39,6 +39,39 @@ pub enum ColorTag {
     Lavender,
 }
 
+/// ノート（Issue #68、ADR-0016）。メロディーを構成する1音。
+/// クリップに従属する値データで、独立した ID は持たない
+/// （コマンドからはクリップ内のインデックスで指す）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Note {
+    /// 音高（MIDI ノート番号 0–127、絶対音高）。
+    pub pitch: u8,
+    /// クリップ相対の開始位置（ミリ秒、0 以上）。
+    pub start_ms: i64,
+    /// 長さ（ミリ秒、正）。ノートは常にクリップの範囲内に収まる。
+    pub duration_ms: i64,
+    /// ベロシティ（0–127）。再生時は 0.0–1.0 のゲインに線形変換する。
+    pub velocity: u8,
+}
+
+impl Note {
+    pub fn end_ms(&self) -> i64 {
+        self.start_ms + self.duration_ms
+    }
+}
+
+/// 音色（楽器）（Issue #68、ADR-0016）。トラック単位で参照する。
+/// 当面はサンプラーのみ。外部プラグインは後続（Issue #71 の方式
+/// 決定後、#72）で Plugin バリアントとして足す拡張点。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Instrument {
+    /// `source` の素材を1つ鳴らすサンプラー。`root_note` は素材の
+    /// 原音の音高（MIDI ノート番号）。再生時のピッチシフト量は
+    /// `note.pitch - root_note`（半音）で導出する。
+    Sampler { source: String, root_note: u8 },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub id: u64,
@@ -87,6 +120,12 @@ pub struct Clip {
     /// kind が None のときは常に 0。旧形式の JSON では 0。
     #[serde(default)]
     pub transition_in_ms: i64,
+    /// ノート列（Issue #68、ADR-0016）。空でないクリップは
+    /// ノートクリップとして扱い、再生では `source` の波形を
+    /// 鳴らさない（ノートクリップの `source` は空文字で運用）。
+    /// 旧形式の JSON では空。
+    #[serde(default)]
+    pub notes: Vec<Note>,
 }
 
 impl Clip {
@@ -123,6 +162,10 @@ pub struct Track {
     /// 旧形式の JSON では false。
     #[serde(default)]
     pub solo: bool,
+    /// 音色（楽器）（Issue #68、ADR-0016）。None は楽器なし
+    /// （ノートクリップは鳴らない）。旧形式の JSON では None。
+    #[serde(default)]
+    pub instrument: Option<Instrument>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

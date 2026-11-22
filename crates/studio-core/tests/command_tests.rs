@@ -1135,3 +1135,343 @@ fn set_clip_offset_command_round_trips_through_json() {
     let back: Command = serde_json::from_str(&json).unwrap();
     assert_eq!(cmd, back);
 }
+
+// ---- Issue #68 / ADR-0016: ノートと楽器のモデルとコマンド ----
+
+use studio_core::{Instrument, Note};
+
+fn project_with_note_clip() -> (Project, u64, u64) {
+    let mut p = Project::new("notes");
+    let track_id = apply(
+        &mut p,
+        &Command::AddTrack {
+            name: "A1".into(),
+            kind: TrackKind::Audio,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let clip_id = apply(
+        &mut p,
+        &Command::AddClip {
+            track_id,
+            name: "melody".into(),
+            start_ms: 0,
+            duration_ms: 4_000,
+            source: String::new(),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    (p, track_id, clip_id)
+}
+
+fn add_note(p: &mut Project, clip_id: u64, pitch: u8, start_ms: i64, duration_ms: i64) {
+    apply(
+        p,
+        &Command::AddNote {
+            clip_id,
+            pitch,
+            start_ms,
+            duration_ms,
+            velocity: 100,
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn set_track_instrument_applies_and_clears() {
+    // Issue #68 / ADR-0016: トラックへサンプラー楽器を設定でき、
+    // None で解除できる。状態ダンプでも観測できる。
+    let (mut p, track_id, _) = project_with_note_clip();
+    apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(Instrument::Sampler {
+                source: "media/piano.wav".into(),
+                root_note: 60,
+            }),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        p.track(track_id).unwrap().instrument,
+        Some(Instrument::Sampler {
+            source: "media/piano.wav".into(),
+            root_note: 60,
+        })
+    );
+    assert!(
+        p.dump_json().contains("\"sampler\""),
+        "dump must expose the instrument: {}",
+        p.dump_json()
+    );
+    apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().instrument, None);
+}
+
+#[test]
+fn set_track_instrument_unknown_track_errors_and_keeps_state() {
+    let (mut p, _, _) = project_with_note_clip();
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id: 999,
+            instrument: Some(Instrument::Sampler {
+                source: "x.wav".into(),
+                root_note: 60,
+            }),
+        },
+    );
+    assert_eq!(err, Err(CommandError::TrackNotFound(999)));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn note_commands_round_trip_through_json() {
+    // Issue #68: コマンドは JSON 経路（API / MCP）でも往復できる。
+    let cmd = Command::SetTrackInstrument {
+        track_id: 3,
+        instrument: Some(Instrument::Sampler {
+            source: "piano.wav".into(),
+            root_note: 60,
+        }),
+    };
+    let json = serde_json::to_string(&cmd).unwrap();
+    assert!(json.contains("\"set_track_instrument\""), "{json}");
+    let back: Command = serde_json::from_str(&json).unwrap();
+    assert_eq!(cmd, back);
+
+    let cmd = Command::AddNote {
+        clip_id: 7,
+        pitch: 62,
+        start_ms: 250,
+        duration_ms: 500,
+        velocity: 90,
+    };
+    let json = serde_json::to_string(&cmd).unwrap();
+    assert!(json.contains("\"add_note\""), "{json}");
+    let back: Command = serde_json::from_str(&json).unwrap();
+    assert_eq!(cmd, back);
+}
+
+#[test]
+fn add_note_appends_notes_to_clip() {
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 500);
+    add_note(&mut p, clip_id, 64, 500, 500);
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(
+        clip.notes,
+        vec![
+            Note {
+                pitch: 60,
+                start_ms: 0,
+                duration_ms: 500,
+                velocity: 100,
+            },
+            Note {
+                pitch: 64,
+                start_ms: 500,
+                duration_ms: 500,
+                velocity: 100,
+            },
+        ]
+    );
+}
+
+#[test]
+fn add_note_rejects_invalid_values_and_keeps_state() {
+    // Issue #68 / ADR-0016: ノートはクリップ範囲内に収まることが
+    // 不変条件。範囲外の値はエラーで、状態は変わらない。
+    let (mut p, _, clip_id) = project_with_note_clip();
+    let before = p.dump_json();
+    for cmd in [
+        Command::AddNote {
+            clip_id,
+            pitch: 128,
+            start_ms: 0,
+            duration_ms: 100,
+            velocity: 100,
+        },
+        Command::AddNote {
+            clip_id,
+            pitch: 60,
+            start_ms: 0,
+            duration_ms: 100,
+            velocity: 128,
+        },
+        Command::AddNote {
+            clip_id,
+            pitch: 60,
+            start_ms: -1,
+            duration_ms: 100,
+            velocity: 100,
+        },
+        Command::AddNote {
+            clip_id,
+            pitch: 60,
+            start_ms: 0,
+            duration_ms: 0,
+            velocity: 100,
+        },
+        Command::AddNote {
+            clip_id,
+            pitch: 60,
+            start_ms: 3_900,
+            duration_ms: 200,
+            velocity: 100,
+        },
+    ] {
+        assert!(
+            matches!(apply(&mut p, &cmd), Err(CommandError::InvalidRange(_))),
+            "must reject: {cmd:?}"
+        );
+    }
+    assert_eq!(p.dump_json(), before);
+    let err = apply(
+        &mut p,
+        &Command::AddNote {
+            clip_id: 999,
+            pitch: 60,
+            start_ms: 0,
+            duration_ms: 100,
+            velocity: 100,
+        },
+    );
+    assert_eq!(err, Err(CommandError::ClipNotFound(999)));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn split_clip_cuts_note_crossing_the_boundary() {
+    // Issue #68 / ADR-0016: 分割点でノートを振り分ける。境界を跨ぐ
+    // ノートは分割点で切れ、分割前後で鳴るメロディーが変わらない。
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 1_000);
+    add_note(&mut p, clip_id, 62, 1_500, 1_000); // 2000 を跨ぐ
+    add_note(&mut p, clip_id, 64, 3_000, 500);
+    let right_id = apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id,
+            at_ms: 2_000,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let (_, left) = p.clip(clip_id).unwrap();
+    assert_eq!(
+        left.notes,
+        vec![
+            Note {
+                pitch: 60,
+                start_ms: 0,
+                duration_ms: 1_000,
+                velocity: 100,
+            },
+            Note {
+                pitch: 62,
+                start_ms: 1_500,
+                duration_ms: 500,
+                velocity: 100,
+            },
+        ]
+    );
+    let (_, right) = p.clip(right_id).unwrap();
+    assert_eq!(
+        right.notes,
+        vec![
+            Note {
+                pitch: 62,
+                start_ms: 0,
+                duration_ms: 500,
+                velocity: 100,
+            },
+            Note {
+                pitch: 64,
+                start_ms: 1_000,
+                duration_ms: 500,
+                velocity: 100,
+            },
+        ]
+    );
+}
+
+#[test]
+fn trim_clip_drops_out_of_range_notes_and_clamps() {
+    // Issue #68 / ADR-0016: トリムで新しい長さの範囲外に出たノートは
+    // 削除し、終端がはみ出すノートは収まるようクランプする
+    // （フェード／トランジションのクランプ規則と揃える）。
+    let (mut p, _, clip_id) = project_with_note_clip();
+    add_note(&mut p, clip_id, 60, 0, 1_000);
+    add_note(&mut p, clip_id, 62, 3_000, 1_000);
+    add_note(&mut p, clip_id, 64, 3_500, 500);
+    apply(
+        &mut p,
+        &Command::TrimClip {
+            clip_id,
+            new_start_ms: 0,
+            new_duration_ms: 3_200,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(
+        clip.notes,
+        vec![
+            Note {
+                pitch: 60,
+                start_ms: 0,
+                duration_ms: 1_000,
+                velocity: 100,
+            },
+            Note {
+                pitch: 62,
+                start_ms: 3_000,
+                duration_ms: 200,
+                velocity: 100,
+            },
+        ]
+    );
+}
+
+#[test]
+fn legacy_json_without_notes_and_instrument_loads_with_defaults() {
+    // Issue #68 / ADR-0016: notes / instrument の無い旧形式 JSON は
+    // 既定値（空ノート列・楽器なし）で読める。
+    let json = r#"{
+        "name": "legacy",
+        "tracks": [
+            {
+                "id": 1,
+                "name": "A1",
+                "kind": "audio",
+                "clips": [
+                    {"id": 2, "name": "c", "start_ms": 0, "duration_ms": 1000,
+                     "source": "a.wav", "gain": 1.0}
+                ]
+            }
+        ],
+        "next_id": 3
+    }"#;
+    let path = std::env::temp_dir().join(format!(
+        "studio-core-legacy-notes-{}.json",
+        std::process::id()
+    ));
+    std::fs::write(&path, json).unwrap();
+    let p = Project::load_from_path(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert!(p.tracks[0].clips[0].notes.is_empty());
+    assert_eq!(p.tracks[0].instrument, None);
+}
