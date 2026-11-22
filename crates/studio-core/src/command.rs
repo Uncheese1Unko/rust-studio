@@ -284,6 +284,9 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             // フェードが新しい長さを超えないよう保つ（Issue #34）。
             clip.fade_in_ms = clip.fade_in_ms.min(*new_duration_ms);
             clip.fade_out_ms = clip.fade_out_ms.min(*new_duration_ms);
+            // トランジションも不変条件（<= クリップ長）を保つよう
+            // クランプする（Issue #49 レビュー指摘、ADR-0014）。
+            clip.transition_in_ms = clip.transition_in_ms.min(*new_duration_ms);
             Ok(None)
         }
         Command::SplitClip { clip_id, at_ms } => {
@@ -339,6 +342,10 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             // フェードアウトは付けない（分割点は切り口）。
             track.clips[clip_idx].fade_in_ms = track.clips[clip_idx].fade_in_ms.min(left_duration);
             track.clips[clip_idx].fade_out_ms = 0;
+            // 左クリップが保持するトランジションも、短くなった
+            // 長さへクランプして不変条件を保つ（Issue #49、ADR-0014）。
+            track.clips[clip_idx].transition_in_ms =
+                track.clips[clip_idx].transition_in_ms.min(left_duration);
             track.clips[clip_idx].duration_ms = left_duration;
             track.clips.insert(clip_idx + 1, right);
             Ok(Some(new_id))

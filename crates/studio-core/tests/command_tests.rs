@@ -1010,3 +1010,62 @@ fn split_clip_clears_right_clip_transition_in() {
     assert_eq!(right.transition_in_kind, TransitionKind::None);
     assert_eq!(right.transition_in_ms, 0);
 }
+
+#[test]
+fn trim_clip_clamps_transition_in_to_new_duration() {
+    // Issue #49 レビュー指摘: SetClipTransition の不変条件
+    // （0 < transition_in_ms <= クリップ長）は、トリムで短くした
+    // 後も保たなければならない（フェードと同じクランプ）。
+    use studio_core::TransitionKind;
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id,
+            kind: TransitionKind::CrossDissolve,
+            duration_ms: 500,
+        },
+    )
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::TrimClip {
+            clip_id,
+            new_start_ms: 0,
+            new_duration_ms: 300,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.duration_ms, 300);
+    assert_eq!(clip.transition_in_ms, 300, "clamped to the new duration");
+    assert_eq!(clip.transition_in_kind, TransitionKind::CrossDissolve);
+}
+
+#[test]
+fn split_clip_clamps_left_transition_in() {
+    // Issue #49 レビュー指摘: 分割で左クリップが短くなった場合も
+    // transition_in_ms を左の長さへクランプする。
+    use studio_core::TransitionKind;
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id,
+            kind: TransitionKind::CrossDissolve,
+            duration_ms: 500,
+        },
+    )
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id,
+            at_ms: 200,
+        },
+    )
+    .unwrap();
+    let left = &p.tracks[0].clips[0];
+    assert_eq!(left.duration_ms, 200);
+    assert_eq!(left.transition_in_ms, 200, "clamped to the left duration");
+}
