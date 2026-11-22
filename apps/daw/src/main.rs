@@ -424,7 +424,40 @@ fn main() {
         export_wav_cli(&args[2], &args[3]);
         return;
     }
+    // MIDI 取り込み（Issue #70 の検証用 CLI）:
+    // daw --import-midi <project.json> <file.mid>
+    if args.len() == 4 && args[1] == "--import-midi" {
+        import_midi_cli(&args[2], &args[3]);
+        return;
+    }
     nannou::app(model).event(event).update(update).run();
+}
+
+/// プロジェクト JSON へ MIDI ファイルを取り込んで保存し直す
+/// （Issue #70）。取り込みは studio-core の import_midi（履歴には
+/// 載らないが、保存されるプロジェクトは GUI／MCP と同じ形）。
+fn import_midi_cli(project_json: &str, mid_path: &str) {
+    let project_path = std::path::Path::new(project_json);
+    let project = Project::load_from_path(project_path).expect("load project json");
+    let bytes = std::fs::read(mid_path).expect("read midi file");
+    let mut history = studio_core::History::new(project);
+    match studio_core::import_midi(&mut history, &bytes) {
+        Ok(summary) => {
+            history
+                .project()
+                .save_to_path(project_path)
+                .expect("save project json");
+            println!(
+                "midi imported: {} tracks, {} notes, bpm {:?}",
+                summary.tracks_added, summary.notes_added, summary.bpm
+            );
+            println!("dump: {}", history.project().dump_json());
+        }
+        Err(e) => {
+            eprintln!("midi import failed: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// プロジェクト JSON を読み、ミックスを WAV に書き出す（Issue #41）。
@@ -585,7 +618,52 @@ fn save_project_file(model: &mut Model) {
 /// デコード不能・配置不能は何もせず理由をログに出す。複数ファイルの
 /// ドロップは先頭1件だけ処理し、残りはログに出す（1秒以内の連続
 /// ドロップを同じバーストとみなす）。
+/// MIDI ファイルを GUI のプロジェクトへ取り込む（Issue #70）。
+/// 取り込みは履歴に1件積まれ、Undo で戻せる。構造が変わるため
+/// 開いているピアノロールは閉じる（再読み込み時と同じ扱い）。
+fn import_midi_file(model: &mut Model, path: &std::path::Path) {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            println!(
+                "midi import rejected: {} (cannot read: {e})",
+                path.display()
+            );
+            return;
+        }
+    };
+    match studio_core::import_midi(&mut model.history, &bytes) {
+        Ok(summary) => {
+            model.piano_roll = None;
+            model.roll_before = None;
+            model.last_roll_cmd = None;
+            save_project_file(model);
+            println!(
+                "midi imported: {} ({} tracks, {} notes, bpm {:?})",
+                path.display(),
+                summary.tracks_added,
+                summary.notes_added,
+                summary.bpm
+            );
+            println!("after midi import: {}", model.history.project().dump_json());
+        }
+        Err(e) => {
+            println!("midi import rejected: {} ({e})", path.display());
+        }
+    }
+}
+
 fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
+    // Issue #70: .mid / .midi はオーディオ配置ではなく MIDI
+    // 取り込みとして扱う（重複抑制の対象外: 取り込みは明示操作）。
+    let is_midi = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("mid") || e.eq_ignore_ascii_case("midi"));
+    if is_midi {
+        import_midi_file(model, path);
+        return;
+    }
     let now = app.time;
     if let Some(last) = model.last_drop_at {
         if now - last < 1.0 {

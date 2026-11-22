@@ -1,0 +1,101 @@
+{
+  "name": "midi-drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "Lead",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "Lead",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 69,
+              "start_ms": 0,
+              "duration_ms": 400,
+              "velocity": 100
+            },
+            {
+              "pitch": 72,
+              "start_ms": 400,
+              "duration_ms": 400,
+              "velocity": 110
+            },
+            {
+              "pitch": 76,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 90
+            }
+          ]
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null
+    },
+    {
+      "id": 3,
+      "name": "Bass",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "Bass",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 45,
+              "start_ms": 0,
+              "duration_ms": 800,
+              "velocity": 120
+            },
+            {
+              "pitch": 41,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 120
+            }
+          ]
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null
+    }
+  ],
+  "bpm": 150.0,
+  "next_id": 5
+}

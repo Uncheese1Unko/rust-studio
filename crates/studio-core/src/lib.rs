@@ -6,10 +6,14 @@
 
 pub mod command;
 pub mod history;
+pub mod midi_import;
 pub mod model;
 
 pub use command::{apply, Command, CommandError};
 pub use history::History;
+pub use midi_import::{
+    import_midi, parse_midi, ImportSummary, ImportedTrack, MidiImport, MidiImportError,
+};
 pub use model::{
     Clip, ColorTag, Instrument, Note, PersistenceError, Project, Track, TrackKind, TransitionKind,
 };

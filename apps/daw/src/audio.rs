@@ -1672,3 +1672,95 @@ mod note_solo_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod midi_import_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{import_midi, Command, History, Instrument};
+
+    /// 50ms 窓の Goertzel 平均（note_render_tests と同じ測定法）。
+    fn segmented_goertzel(samples: &[f32], rate: u32, freq: f32) -> f32 {
+        let seg = rate as usize / 20;
+        let mut total = 0.0f32;
+        let mut count = 0usize;
+        for chunk in samples.chunks(seg) {
+            if chunk.len() == seg {
+                total += goertzel(chunk, rate, freq);
+                count += 1;
+            }
+        }
+        total / count.max(1) as f32
+    }
+
+    /// 検証用 SMF（format 0、TPQN 480、120 BPM、ノート 60 を
+    /// 0–480 tick、ノート 72 を 480–960 tick）。
+    fn test_smf() -> Vec<u8> {
+        fn vlq(mut n: u32) -> Vec<u8> {
+            let mut buf = vec![(n & 0x7f) as u8];
+            n >>= 7;
+            while n > 0 {
+                buf.push(((n & 0x7f) | 0x80) as u8);
+                n >>= 7;
+            }
+            buf.reverse();
+            buf
+        }
+        let mut t = Vec::new();
+        t.extend(vlq(0));
+        t.extend([0xff, 0x51, 0x03, 0x07, 0xa1, 0x20]);
+        t.extend(vlq(0));
+        t.extend([0x90, 60, 100]);
+        t.extend(vlq(480));
+        t.extend([0x80, 60, 64]);
+        t.extend(vlq(0));
+        t.extend([0x90, 72, 100]);
+        t.extend(vlq(480));
+        t.extend([0x80, 72, 64]);
+        t.extend(vlq(0));
+        t.extend([0xff, 0x2f, 0x00]);
+        let mut smf = b"MThd".to_vec();
+        smf.extend(6u32.to_be_bytes());
+        smf.extend(0u16.to_be_bytes());
+        smf.extend(1u16.to_be_bytes());
+        smf.extend(480u16.to_be_bytes());
+        smf.extend(b"MTrk");
+        smf.extend((t.len() as u32).to_be_bytes());
+        smf.extend(t);
+        smf
+    }
+
+    #[test]
+    fn imported_melody_plays_through_the_sampler_path() {
+        // Issue #70: 取り込んだノート列に楽器を割り当てると、
+        // #68 の再生経路で鳴る（素材 220Hz、ルート 60 で
+        // ノート 60 → 220Hz、ノート 72 → 440Hz）。
+        let mut history = History::new(Project::new("midi"));
+        let summary = import_midi(&mut history, &test_smf()).unwrap();
+        assert_eq!(summary.notes_added, 2);
+        let project = history.project().clone();
+        let track_id = project.tracks[0].id;
+        let mut project = project;
+        studio_core::apply(
+            &mut project,
+            &Command::SetTrackInstrument {
+                track_id,
+                instrument: Some(Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 60,
+                }),
+            },
+        )
+        .unwrap();
+        let mut audio = HashMap::new();
+        audio.insert("tone.wav".to_string(), sine(220.0, 3_000, 0.4));
+        let mix = render_mix(&project, &audio, 0, 1_000, RATE);
+        let first = window(&mix, 2, 100, 400, RATE);
+        assert!(goertzel(&first, RATE, 220.0) > 0.1, "note 60 sounds");
+        let second = window(&mix, 2, 600, 900, RATE);
+        assert!(
+            segmented_goertzel(&second, RATE, 440.0) > 0.05,
+            "note 72 sounds an octave up"
+        );
+    }
+}

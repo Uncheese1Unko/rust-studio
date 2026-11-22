@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# SMF パース（Issue #70）。純 Rust。VLQ やランニングステータスの
+# 自前処理のバグリスクを避けるため採用した。
+midly = "0.5"

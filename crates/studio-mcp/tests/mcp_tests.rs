@@ -69,6 +69,7 @@ fn tools_list_exposes_all_commands() {
         "add_note",
         "move_note",
         "remove_note",
+        "import_midi",
         "get_project",
         "undo",
         "redo",
@@ -1058,4 +1059,85 @@ fn move_and_remove_note_tools_apply_via_tools_call() {
     );
     assert_eq!(res["result"]["isError"], true, "{res}");
     assert_eq!(project_dump_via_tool(&server), dump);
+}
+
+#[test]
+fn import_midi_tool_imports_a_file() {
+    // Issue #70: import_midi ツールが SMF ファイルを読み込み、
+    // ノート列と bpm がダンプで観測できる。壊れたファイルと
+    // 存在しないパスはエラーで状態不変。
+    fn vlq(mut n: u32) -> Vec<u8> {
+        let mut buf = vec![(n & 0x7f) as u8];
+        n >>= 7;
+        while n > 0 {
+            buf.push(((n & 0x7f) | 0x80) as u8);
+            n >>= 7;
+        }
+        buf.reverse();
+        buf
+    }
+    let mut track_bytes = Vec::new();
+    track_bytes.extend(vlq(0));
+    track_bytes.extend([0xff, 0x51, 0x03, 0x07, 0xa1, 0x20]); // tempo 500000
+    track_bytes.extend(vlq(0));
+    track_bytes.extend([0x90, 60, 100]);
+    track_bytes.extend(vlq(480));
+    track_bytes.extend([0x80, 60, 64]);
+    track_bytes.extend(vlq(0));
+    track_bytes.extend([0xff, 0x2f, 0x00]);
+    let mut smf = b"MThd".to_vec();
+    smf.extend(6u32.to_be_bytes());
+    smf.extend(0u16.to_be_bytes());
+    smf.extend(1u16.to_be_bytes());
+    smf.extend(480u16.to_be_bytes());
+    smf.extend(b"MTrk");
+    smf.extend((track_bytes.len() as u32).to_be_bytes());
+    smf.extend(&track_bytes);
+    let dir = std::env::temp_dir().join(format!("mcp-midi-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mid_path = dir.join("song.mid");
+    std::fs::write(&mid_path, &smf).unwrap();
+    let bad_path = dir.join("bad.mid");
+    std::fs::write(&bad_path, b"garbage").unwrap();
+
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        90,
+        "import_midi",
+        json!({"path": mid_path.to_str().unwrap()}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.bpm, 120.0);
+    assert_eq!(project.tracks.len(), 1);
+    assert_eq!(
+        project.tracks[0].clips[0].notes,
+        vec![studio_core::Note {
+            pitch: 60,
+            start_ms: 0,
+            duration_ms: 500,
+            velocity: 100,
+        }]
+    );
+    // 壊れたファイルはエラーで状態不変
+    let res = call_tool(
+        &server,
+        91,
+        "import_midi",
+        json!({"path": bad_path.to_str().unwrap()}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    // 存在しないパスもエラーで状態不変
+    let res = call_tool(
+        &server,
+        92,
+        "import_midi",
+        json!({"path": dir.join("missing.mid").to_str().unwrap()}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    let _ = std::fs::remove_dir_all(&dir);
 }

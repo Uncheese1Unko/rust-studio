@@ -123,6 +123,30 @@ impl McpServer {
     }
 
     fn execute_tool(&self, name: &str, arguments: &Value) -> Result<String, String> {
+        if name == "import_midi" {
+            // Issue #70: SMF ファイルの取り込み。変換と適用は
+            // studio-core 側（失敗時は状態も履歴も変わらない）。
+            let path = arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("import_midi requires a string 'path' argument")?;
+            let bytes =
+                std::fs::read(path).map_err(|e| format!("cannot read MIDI file '{path}': {e}"))?;
+            let mut history = self.history.lock().unwrap();
+            match studio_core::import_midi(&mut history, &bytes) {
+                Ok(summary) => {
+                    let mut payload = json!({
+                        "ok": true,
+                        "tracks_added": summary.tracks_added,
+                        "notes_added": summary.notes_added,
+                        "bpm": summary.bpm,
+                    });
+                    self.persist(&history, &mut payload);
+                    return Ok(serde_json::to_string(&payload).unwrap());
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
         if name == "get_project" {
             let history = self.history.lock().unwrap();
             return Ok(history.project().dump_json());
@@ -217,7 +241,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド26種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド26種＋MIDI 取り込み＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -538,6 +562,17 @@ fn tool_definitions() -> Value {
                     "solo": {"type": "boolean"},
                 },
                 "required": ["track_id", "solo"],
+            },
+        },
+        {
+            "name": "import_midi",
+            "description": "MIDI ファイル（SMF format 0/1）を読み込んでノート列として取り込む（トラックごとに DAW トラックを作成し、テンポはプロジェクトの bpm に反映。取り込みは Undo 1回で戻せる）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "SMF ファイルのパス"},
+                },
+                "required": ["path"],
             },
         },
         {
