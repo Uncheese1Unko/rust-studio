@@ -1690,3 +1690,123 @@ fn move_and_remove_note_round_trip_through_json() {
     .unwrap();
     assert!(json.contains("\"move_note\""), "{json}");
 }
+
+// ---- Issue #72 / ADR-0017: Plugin 楽器（CLAP ヘッドレス連携） ----
+
+use studio_core::PluginFormat;
+
+fn plugin_instrument() -> Instrument {
+    Instrument::Plugin {
+        format: PluginFormat::Clap,
+        plugin_path: "/plugins/Vital.clap".into(),
+        preset_path: Some("/presets/lead.vital".into()),
+    }
+}
+
+#[test]
+fn set_track_instrument_plugin_applies_and_shows_in_dump() {
+    // Issue #72: Plugin 楽器を設定でき、状態ダンプで観測できる。
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(plugin_instrument()),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        p.track(track_id).unwrap().instrument,
+        Some(plugin_instrument())
+    );
+    let dump = p.dump_json();
+    assert!(
+        dump.contains("\"plugin\""),
+        "dump must expose plugin: {dump}"
+    );
+    assert!(dump.contains("/plugins/Vital.clap"), "{dump}");
+    assert!(dump.contains("/presets/lead.vital"), "{dump}");
+    assert!(dump.contains("\"clap\""), "{dump}");
+}
+
+#[test]
+fn set_track_instrument_plugin_rejects_empty_plugin_path() {
+    // プラグインを指せない空パスは InvalidRange で状態不変。
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(Instrument::Plugin {
+                format: PluginFormat::Clap,
+                plugin_path: "  ".into(),
+                preset_path: None,
+            }),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CommandError::InvalidRange("plugin_path must not be empty")
+    );
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn set_track_instrument_plugin_rejects_empty_preset_path() {
+    // プリセットパスは None（既定状態）か非空のパスのどちらか。
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(Instrument::Plugin {
+                format: PluginFormat::Clap,
+                plugin_path: "/plugins/Vital.clap".into(),
+                preset_path: Some(String::new()),
+            }),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CommandError::InvalidRange("preset_path must not be empty")
+    );
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn plugin_instrument_survives_project_json_roundtrip() {
+    // Issue #72: プリセット指定を含む楽器設定がプロジェクトの
+    // 保存→再読込で往復する。
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(plugin_instrument()),
+        },
+    )
+    .unwrap();
+    let json = p.dump_json();
+    let back: Project = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, p);
+    assert_eq!(
+        back.track(track_id).unwrap().instrument,
+        Some(plugin_instrument())
+    );
+}
+
+#[test]
+fn plugin_command_json_roundtrip_uses_plugin_tag() {
+    let cmd = Command::SetTrackInstrument {
+        track_id: 3,
+        instrument: Some(plugin_instrument()),
+    };
+    let json = serde_json::to_string(&cmd).unwrap();
+    assert!(json.contains("\"plugin\""), "{json}");
+    let back: Command = serde_json::from_str(&json).unwrap();
+    assert_eq!(cmd, back);
+}

@@ -996,6 +996,45 @@ fn note_tools_apply_via_tools_call() {
 }
 
 #[test]
+fn plugin_instrument_applies_via_set_track_instrument_tool() {
+    // Issue #72 / ADR-0017: Plugin 楽器も set_track_instrument で
+    // 設定でき、ダンプで観測できる。空の plugin_path はエラーで
+    // 状態不変。
+    let server = McpServer::new();
+    call_tool(
+        &server,
+        90,
+        "add_track",
+        json!({"name": "VITAL", "kind": "audio"}),
+    );
+    let res = call_tool(
+        &server,
+        91,
+        "set_track_instrument",
+        json!({"track_id": 1, "instrument": {"type": "plugin", "format": "clap", "plugin_path": "/plugins/Vital.clap", "preset_path": "/presets/lead.vital"}}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(
+        project.tracks[0].instrument,
+        Some(studio_core::Instrument::Plugin {
+            format: studio_core::PluginFormat::Clap,
+            plugin_path: "/plugins/Vital.clap".into(),
+            preset_path: Some("/presets/lead.vital".into()),
+        })
+    );
+    let res = call_tool(
+        &server,
+        92,
+        "set_track_instrument",
+        json!({"track_id": 1, "instrument": {"type": "plugin", "format": "clap", "plugin_path": "", "preset_path": null}}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+}
+
+#[test]
 fn move_and_remove_note_tools_apply_via_tools_call() {
     // Issue #69 / ADR-0016: move_note と remove_note が tools/call
     // 経由で適用でき、ダンプで観測できる。範囲外の移動と

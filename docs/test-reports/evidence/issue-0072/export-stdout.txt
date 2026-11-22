@@ -1,0 +1,2 @@
+exported: /tmp/issue0072-export.wav
+export exit: 0

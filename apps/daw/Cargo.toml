@@ -9,3 +9,10 @@ studio-core = { path = "../../crates/studio-core" }
 hound = "3"
 nannou = "0.19"
 signalsmith-stretch = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# plugin-host バイナリ（Issue #72、ADR-0017）専用の CLAP ホスト基盤。
+# 本体（main.rs）はプロセス越しにしか触れない。
+clack-host = "0.2"
+clack-common = "0.2"
+clack-extensions = { version = "0.2", features = ["state", "clack-host"] }

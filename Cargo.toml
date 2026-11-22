@@ -6,6 +6,7 @@ members = [
     "crates/studio-mcp",
     "apps/video-editor",
     "apps/daw",
+    "fixtures/clap-test-synth",
 ]
 
 [workspace.package]

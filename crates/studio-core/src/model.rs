@@ -60,9 +60,17 @@ impl Note {
     }
 }
 
+/// プラグインの形式（Issue #72、ADR-0017）。当面は CLAP のみ。
+/// 形式の追加はこの列挙の拡張で受ける。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginFormat {
+    Clap,
+}
+
 /// 音色（楽器）（Issue #68、ADR-0016）。トラック単位で参照する。
-/// 当面はサンプラーのみ。外部プラグインは後続（Issue #71 の方式
-/// 決定後、#72）で Plugin バリアントとして足す拡張点。
+/// サンプラーと、外部プラグイン（Issue #72、ADR-0017 の
+/// ヘッドレス CLAP ホスティング＋プリセット JSON 注入）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Instrument {
@@ -70,6 +78,18 @@ pub enum Instrument {
     /// 原音の音高（MIDI ノート番号）。再生時のピッチシフト量は
     /// `note.pitch - root_note`（半音）で導出する。
     Sampler { source: String, root_note: u8 },
+    /// 外部プラグインを別プロセスのヘルパー経由で鳴らす楽器
+    /// （Issue #72、ADR-0017）。プラグイン本体は同梱せず、
+    /// 利用者が入手したものへの参照だけを持つ。
+    Plugin {
+        /// プラグイン形式（当面 CLAP のみ）。
+        format: PluginFormat,
+        /// プラグイン（.clap バンドル／ファイル）へのパス。
+        plugin_path: String,
+        /// プリセットファイル（Vital なら .vital）へのパス。
+        /// None はプラグインの既定状態で鳴らす。
+        preset_path: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

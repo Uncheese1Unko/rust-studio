@@ -16,6 +16,7 @@ mod edit;
 mod mixer;
 mod palette;
 mod pianoroll;
+mod plugin;
 mod sampler;
 // theme は配色表の全色を先に定義する土台（Issue #23）。アクセント系と
 // トランスポート系の定数は後続 PBI（#24〜#27）で使うため、未使用の
@@ -191,6 +192,9 @@ struct Model {
     prev_esc_down: bool,
     // Issue #41: WAV 書き出しの完了表示（画面と stdout に出す）。
     export_status: Option<String>,
+    // Issue #72: プラグイントラックのレンダリング失敗（明示的な
+    // エラー状態。空なら正常）。トラック名＋理由の文字列で持つ。
+    plugin_errors: Vec<String>,
     // Issue #42: 直近のドロップ処理時刻（秒）。複数ファイルの
     // ドロップは先頭1件だけ処理するためのバースト判定に使う。
     last_drop_at: Option<f32>,
@@ -306,7 +310,16 @@ fn compute_waveforms(project: &Project) -> (HashMap<String, Vec<f32>>, HashMap<S
 /// （読み取り専用。波形と同じくソース単位でデコードする）。
 /// ノートクリップの発音（Issue #68）にはトラックの楽器の素材も
 /// 必要なので、楽器のソースも集合に含める。
-fn compute_audio_map(project: &Project, dropped_source: &str) -> HashMap<String, audio::ClipAudio> {
+/// プラグイン楽器（Issue #72）は別プロセスで事前レンダリングし、
+/// 結果をマップへマージする。失敗はトラック単位のエラーとして
+/// あわせて返す（呼び出し側が画面／stderr に明示する）。
+fn compute_audio_map(
+    project: &Project,
+    dropped_source: &str,
+) -> (
+    HashMap<String, audio::ClipAudio>,
+    Vec<plugin::PluginTrackError>,
+) {
     let mut map = HashMap::new();
     let mut sources: Vec<&str> = project
         .tracks
@@ -326,7 +339,18 @@ fn compute_audio_map(project: &Project, dropped_source: &str) -> HashMap<String,
             map.insert(source.to_string(), decoded);
         }
     }
-    map
+    let (plugin_audio, errors) =
+        plugin::prepare_plugin_audio(project, &plugin::default_helper_path(), RATE);
+    map.extend(plugin_audio);
+    (map, errors)
+}
+
+/// プラグインエラーを画面表示用の文字列にする（Issue #72）。
+fn format_plugin_errors(errors: &[plugin::PluginTrackError]) -> Vec<String> {
+    errors
+        .iter()
+        .map(|e| format!("PLUGIN ERROR [{}] {}", e.track_name, e.message))
+        .collect()
 }
 
 fn model(app: &App) -> Model {
@@ -341,7 +365,10 @@ fn model(app: &App) -> Model {
     let (mut waveforms, mut source_durations) = (HashMap::new(), HashMap::new());
     // 配置用素材も波形を用意しておく（配置直後から波形が出るように）
     refresh_waveforms(&project, &dropped, &mut waveforms, &mut source_durations);
-    let audio_map = compute_audio_map(&project, &dropped);
+    let (audio_map, initial_plugin_errors) = compute_audio_map(&project, &dropped);
+    for error in &initial_plugin_errors {
+        println!("plugin error [{}]: {}", error.track_name, error.message);
+    }
     let window = app
         .new_window()
         .size(960, 540)
@@ -396,6 +423,7 @@ fn model(app: &App) -> Model {
         loop_drag_pointer_ms: 0,
         prev_esc_down: false,
         export_status: None,
+        plugin_errors: format_plugin_errors(&initial_plugin_errors),
         last_drop_at: None,
     }
 }
@@ -464,7 +492,10 @@ fn import_midi_cli(project_json: &str, mid_path: &str) {
 fn export_wav_cli(project_json: &str, out_wav: &str) {
     let project =
         Project::load_from_path(std::path::Path::new(project_json)).expect("load project json");
-    let audio_map = compute_audio_map(&project, "");
+    let (audio_map, plugin_errors) = compute_audio_map(&project, "");
+    for error in &plugin_errors {
+        eprintln!("plugin error [{}]: {}", error.track_name, error.message);
+    }
     match audio::export_wav(&project, &audio_map, std::path::Path::new(out_wav)) {
         Ok(path) => println!("exported: {}", path.display()),
         Err(e) => {
@@ -582,7 +613,12 @@ fn watch_project_file(app: &App, model: &mut Model) {
                     &mut model.waveforms,
                     &mut model.source_durations,
                 );
-                model.audio_map = compute_audio_map(model.history.project(), &model.dropped_source);
+                {
+                    let (map, errors) =
+                        compute_audio_map(model.history.project(), &model.dropped_source);
+                    model.audio_map = map;
+                    model.plugin_errors = format_plugin_errors(&errors);
+                }
             }
             println!("project reloaded: {}", model.history.project().dump_json());
         }
@@ -715,7 +751,12 @@ fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
                 &mut model.waveforms,
                 &mut model.source_durations,
             );
-            model.audio_map = compute_audio_map(model.history.project(), &model.dropped_source);
+            {
+                let (map, errors) =
+                    compute_audio_map(model.history.project(), &model.dropped_source);
+                model.audio_map = map;
+                model.plugin_errors = format_plugin_errors(&errors);
+            }
             save_project_file(model);
             println!(
                 "dropped: {} -> {}",
@@ -1018,7 +1059,11 @@ fn handle_history_keys(app: &App, model: &mut Model) {
         &mut model.waveforms,
         &mut model.source_durations,
     );
-    model.audio_map = compute_audio_map(model.history.project(), &model.dropped_source);
+    {
+        let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
+        model.audio_map = map;
+        model.plugin_errors = format_plugin_errors(&errors);
+    }
     let label = match op {
         edit::HistoryOp::Undo => "undo",
         edit::HistoryOp::Redo => "redo",
@@ -1188,7 +1233,11 @@ fn apply_placement(model: &mut Model, placement: &edit::ClipPlacement, label: &s
         &mut model.waveforms,
         &mut model.source_durations,
     );
-    model.audio_map = compute_audio_map(model.history.project(), &model.dropped_source);
+    {
+        let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
+        model.audio_map = map;
+        model.plugin_errors = format_plugin_errors(&errors);
+    }
     println!("after {label}: {}", model.history.project().dump_json());
     save_project_file(model);
 }
@@ -1805,6 +1854,20 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
                 "instrument: {base} root {}",
                 pianoroll::pitch_name(*root_note as i32)
             )
+        }
+        Some(studio_core::Instrument::Plugin {
+            plugin_path,
+            preset_path,
+            ..
+        }) => {
+            let base = plugin_path.rsplit('/').next().unwrap_or(plugin_path);
+            match preset_path {
+                Some(preset) => {
+                    let pbase = preset.rsplit('/').next().unwrap_or(preset);
+                    format!("instrument: {base} preset {pbase}")
+                }
+                None => format!("instrument: {base}"),
+            }
         }
         None => "instrument: (none)".to_string(),
     };
@@ -2587,6 +2650,23 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(ecx, ecy)
             .font_size(10)
             .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        // プラグインエラー（Issue #72）: 失敗したトラックがある間、
+        // チップ行の右にピンクで明示する（無言で無音にしない）。
+        // 全文は stdout に出ているため、画面では1行に切り詰める。
+        if let Some(first) = model.plugin_errors.first() {
+            let mut text: String = first.chars().take(40).collect();
+            if first.chars().count() > 40 || model.plugin_errors.len() > 1 {
+                text.push_str(" …");
+            }
+            if model.plugin_errors.len() > 1 {
+                text = format!("{}（他{}件）", text, model.plugin_errors.len() - 1);
+            }
+            draw.text(&text)
+                .x_y(612.0 - win.w() / 2.0, win.h() / 2.0 - (top + 46.0))
+                .left_justify()
+                .font_size(10)
+                .color(rgb(theme::ACCENT.0, theme::ACCENT.1, theme::ACCENT.2));
+        }
     }
 
     // 色選択パネル（Issue #58）: トランスポートの下。TRACK 行は選択中

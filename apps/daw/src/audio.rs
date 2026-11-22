@@ -101,6 +101,14 @@ pub fn is_track_audible(track: &studio_core::Track, any_solo: bool) -> bool {
     !any_solo || track.solo
 }
 
+/// プラグイン楽器トラックの事前レンダリング済み音声を音声マップに
+/// 置くときのキー（Issue #72、ADR-0017）。レンダリングは
+/// `plugin::prepare_plugin_audio` がプロジェクト先頭からの
+/// 絶対時刻で用意し、`render_mix` はこのキーで引いて使う。
+pub fn plugin_track_key(track_id: u64) -> String {
+    format!("plugin://track/{track_id}")
+}
+
 pub fn render_mix(
     project: &Project,
     audio: &HashMap<String, ClipAudio>,
@@ -140,6 +148,40 @@ pub fn render_mix(
                     // ノートクリップ（Issue #68、ADR-0016）: 波形では
                     // なく、トラックの楽器でノートごとに発音する。
                     // 楽器が無いトラックのノートは鳴らない。
+                    if let Some(studio_core::Instrument::Plugin { .. }) = &track.instrument {
+                        // プラグイン楽器（Issue #72、ADR-0017）:
+                        // 事前レンダリング済みのトラック音声
+                        // （プロジェクト先頭からの絶対時刻）を
+                        // クリップの区間だけ、クリップのゲインと
+                        // フェードを掛けて鳴らす。事前レンダリングが
+                        // 無い場合は無音（失敗は prepare_plugin_audio
+                        // がエラーとして明示する）。
+                        if let Some(rendered) = audio.get(&plugin_track_key(track.id)) {
+                            if rendered.channels > 0 && rendered.sample_rate > 0 {
+                                let pos = t_ms * rendered.sample_rate as f64 / 1000.0;
+                                let i0 = pos.floor() as usize;
+                                let frac = (pos - i0 as f64) as f32;
+                                let ch = rendered.channels as usize;
+                                let gain =
+                                    clip.gain * fade_envelope(clip, t_ms - clip.start_ms as f64);
+                                for (out_ch, slot) in frame.iter_mut().enumerate() {
+                                    let src_ch = out_ch.min(ch - 1);
+                                    let a = rendered
+                                        .samples
+                                        .get(i0 * ch + src_ch)
+                                        .copied()
+                                        .unwrap_or(0.0);
+                                    let b = rendered
+                                        .samples
+                                        .get((i0 + 1) * ch + src_ch)
+                                        .copied()
+                                        .unwrap_or(0.0);
+                                    *slot += (a + (b - a) * frac) * gain * channel_factor[out_ch];
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     let Some(studio_core::Instrument::Sampler { source, root_note }) =
                         &track.instrument
                     else {
@@ -1761,6 +1803,144 @@ mod midi_import_tests {
         assert!(
             segmented_goertzel(&second, RATE, 440.0) > 0.05,
             "note 72 sounds an octave up"
+        );
+    }
+}
+
+#[cfg(test)]
+mod plugin_render_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{apply, Command, Instrument, PluginFormat, TrackKind};
+
+    /// Plugin 楽器のノートクリップを持つプロジェクト。
+    fn project_with_plugin_track() -> (Project, u64, u64) {
+        let mut p = Project::new("plugin");
+        let track = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "VITAL".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: track,
+                instrument: Some(Instrument::Plugin {
+                    format: PluginFormat::Clap,
+                    plugin_path: "/plugins/Vital.clap".into(),
+                    preset_path: None,
+                }),
+            },
+        )
+        .unwrap();
+        let clip = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: track,
+                name: "melody".into(),
+                start_ms: 500,
+                duration_ms: 1_000,
+                source: String::new(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddNote {
+                clip_id: clip,
+                pitch: 69,
+                start_ms: 0,
+                duration_ms: 1_000,
+                velocity: 127,
+            },
+        )
+        .unwrap();
+        (p, track, clip)
+    }
+
+    #[test]
+    fn render_mix_plays_plugin_track_from_prerendered_audio() {
+        // Issue #72: プラグイントラックは事前レンダリング済み音声
+        // （絶対時刻で用意される）をクリップの区間だけ鳴らす。
+        let (p, track, _clip) = project_with_plugin_track();
+        let mut audio = HashMap::new();
+        audio.insert(plugin_track_key(track), sine(440.0, 3_000, 0.4));
+        let mix = render_mix(&p, &audio, 0, 2_000, RATE);
+        let before = window(&mix, 2, 0, 400, RATE);
+        assert!(rms(&before) < 1e-4, "before the clip must be silent");
+        let during = window(&mix, 2, 600, 1_400, RATE);
+        assert!(
+            goertzel(&during, RATE, 440.0) > 0.1,
+            "plugin audio must sound inside the clip"
+        );
+        let after = window(&mix, 2, 1_600, 1_900, RATE);
+        assert!(rms(&after) < 1e-4, "after the clip must be silent");
+    }
+
+    #[test]
+    fn render_mix_plugin_track_without_prerender_stays_silent_and_keeps_sampler() {
+        // 事前レンダリングが無い（プラグイン不在等）プラグイン
+        // トラックは無音になるが、他のサンプラートラックは壊れない。
+        let (mut p, _track, _clip) = project_with_plugin_track();
+        let sampler_track = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "SAMPLER".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id: sampler_track,
+                instrument: Some(Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 60,
+                }),
+            },
+        )
+        .unwrap();
+        let sampler_clip = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: sampler_track,
+                name: "melody2".into(),
+                start_ms: 500,
+                duration_ms: 1_000,
+                source: String::new(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddNote {
+                clip_id: sampler_clip,
+                pitch: 60,
+                start_ms: 0,
+                duration_ms: 1_000,
+                velocity: 127,
+            },
+        )
+        .unwrap();
+        let mut audio = HashMap::new();
+        audio.insert("tone.wav".to_string(), sine(220.0, 3_000, 0.4));
+        let mix = render_mix(&p, &audio, 0, 2_000, RATE);
+        let during = window(&mix, 2, 600, 1_400, RATE);
+        assert!(
+            goertzel(&during, RATE, 220.0) > 0.1,
+            "sampler track must keep sounding"
+        );
+        assert!(
+            goertzel(&during, RATE, 440.0) < 0.03,
+            "plugin track must not sound without prerender"
         );
     }
 }

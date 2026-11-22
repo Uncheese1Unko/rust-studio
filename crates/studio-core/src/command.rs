@@ -654,6 +654,24 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     ));
                 }
             }
+            // プラグイン楽器の不変条件（Issue #72、ADR-0017）:
+            // プラグインへの参照が空では鳴らし先が無い。プリセットは
+            // None（既定状態）か非空のパスのどちらか。
+            if let Some(Instrument::Plugin {
+                plugin_path,
+                preset_path,
+                ..
+            }) = instrument
+            {
+                if plugin_path.trim().is_empty() {
+                    return Err(CommandError::InvalidRange("plugin_path must not be empty"));
+                }
+                if let Some(preset) = preset_path {
+                    if preset.is_empty() {
+                        return Err(CommandError::InvalidRange("preset_path must not be empty"));
+                    }
+                }
+            }
             let track = project
                 .track_mut(*track_id)
                 .ok_or(CommandError::TrackNotFound(*track_id))?;
