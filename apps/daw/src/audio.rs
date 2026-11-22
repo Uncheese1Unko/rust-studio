@@ -245,8 +245,6 @@ pub fn add_metronome_clicks(mix: &mut [f32], bpm: f32, start_ms: i64, out_rate: 
     }
 }
 
-/// render_mix にメトロノーム（Issue #36）を重ねた再生レンダリング。
-/// ON/OFF はアプリ側の再生状態で、プロジェクトには保存しない。
 /// ミックスを WAV に書き出す（Issue #41）。プロジェクト全長
 /// （最後のクリップの終端まで）を 44.1kHz / 16bit PCM / ステレオで
 /// 書き出す。中身は render_mix の出力そのもの（16bit 量子化のみ）。
@@ -287,6 +285,8 @@ pub fn default_export_path(
     }
 }
 
+/// render_mix にメトロノーム（Issue #36）を重ねた再生レンダリング。
+/// ON/OFF はアプリ側の再生状態で、プロジェクトには保存しない。
 pub fn render_mix_with_metronome(
     project: &Project,
     audio: &HashMap<String, ClipAudio>,

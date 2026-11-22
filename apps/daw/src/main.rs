@@ -1192,7 +1192,12 @@ fn handle_pointer(app: &App, model: &mut Model) {
             );
             match audio::export_wav(model.history.project(), &model.audio_map, &out) {
                 Ok(path) => {
-                    model.export_status = Some(format!("EXPORTED {}", path.display()));
+                    // チップにはファイル名だけ出す（絶対パスは stdout）。
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string());
+                    model.export_status = Some(format!("EXPORTED {name}"));
                     println!("exported: {}", path.display());
                 }
                 Err(e) => {
