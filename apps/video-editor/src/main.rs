@@ -1192,10 +1192,8 @@ fn gain_target(model: &Model) -> Option<(u64, String, f32)> {
 
 /// 座標がゲインスライダーの帯（少し余裕を持たせた範囲）にあるか。
 fn gain_slider_at(lx: f32, ly: f32) -> bool {
-    lx >= PREVIEW_X
-        && lx <= PREVIEW_X + PREVIEW_W
-        && ly >= GAIN_SLIDER_Y - 4.0
-        && ly <= GAIN_SLIDER_Y + GAIN_SLIDER_H + 4.0
+    (PREVIEW_X..=PREVIEW_X + PREVIEW_W).contains(&lx)
+        && (GAIN_SLIDER_Y - 4.0..=GAIN_SLIDER_Y + GAIN_SLIDER_H + 4.0).contains(&ly)
 }
 
 /// スライダー位置のゲインを対象クリップへ当てる（ドラッグ中は
