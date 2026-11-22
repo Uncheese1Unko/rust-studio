@@ -55,9 +55,18 @@ impl History {
     /// ように、1つのジェスチャで何度も適用し直す操作の逐次適用用）。
     /// ジェスチャの開始時に控えたスナップショットを、ジェスチャの
     /// 終了時に [`History::record_undo_snapshot`] で積むこと。失敗時は
-    /// 状態が変わらない（コマンド層の契約どおり）。
+    /// 状態が変わらない。コマンド層の契約（検証 → 変更）に加え、
+    /// 履歴側でも適用前スナップショットへ戻して二重に守る
+    /// （Issue #61。[`History::apply`] と同じガード）。
     pub fn apply_transient(&mut self, command: &Command) -> Result<Option<u64>, CommandError> {
-        apply(&mut self.project, command)
+        let snapshot = self.project.clone();
+        match apply(&mut self.project, command) {
+            Ok(created_id) => Ok(created_id),
+            Err(e) => {
+                self.project = snapshot;
+                Err(e)
+            }
+        }
     }
 
     /// 外部で控えたスナップショットを undo スタックへ積む
@@ -114,5 +123,52 @@ impl History {
 
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::TrackKind;
+
+    #[test]
+    fn transient_failure_restores_pre_apply_state() {
+        // Issue #61: 「変更してから失敗する」コマンド（テスト専用の
+        // MutateThenFail）を transient 適用しても、失敗時は状態が
+        // 適用前に戻る（ダンプが一致する）。
+        let mut history = History::new(Project::new("t"));
+        history
+            .apply(&Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            })
+            .unwrap();
+        let before = history.project().dump_json();
+        let result = history.apply_transient(&Command::MutateThenFail);
+        assert!(result.is_err());
+        assert_eq!(history.project().dump_json(), before);
+    }
+
+    #[test]
+    fn transient_failure_leaves_history_untouched() {
+        // Issue #61: transient 適用の失敗で履歴（undo/redo の可否）も
+        // 変わらない。
+        let mut history = History::new(Project::new("t"));
+        history
+            .apply(&Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            })
+            .unwrap();
+        assert!(history.undo());
+        assert!(history.can_redo());
+        let result = history.apply_transient(&Command::MutateThenFail);
+        assert!(result.is_err());
+        assert!(!history.can_undo());
+        assert!(history.can_redo());
+        // redo で戻れる状態も失敗前と同じ
+        assert!(history.redo());
+        assert_eq!(history.project().tracks.len(), 1);
+        assert_eq!(history.project().tracks[0].name, "A1");
     }
 }

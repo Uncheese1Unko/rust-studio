@@ -99,6 +99,12 @@ pub enum Command {
         clip_id: u64,
         color: Option<ColorTag>,
     },
+    /// テスト専用（Issue #61）：状態を変更してから失敗するコマンド。
+    /// 実コマンドは全て「検証 → 変更」の順で失敗時に状態を変えないため、
+    /// `History::apply_transient` の失敗時復元を再現するにはこの
+    /// コマンドが要る。本番ビルドには含まれない。
+    #[cfg(test)]
+    MutateThenFail,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -432,6 +438,22 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .expect("checked above");
             clip.color = *color;
             Ok(None)
+        }
+        // テスト専用（Issue #61）：トラックを追加（id も消費）してから
+        // 失敗する。「変更してから失敗する」コマンドの再現。
+        #[cfg(test)]
+        Command::MutateThenFail => {
+            let id = project.alloc_id();
+            project.tracks.push(Track {
+                id,
+                name: "mutated".into(),
+                kind: TrackKind::Audio,
+                clips: Vec::new(),
+                volume: 1.0,
+                pan: 0.0,
+                color: None,
+            });
+            Err(CommandError::InvalidRange("mutate then fail (test only)"))
         }
     }
 }
