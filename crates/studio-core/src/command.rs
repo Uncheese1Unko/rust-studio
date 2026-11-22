@@ -133,10 +133,38 @@ pub enum Command {
         color: Option<ColorTag>,
     },
     /// トラックの音色（楽器）を設定する（Issue #68、ADR-0016）。
-    /// None は楽器なしに戻す。
+    /// None は楽器なしに戻す。直接設定すると音色参照（tone_id）は
+    /// 外れる（Issue #73、ADR-0018）。
     SetTrackInstrument {
         track_id: u64,
         instrument: Option<Instrument>,
+    },
+    /// 音色をプロジェクトに追加する（Issue #73、ADR-0018）。
+    /// 戻り値は新しい音色の id。
+    AddTone {
+        name: String,
+        instrument: Instrument,
+    },
+    /// 音色の名前を変える（Issue #73）。
+    RenameTone {
+        tone_id: u64,
+        name: String,
+    },
+    /// 音色の中身（楽器）を差し替える（Issue #73）。割り当て中の
+    /// 全トラックに即座に反映される（参照で持つため）。
+    UpdateTone {
+        tone_id: u64,
+        instrument: Instrument,
+    },
+    /// 音色を削除する（Issue #73）。参照しているトラックの
+    /// tone_id は外れる（直接の楽器設定に戻る）。
+    RemoveTone {
+        tone_id: u64,
+    },
+    /// トラックへ音色を割り当てる／外す（Issue #73）。
+    SetTrackTone {
+        track_id: u64,
+        tone_id: Option<u64>,
     },
     /// クリップにノートを1つ追加する（Issue #68、ADR-0016）。
     /// ノートはクリップの範囲内に収まること（start_ms >= 0、
@@ -173,6 +201,7 @@ pub enum Command {
 pub enum CommandError {
     TrackNotFound(u64),
     ClipNotFound(u64),
+    ToneNotFound(u64),
     InvalidRange(&'static str),
 }
 
@@ -181,12 +210,52 @@ impl std::fmt::Display for CommandError {
         match self {
             CommandError::TrackNotFound(id) => write!(f, "track {id} not found"),
             CommandError::ClipNotFound(id) => write!(f, "clip {id} not found"),
+            CommandError::ToneNotFound(id) => write!(f, "tone {id} not found"),
             CommandError::InvalidRange(msg) => write!(f, "invalid range: {msg}"),
         }
     }
 }
 
 impl std::error::Error for CommandError {}
+
+/// 楽器の不変条件（ADR-0016 / ADR-0017）。トラックへの直接設定と
+/// 音色への格納で共有する。
+fn validate_instrument(instrument: &Instrument) -> Result<(), CommandError> {
+    // サンプラーの root_note は素材の原音の MIDI ノート番号（0–127）。
+    if let Instrument::Sampler { root_note, .. } = instrument {
+        if *root_note > 127 {
+            return Err(CommandError::InvalidRange(
+                "root_note must be within 0..=127",
+            ));
+        }
+    }
+    // プラグイン楽器: プラグインへの参照が空では鳴らし先が無い。
+    // プリセットは None（既定状態）か非空のパスのどちらか。
+    if let Instrument::Plugin {
+        plugin_path,
+        preset_path,
+        ..
+    } = instrument
+    {
+        if plugin_path.trim().is_empty() {
+            return Err(CommandError::InvalidRange("plugin_path must not be empty"));
+        }
+        if let Some(preset) = preset_path {
+            if preset.trim().is_empty() {
+                return Err(CommandError::InvalidRange("preset_path must not be empty"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 音色名の不変条件（Issue #73）: 空白のみの名前は付けられない。
+fn validate_tone_name(name: &str) -> Result<(), CommandError> {
+    if name.trim().is_empty() {
+        return Err(CommandError::InvalidRange("tone name must not be empty"));
+    }
+    Ok(())
+}
 
 /// コマンドを適用する。成功時は新しく作られた要素の id（該当する場合）を返す。
 /// 失敗時は状態を一切変えない。
@@ -212,6 +281,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 muted: false,
                 solo: false,
                 instrument: None,
+                tone_id: None,
             });
             Ok(Some(id))
         }
@@ -645,37 +715,72 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             track_id,
             instrument,
         } => {
-            // 楽器の不変条件（ADR-0016）: サンプラーの root_note は
-            // 素材の原音の MIDI ノート番号（0–127）。
-            if let Some(Instrument::Sampler { root_note, .. }) = instrument {
-                if *root_note > 127 {
-                    return Err(CommandError::InvalidRange(
-                        "root_note must be within 0..=127",
-                    ));
-                }
-            }
-            // プラグイン楽器の不変条件（Issue #72、ADR-0017）:
-            // プラグインへの参照が空では鳴らし先が無い。プリセットは
-            // None（既定状態）か非空のパスのどちらか。
-            if let Some(Instrument::Plugin {
-                plugin_path,
-                preset_path,
-                ..
-            }) = instrument
-            {
-                if plugin_path.trim().is_empty() {
-                    return Err(CommandError::InvalidRange("plugin_path must not be empty"));
-                }
-                if let Some(preset) = preset_path {
-                    if preset.trim().is_empty() {
-                        return Err(CommandError::InvalidRange("preset_path must not be empty"));
-                    }
-                }
+            if let Some(instrument) = instrument {
+                validate_instrument(instrument)?;
             }
             let track = project
                 .track_mut(*track_id)
                 .ok_or(CommandError::TrackNotFound(*track_id))?;
             track.instrument = instrument.clone();
+            // 直接の楽器設定が音色参照より優先される（ADR-0018）。
+            track.tone_id = None;
+            Ok(None)
+        }
+        Command::AddTone { name, instrument } => {
+            validate_tone_name(name)?;
+            validate_instrument(instrument)?;
+            let id = project.alloc_id();
+            project.tones.push(crate::model::Tone {
+                id,
+                name: name.clone(),
+                instrument: instrument.clone(),
+            });
+            Ok(Some(id))
+        }
+        Command::RenameTone { tone_id, name } => {
+            validate_tone_name(name)?;
+            let tone = project
+                .tone_mut(*tone_id)
+                .ok_or(CommandError::ToneNotFound(*tone_id))?;
+            tone.name = name.clone();
+            Ok(None)
+        }
+        Command::UpdateTone {
+            tone_id,
+            instrument,
+        } => {
+            validate_instrument(instrument)?;
+            let tone = project
+                .tone_mut(*tone_id)
+                .ok_or(CommandError::ToneNotFound(*tone_id))?;
+            tone.instrument = instrument.clone();
+            Ok(None)
+        }
+        Command::RemoveTone { tone_id } => {
+            let pos = project
+                .tones
+                .iter()
+                .position(|t| t.id == *tone_id)
+                .ok_or(CommandError::ToneNotFound(*tone_id))?;
+            project.tones.remove(pos);
+            // 参照していたトラックは直接の楽器設定に戻る。
+            for track in &mut project.tracks {
+                if track.tone_id == Some(*tone_id) {
+                    track.tone_id = None;
+                }
+            }
+            Ok(None)
+        }
+        Command::SetTrackTone { track_id, tone_id } => {
+            if let Some(tone_id) = tone_id {
+                if project.tone(*tone_id).is_none() {
+                    return Err(CommandError::ToneNotFound(*tone_id));
+                }
+            }
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.tone_id = *tone_id;
             Ok(None)
         }
         Command::AddNote {
@@ -796,6 +901,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 muted: false,
                 solo: false,
                 instrument: None,
+                tone_id: None,
             });
             Err(CommandError::InvalidRange("mutate then fail (test only)"))
         }

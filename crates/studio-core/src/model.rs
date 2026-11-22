@@ -186,12 +186,32 @@ pub struct Track {
     /// （ノートクリップは鳴らない）。旧形式の JSON では None。
     #[serde(default)]
     pub instrument: Option<Instrument>,
+    /// 割り当てられた音色（Project.tones への参照、Issue #73、
+    /// ADR-0018）。Some の間は実効楽器は音色側が優先される。
+    /// 旧形式の JSON では None。
+    #[serde(default)]
+    pub tone_id: Option<u64>,
+}
+
+/// 名前付きの音色（Issue #73、ADR-0018）。プロジェクト内に
+/// コレクションとして持ち、トラックは `Track.tone_id` で参照する。
+/// 中身は楽器そのもの（サンプラー／プラグイン）で、音色の切り替えは
+/// 参照の差し替えとして表れる。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tone {
+    pub id: u64,
+    pub name: String,
+    pub instrument: Instrument,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub name: String,
     pub tracks: Vec<Track>,
+    /// 音色のコレクション（Issue #73、ADR-0018）。旧形式の
+    /// JSON では空。
+    #[serde(default)]
+    pub tones: Vec<Tone>,
     /// テンポ（BPM、Issue #35）。旧形式の JSON では既定 120。
     #[serde(default = "default_bpm")]
     pub bpm: f32,
@@ -207,6 +227,7 @@ impl Project {
         Project {
             name: name.into(),
             tracks: Vec::new(),
+            tones: Vec::new(),
             bpm: 120.0,
             next_id: 1,
         }
@@ -224,6 +245,27 @@ impl Project {
 
     pub fn track_mut(&mut self, track_id: u64) -> Option<&mut Track> {
         self.tracks.iter_mut().find(|t| t.id == track_id)
+    }
+
+    pub fn tone(&self, tone_id: u64) -> Option<&Tone> {
+        self.tones.iter().find(|t| t.id == tone_id)
+    }
+
+    pub fn tone_mut(&mut self, tone_id: u64) -> Option<&mut Tone> {
+        self.tones.iter_mut().find(|t| t.id == tone_id)
+    }
+
+    /// トラックの実効楽器（Issue #73、ADR-0018）。音色が割り当て
+    /// られていれば音色の楽器、無ければ（参照先が消えている場合も）
+    /// トラック直接の楽器を返す。再生・事前レンダリングはこちらを
+    /// 使うこと。
+    pub fn effective_instrument(&self, track: &Track) -> Option<Instrument> {
+        if let Some(tone_id) = track.tone_id {
+            if let Some(tone) = self.tone(tone_id) {
+                return Some(tone.instrument.clone());
+            }
+        }
+        track.instrument.clone()
     }
 
     pub fn clip(&self, clip_id: u64) -> Option<(&Track, &Clip)> {

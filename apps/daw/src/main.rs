@@ -18,6 +18,7 @@ mod palette;
 mod pianoroll;
 mod plugin;
 mod sampler;
+mod tones;
 // theme は配色表の全色を先に定義する土台（Issue #23）。アクセント系と
 // トランスポート系の定数は後続 PBI（#24〜#27）で使うため、未使用の
 // 警告をモジュール単位で抑止する。
@@ -239,12 +240,26 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// プロジェクトのクリップが参照するソース一覧（ソート・重複なし）。
 /// 波形マップのキーとは別物で、配置用素材は含まない（Issue #16 の
 /// レビュー指摘: 再読込時の比較はこの一覧同士で行う）。
+/// 音色（Issue #73）の素材も含める: 外部から音色が追加・変更された
+/// 再読込でも音声マップを作り直すため。
 fn project_sources(project: &Project) -> Vec<String> {
     let mut sources: Vec<String> = project
         .tracks
         .iter()
         .flat_map(|t| t.clips.iter().map(|c| c.source.clone()))
         .collect();
+    for track in &project.tracks {
+        if let Some(studio_core::Instrument::Sampler { source, .. }) =
+            project.effective_instrument(track)
+        {
+            sources.push(source);
+        }
+    }
+    for tone in &project.tones {
+        if let studio_core::Instrument::Sampler { source, .. } = &tone.instrument {
+            sources.push(source.clone());
+        }
+    }
     sources.sort();
     sources.dedup();
     sources
@@ -324,22 +339,31 @@ fn compute_audio_map(
     Vec<plugin::PluginTrackError>,
 ) {
     let mut map = HashMap::new();
-    let mut sources: Vec<&str> = project
+    let mut sources: Vec<String> = project
         .tracks
         .iter()
-        .flat_map(|t| t.clips.iter().map(|c| c.source.as_str()))
+        .flat_map(|t| t.clips.iter().map(|c| c.source.clone()))
         .collect();
+    // 実効楽器（Issue #73: 音色割り当て込み）と、割り当てられて
+    // いない音色の素材もデコードしておく（切り替えに即応するため）。
     for track in &project.tracks {
-        if let Some(studio_core::Instrument::Sampler { source, .. }) = &track.instrument {
-            sources.push(source.as_str());
+        if let Some(studio_core::Instrument::Sampler { source, .. }) =
+            project.effective_instrument(track)
+        {
+            sources.push(source);
         }
     }
-    sources.push(dropped_source);
+    for tone in &project.tones {
+        if let studio_core::Instrument::Sampler { source, .. } = &tone.instrument {
+            sources.push(source.clone());
+        }
+    }
+    sources.push(dropped_source.to_string());
     sources.sort();
     sources.dedup();
     for source in sources {
-        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(source)) {
-            map.insert(source.to_string(), decoded);
+        if let Ok(decoded) = audio::decode_audio(std::path::Path::new(&source)) {
+            map.insert(source, decoded);
         }
     }
     let (plugin_audio, errors) =
@@ -1384,6 +1408,80 @@ fn apply_palette_click(model: &mut Model, target: palette::PaletteTarget, color:
     }
 }
 
+/// 音色パネルのクリックをコマンドに変換する（Issue #73、ADR-0018）。
+/// チップは選択中トラックへの割り当て／解除、作成は選択中トラックの
+/// 実効楽器から取り込み、削除は選択中トラックに割り当て中の音色を
+/// 対象とする。状態変更はコマンド経由のみ（ADR-0004）。音色の変更は
+/// 音声マップに影響するため、適用後に作り直す。
+fn apply_tone_click(model: &mut Model, hit: tones::ToneHit) {
+    let Some(track_id) = model.selected_track else {
+        println!("tone: no track selected");
+        return;
+    };
+    let project = model.history.project();
+    let cmd = match hit {
+        tones::ToneHit::Chip(index) => {
+            let Some(tone) = project.tones.get(index) else {
+                return;
+            };
+            if project.track(track_id).and_then(|t| t.tone_id) == Some(tone.id) {
+                Command::SetTrackTone {
+                    track_id,
+                    tone_id: None,
+                }
+            } else {
+                Command::SetTrackTone {
+                    track_id,
+                    tone_id: Some(tone.id),
+                }
+            }
+        }
+        tones::ToneHit::Add => {
+            let Some(track) = project.track(track_id) else {
+                return;
+            };
+            let Some(instrument) = project.effective_instrument(track) else {
+                println!("tone: selected track has no instrument to capture");
+                return;
+            };
+            let base = match &instrument {
+                studio_core::Instrument::Sampler { source, .. } => {
+                    source.rsplit('/').next().unwrap_or(source).to_string()
+                }
+                studio_core::Instrument::Plugin { plugin_path, .. } => plugin_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(plugin_path)
+                    .to_string(),
+            };
+            let name = if base.trim().is_empty() {
+                format!("Tone {}", project.tones.len() + 1)
+            } else {
+                base
+            };
+            Command::AddTone { name, instrument }
+        }
+        tones::ToneHit::Delete => {
+            let Some(tone_id) = project.track(track_id).and_then(|t| t.tone_id) else {
+                println!("tone: selected track has no tone assigned");
+                return;
+            };
+            Command::RemoveTone { tone_id }
+        }
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            println!("after tone: {}", model.history.project().dump_json());
+            save_project_file(model);
+            let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
+            model.audio_map = map;
+            model.plugin_errors = format_plugin_errors(&errors);
+            model.plugin_fingerprint = plugin::plugin_fingerprint(model.history.project());
+        }
+        Err(e) => println!("command rejected: {e}"),
+    }
+}
+
 /// ジェスチャ（ドラッグ）の終了時に、開始時スナップショットを履歴へ
 /// 1件だけ積む（Issue #31）。逐次適用は `apply_transient` で履歴に
 /// 積まないため、ジェスチャ全体が1回の undo 単位になる。記録を
@@ -1409,7 +1507,9 @@ fn roll_openable(project: &Project, clip_id: u64) -> bool {
     let Some((track, clip)) = project.clip(clip_id) else {
         return false;
     };
-    !clip.notes.is_empty() || clip.source.is_empty() || track.instrument.is_some()
+    !clip.notes.is_empty()
+        || clip.source.is_empty()
+        || project.effective_instrument(track).is_some()
 }
 
 /// ピアノロールのキー操作（Issue #69）: Delete / Backspace で
@@ -1663,6 +1763,18 @@ fn handle_pointer(app: &App, model: &mut Model) {
             model.prev_left_down = left_down;
             return;
         }
+        // 音色パネル（Issue #73）: 色パネルの下のパネル。
+        let tones_snapshot = model.history.project().tones.clone();
+        if let Some(hit) = tones::hit_tones(
+            model.history.project().tracks.len(),
+            &tones_snapshot,
+            lx,
+            ly,
+        ) {
+            apply_tone_click(model, hit);
+            model.prev_left_down = left_down;
+            return;
+        }
         // トラック削除（Issue #56）: ヘッダー右端の帯。コマンド経由で
         // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
         // 選択を移す。削除したトラックの操作状態も打ち切る。
@@ -1867,7 +1979,8 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
         52.0,
         timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0,
     );
-    let instrument = match &track.instrument {
+    let effective = project.effective_instrument(track);
+    let instrument = match &effective {
         Some(studio_core::Instrument::Sampler { source, root_note }) => {
             let base = source.rsplit('/').next().unwrap_or(source);
             format!(
@@ -1890,6 +2003,11 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
             }
         }
         None => "instrument: (none)".to_string(),
+    };
+    // 音色が割り当てられていれば音色名を前置する（Issue #73）。
+    let instrument = match track.tone_id.and_then(|id| project.tone(id)) {
+        Some(tone) => format!("tone: {} / {}", tone.name, instrument),
+        None => instrument,
     };
     let (r, g, b) = theme::TEXT;
     draw.text(&format!("{} — {}", clip.name, instrument))
@@ -2787,6 +2905,75 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 }
             }
         }
+    }
+
+    // 音色パネル（Issue #73、ADR-0018）: 色パネルの下。チップは
+    // プロジェクトの音色一覧で、選択中トラックに割り当て中のものは
+    // アクセント色で灯す。末尾は作成／削除ボタン。
+    {
+        let project = model.history.project();
+        let count = project.tracks.len();
+        let top = tones::panel_top(count);
+        draw_rounded_rect(
+            &draw,
+            win,
+            mixer::Rect {
+                x: 8.0,
+                y: top - 8.0,
+                w: win.w() - 16.0,
+                h: tones::panel_height(),
+            },
+            theme::PANEL_CORNER_RADIUS,
+            theme::PANEL,
+        );
+        draw_panel_label(&draw, win, theme::TONES_LABEL, 40.0, top);
+        let assigned = model
+            .selected_track
+            .and_then(|id| project.track(id))
+            .and_then(|t| t.tone_id);
+        let (lx, ly) = rect_center(
+            win,
+            8.0,
+            top + tones::ROWS_TOP_OFFSET_PX,
+            tones::CHIP_X_PX - 8.0,
+            tones::ROW_H_PX,
+        );
+        draw.text("TRACK").x_y(lx, ly).font_size(10).color(rgb(
+            theme::TEXT_SUB.0,
+            theme::TEXT_SUB.1,
+            theme::TEXT_SUB.2,
+        ));
+        for (index, tone) in project.tones.iter().enumerate() {
+            let rect = tones::chip_rect(top, &project.tones, index);
+            let is_assigned = assigned == Some(tone.id);
+            let (face, text_color) = if is_assigned {
+                (theme::ACCENT, theme::PANEL)
+            } else {
+                (theme::PANEL_SUNK, theme::TEXT)
+            };
+            draw_rounded_rect(&draw, win, rect, 4.0, face);
+            let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+            let label: String = tone.name.chars().take(18).collect();
+            draw.text(&label).x_y(cx, cy).font_size(10).color(rgb(
+                text_color.0,
+                text_color.1,
+                text_color.2,
+            ));
+        }
+        let add = tones::add_rect(top, &project.tones);
+        draw_rounded_rect(&draw, win, add, 4.0, theme::PANEL_SUNK);
+        let (cx, cy) = rect_center(win, add.x, add.y, add.w, add.h);
+        draw.text("+ TONE FROM TRACK")
+            .x_y(cx, cy)
+            .font_size(10)
+            .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+        let del = tones::delete_rect(top, &project.tones);
+        draw_rounded_rect(&draw, win, del, 4.0, theme::PANEL_SUNK);
+        let (cx, cy) = rect_center(win, del.x, del.y, del.w, del.h);
+        draw.text("DELETE ASSIGNED")
+            .x_y(cx, cy)
+            .font_size(10)
+            .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
     }
 
     // ピッチ表示（Issue #18）: 再生ヘッド位置の音声クリップのピッチ。

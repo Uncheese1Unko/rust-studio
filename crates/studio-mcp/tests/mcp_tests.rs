@@ -1180,3 +1180,72 @@ fn import_midi_tool_imports_a_file() {
     assert_eq!(project_dump_via_tool(&server), dump);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn tone_tools_create_assign_and_observe_via_dump() {
+    // Issue #73 / ADR-0018: 音色の追加・割り当て・改名・削除が
+    // tools/call 経由で適用でき、ダンプで観測できる。存在しない
+    // 音色の割り当てはエラーで状態不変。
+    let server = McpServer::new();
+    call_tool(
+        &server,
+        100,
+        "add_track",
+        json!({"name": "Keys", "kind": "audio"}),
+    );
+    let res = call_tool(
+        &server,
+        101,
+        "add_tone",
+        json!({"name": "Warm Pad", "instrument": {"type": "sampler", "source": "pad.wav", "root_note": 60}}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    // 追加の戻り（新しい id を含むテキスト）から音色 ID を得る代わりに、
+    // ダンプで採番を確認する（トラックが 1 なので音色は 2）。
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tones.len(), 1);
+    assert_eq!(project.tones[0].name, "Warm Pad");
+    let tone_id = project.tones[0].id;
+    let res = call_tool(
+        &server,
+        102,
+        "set_track_tone",
+        json!({"track_id": 1, "tone_id": tone_id}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let res = call_tool(
+        &server,
+        103,
+        "rename_tone",
+        json!({"tone_id": tone_id, "name": "Soft Pad"}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tones[0].name, "Soft Pad");
+    assert_eq!(project.tracks[0].tone_id, Some(tone_id));
+    assert_eq!(
+        project.effective_instrument(&project.tracks[0]),
+        Some(studio_core::Instrument::Sampler {
+            source: "pad.wav".into(),
+            root_note: 60,
+        })
+    );
+    // 存在しない音色の割り当てはエラーで状態不変。
+    let res = call_tool(
+        &server,
+        104,
+        "set_track_tone",
+        json!({"track_id": 1, "tone_id": 999}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    // 削除すると割り当ても外れる。
+    let res = call_tool(&server, 105, "remove_tone", json!({"tone_id": tone_id}));
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert!(project.tones.is_empty());
+    assert_eq!(project.tracks[0].tone_id, None);
+}

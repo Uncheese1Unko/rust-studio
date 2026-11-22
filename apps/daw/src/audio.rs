@@ -122,11 +122,19 @@ pub fn render_mix(
     let any_solo = project.tracks.iter().any(|t| t.solo);
     // ピッチ変更済みクリップ音声のキャッシュ（このレンダリング内のみ）。
     let mut pitch_cache: HashMap<(String, u32), ClipAudio> = HashMap::new();
+    // 実効楽器（Issue #73、ADR-0018）: 音色の割り当てを解決した
+    // 楽器をトラック位置で引けるよう先に確定させる（フレーム毎に
+    // 解決し直さない）。
+    let effective: Vec<Option<studio_core::Instrument>> = project
+        .tracks
+        .iter()
+        .map(|t| project.effective_instrument(t))
+        .collect();
     for (i, frame) in out.chunks_mut(2).enumerate() {
         // 時刻は f64 で持つ。整数ミリ秒に丸めると1ms ごとに波形が階段状に
         // なり、音程が壊れる（Issue #13 のテストで検出）。
         let t_ms = start_ms as f64 + i as f64 * 1000.0 / out_rate as f64;
-        for track in &project.tracks {
+        for (track_index, track) in project.tracks.iter().enumerate() {
             if track.kind != studio_core::TrackKind::Audio {
                 continue;
             }
@@ -148,7 +156,7 @@ pub fn render_mix(
                     // ノートクリップ（Issue #68、ADR-0016）: 波形では
                     // なく、トラックの楽器でノートごとに発音する。
                     // 楽器が無いトラックのノートは鳴らない。
-                    if let Some(studio_core::Instrument::Plugin { .. }) = &track.instrument {
+                    if let Some(studio_core::Instrument::Plugin { .. }) = &effective[track_index] {
                         // プラグイン楽器（Issue #72、ADR-0017）:
                         // 事前レンダリング済みのトラック音声
                         // （プロジェクト先頭からの絶対時刻）を
@@ -183,7 +191,7 @@ pub fn render_mix(
                         continue;
                     }
                     let Some(studio_core::Instrument::Sampler { source, root_note }) =
-                        &track.instrument
+                        &effective[track_index]
                     else {
                         continue;
                     };
@@ -1513,6 +1521,79 @@ mod note_render_tests {
             "root 48: +12 -> 440Hz"
         );
         assert!(segmented_goertzel(&w, RATE, 220.0) < 0.01);
+    }
+
+    #[test]
+    fn render_mix_switching_tone_changes_the_sound() {
+        // Issue #73: 音色を割り当て・切り替えると再生される音が
+        // 変わる。音色の中身の差し替え（UpdateTone）も参照経由で
+        // 即座に反映される。
+        let (mut p, audio, track, clip) = project_with_melody();
+        add_note(&mut p, clip, 60, 0, 1_000, 127);
+        let tone_a = apply(
+            &mut p,
+            &Command::AddTone {
+                name: "A".into(),
+                instrument: Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 60,
+                },
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let tone_b = apply(
+            &mut p,
+            &Command::AddTone {
+                name: "B".into(),
+                instrument: Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 48,
+                },
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackTone {
+                track_id: track,
+                tone_id: Some(tone_a),
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(goertzel(&w, RATE, 220.0) > 0.1, "tone A (root 60): 220Hz");
+        apply(
+            &mut p,
+            &Command::SetTrackTone {
+                track_id: track,
+                tone_id: Some(tone_b),
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(
+            segmented_goertzel(&w, RATE, 440.0) > 0.05,
+            "tone B (root 48): +12 -> 440Hz"
+        );
+        assert!(segmented_goertzel(&w, RATE, 220.0) < 0.01);
+        apply(
+            &mut p,
+            &Command::UpdateTone {
+                tone_id: tone_b,
+                instrument: Instrument::Sampler {
+                    source: "tone.wav".into(),
+                    root_note: 60,
+                },
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 1_000, RATE);
+        let w = window(&mix, 2, 300, 700, RATE);
+        assert!(goertzel(&w, RATE, 220.0) > 0.1, "updated tone B: 220Hz");
     }
 
     #[test]

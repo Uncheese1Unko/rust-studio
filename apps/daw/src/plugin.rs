@@ -198,11 +198,13 @@ pub fn default_helper_path() -> PathBuf {
 pub fn plugin_fingerprint(project: &Project) -> u64 {
     let mut text = String::new();
     for track in &project.tracks {
+        // 実効楽器で見る（Issue #73: 音色として割り当てられた
+        // プラグインも対象になる）。
         let Some(Instrument::Plugin {
             format,
             plugin_path,
             preset_path,
-        }) = &track.instrument
+        }) = project.effective_instrument(track)
         else {
             continue;
         };
@@ -210,7 +212,7 @@ pub fn plugin_fingerprint(project: &Project) -> u64 {
             "track:{}:{:?}:{}:{:?}:",
             track.id, format, plugin_path, preset_path
         ));
-        if let Some(path) = preset_path {
+        if let Some(path) = &preset_path {
             match std::fs::read(path) {
                 Ok(bytes) => text.push_str(&format!("preset#{};", fnv1a(&bytes))),
                 Err(_) => text.push_str("preset#missing;"),
@@ -266,11 +268,11 @@ pub fn prepare_plugin_audio(
             format,
             plugin_path,
             preset_path,
-        }) = &track.instrument
+        }) = project.effective_instrument(track)
         else {
             continue;
         };
-        if *format != PluginFormat::Clap {
+        if format != PluginFormat::Clap {
             continue;
         }
         // トラック内の全ノートを絶対時刻で集める。
@@ -297,7 +299,7 @@ pub fn prepare_plugin_audio(
         };
         // プリセットはファイルの内容（JSON）をステートとして注入する。
         let preset_json = match preset_path {
-            Some(path) => match std::fs::read_to_string(path) {
+            Some(path) => match std::fs::read_to_string(&path) {
                 Ok(text) => Some(text),
                 Err(e) => {
                     fail(
@@ -311,7 +313,7 @@ pub fn prepare_plugin_audio(
         };
         match render_notes(
             helper,
-            plugin_path,
+            &plugin_path,
             preset_json,
             &notes,
             project_end_ms,
@@ -499,6 +501,57 @@ mod tests {
         assert!((peak(during) - 0.5).abs() < 0.05, "default gain 0.5");
         let after = &l[(0.7 * RATE as f32) as usize..(0.9 * RATE as f32) as usize];
         assert!(peak(after) < 1e-4, "silent after note off");
+    }
+
+    #[test]
+    fn prepare_renders_plugin_tone_assigned_to_track() {
+        // Issue #73: プラグイン音色を割り当てたトラックも事前
+        // レンダリングの対象になる（実効楽器で解決する）。指紋も
+        // 割り当てで変わる。
+        let (mut p, track_id) = project_with_plugin_track(&fixture_plugin_path(), None);
+        let fixture = fixture_plugin_path();
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id,
+                instrument: None,
+            },
+        )
+        .unwrap();
+        let tone_id = apply(
+            &mut p,
+            &Command::AddTone {
+                name: "Vital".into(),
+                instrument: Instrument::Plugin {
+                    format: PluginFormat::Clap,
+                    plugin_path: fixture,
+                    preset_path: None,
+                },
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackTone {
+                track_id,
+                tone_id: Some(tone_id),
+            },
+        )
+        .unwrap();
+        let (audio, errors) = prepare_plugin_audio(&p, &helper_path(), RATE);
+        assert!(errors.is_empty(), "errors: {errors:?}");
+        assert!(audio.contains_key(&crate::audio::plugin_track_key(track_id)));
+        let fp = plugin_fingerprint(&p);
+        apply(
+            &mut p,
+            &Command::SetTrackTone {
+                track_id,
+                tone_id: None,
+            },
+        )
+        .unwrap();
+        assert_ne!(fp, plugin_fingerprint(&p));
     }
 
     #[test]

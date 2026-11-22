@@ -382,6 +382,74 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "add_tone",
+            "description": "音色（名前付きの楽器）をプロジェクトに追加する。戻り値は新しい音色の ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "音色の名前"},
+                    "instrument": {
+                        "type": "object",
+                        "description": "楽器。サンプラーは {\"type\": \"sampler\", \"source\": \"素材パス\", \"root_note\": 60}、プラグインは {\"type\": \"plugin\", \"format\": \"clap\", \"plugin_path\": \"...\", \"preset_path\": null}",
+                    },
+                },
+                "required": ["name", "instrument"],
+            },
+        },
+        {
+            "name": "rename_tone",
+            "description": "音色の名前を変える",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tone_id": id_prop("音色 ID"),
+                    "name": {"type": "string", "description": "新しい名前"},
+                },
+                "required": ["tone_id", "name"],
+            },
+        },
+        {
+            "name": "update_tone",
+            "description": "音色の中身（楽器）を差し替える。割り当て中の全トラックに即座に反映される",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tone_id": id_prop("音色 ID"),
+                    "instrument": {
+                        "type": "object",
+                        "description": "新しい楽器（add_tone と同じ形式）",
+                    },
+                },
+                "required": ["tone_id", "instrument"],
+            },
+        },
+        {
+            "name": "remove_tone",
+            "description": "音色を削除する。参照していたトラックの割り当ては外れる",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tone_id": id_prop("音色 ID"),
+                },
+                "required": ["tone_id"],
+            },
+        },
+        {
+            "name": "set_track_tone",
+            "description": "トラックへ音色を割り当てる（tone_id を null にすると割り当てを外す）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "tone_id": {
+                        "type": ["integer", "null"],
+                        "description": "音色 ID（null で解除）",
+                    },
+                },
+                "required": ["track_id", "tone_id"],
+            },
+        },
+        {
             "name": "add_note",
             "description": "クリップにノートを1つ追加する（音高は MIDI ノート番号、開始はクリップ相対。ノートはクリップの範囲内に収まること）",
             "inputSchema": {

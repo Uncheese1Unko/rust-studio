@@ -1813,3 +1813,300 @@ fn plugin_command_json_roundtrip_uses_plugin_tag() {
     let back: Command = serde_json::from_str(&json).unwrap();
     assert_eq!(cmd, back);
 }
+
+// ---------- Issue #73: 音色（Tone）の管理 ----------
+
+fn sampler_tone(root_note: u8) -> Instrument {
+    Instrument::Sampler {
+        source: "tone.wav".into(),
+        root_note,
+    }
+}
+
+#[test]
+fn add_tone_applies_and_shows_in_dump() {
+    // 音色を作成すると Project.tones に入り、ダンプで観測できる。
+    let mut p = Project::new("tones");
+    let tone_id = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "Warm Pad".into(),
+            instrument: sampler_tone(60),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(p.tones.len(), 1);
+    assert_eq!(p.tones[0].id, tone_id);
+    assert_eq!(p.tones[0].name, "Warm Pad");
+    assert_eq!(p.tones[0].instrument, sampler_tone(60));
+    let dump = p.dump_json();
+    assert!(dump.contains("\"Warm Pad\""), "{dump}");
+    assert!(dump.contains("\"tones\""), "{dump}");
+}
+
+#[test]
+fn add_tone_rejects_blank_name_and_invalid_instrument() {
+    // 名前が空白のみ、または楽器の不変条件違反はエラーで状態不変。
+    let mut p = Project::new("tones");
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "   ".into(),
+            instrument: sampler_tone(60),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CommandError::InvalidRange("tone name must not be empty")
+    );
+    let err = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "Bad".into(),
+            instrument: sampler_tone(200),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CommandError::InvalidRange("root_note must be within 0..=127")
+    );
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn rename_and_update_tone_change_stored_values() {
+    let mut p = Project::new("tones");
+    let tone_id = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "A".into(),
+            instrument: sampler_tone(60),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::RenameTone {
+            tone_id,
+            name: "B".into(),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::UpdateTone {
+            tone_id,
+            instrument: sampler_tone(48),
+        },
+    )
+    .unwrap();
+    assert_eq!(p.tones[0].name, "B");
+    assert_eq!(p.tones[0].instrument, sampler_tone(48));
+    // 存在しない音色はエラーで状態不変。
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::RenameTone {
+            tone_id: 999,
+            name: "X".into(),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ToneNotFound(999));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn set_track_tone_assigns_switches_and_clears() {
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    let t1 = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "T1".into(),
+            instrument: sampler_tone(60),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let t2 = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "T2".into(),
+            instrument: sampler_tone(48),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(t1),
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().tone_id, Some(t1));
+    // 切り替え。
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(t2),
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().tone_id, Some(t2));
+    // 解除。
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().tone_id, None);
+    // 存在しない音色の割り当てはエラーで状態不変。
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(999),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ToneNotFound(999));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn remove_tone_clears_track_references() {
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    let tone_id = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "T".into(),
+            instrument: sampler_tone(60),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(tone_id),
+        },
+    )
+    .unwrap();
+    apply(&mut p, &Command::RemoveTone { tone_id }).unwrap();
+    assert!(p.tones.is_empty());
+    assert_eq!(p.track(track_id).unwrap().tone_id, None);
+    let err = apply(&mut p, &Command::RemoveTone { tone_id }).unwrap_err();
+    assert_eq!(err, CommandError::ToneNotFound(tone_id));
+}
+
+#[test]
+fn set_track_instrument_clears_tone_reference() {
+    // 直接の楽器設定が音色参照より優先される（二重管理の回避）。
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    let tone_id = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "T".into(),
+            instrument: sampler_tone(60),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(tone_id),
+        },
+    )
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(sampler_tone(72)),
+        },
+    )
+    .unwrap();
+    assert_eq!(p.track(track_id).unwrap().tone_id, None);
+    assert_eq!(
+        p.track(track_id).unwrap().instrument,
+        Some(sampler_tone(72))
+    );
+}
+
+#[test]
+fn effective_instrument_prefers_tone_and_falls_back() {
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    apply(
+        &mut p,
+        &Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(sampler_tone(72)),
+        },
+    )
+    .unwrap();
+    let tone_id = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "T".into(),
+            instrument: sampler_tone(48),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    // 未割り当てでは直接の楽器。
+    let track = p.track(track_id).unwrap().clone();
+    assert_eq!(p.effective_instrument(&track), Some(sampler_tone(72)));
+    // 割り当てると音色が優先される。
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(tone_id),
+        },
+    )
+    .unwrap();
+    let track = p.track(track_id).unwrap().clone();
+    assert_eq!(p.effective_instrument(&track), Some(sampler_tone(48)));
+}
+
+#[test]
+fn tones_and_assignment_survive_project_json_roundtrip() {
+    let (mut p, track_id, _clip_id) = project_with_note_clip();
+    let tone_id = apply(
+        &mut p,
+        &Command::AddTone {
+            name: "Vital Lead".into(),
+            instrument: plugin_instrument(),
+        },
+    )
+    .unwrap()
+    .unwrap();
+    apply(
+        &mut p,
+        &Command::SetTrackTone {
+            track_id,
+            tone_id: Some(tone_id),
+        },
+    )
+    .unwrap();
+    let json = p.dump_json();
+    let back: Project = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, p);
+    assert_eq!(back.tones.len(), 1);
+    assert_eq!(back.track(track_id).unwrap().tone_id, Some(tone_id));
+}
