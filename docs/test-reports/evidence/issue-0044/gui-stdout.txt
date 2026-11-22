@@ -1,9 +1,10 @@
 error: XDG_RUNTIME_DIR is invalid or not set in the environment.
 libEGL warning: DRI3 error: Could not get DRI3 device
 libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue44/project.json
 video-editor (issue #8: timeline UI)
 {
-  "name": "untitled video",
+  "name": "issue44 tuned",
   "tracks": [
     {
       "id": 1,
@@ -11,32 +12,18 @@ video-editor (issue #8: timeline UI)
       "kind": "video",
       "clips": [
         {
-          "id": 4,
-          "name": "opening",
-          "start_ms": 0,
-          "duration_ms": 2000,
-          "source": "demo/opening.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
           "id": 5,
           "name": "interview",
-          "start_ms": 2500,
-          "duration_ms": 4000,
+          "start_ms": 0,
+          "duration_ms": 8000,
           "source": "demo/interview.mp4",
           "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
+          "gain": 0.5,
+          "cutout": true,
+          "pitch_semitones": 3.0,
+          "color": "mint",
+          "fade_in_ms": 300,
+          "fade_out_ms": 400
         }
       ],
       "volume": 1.0,
@@ -94,77 +81,38 @@ video-editor (issue #8: timeline UI)
   ],
   "next_id": 8
 }
-elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.4, timeline.clip.5, timeline.track.2, timeline.clip.6, timeline.track.3, timeline.clip.7, preview
-media prepared: demo/opening.mp4 -> 40 frames
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.5, timeline.track.2, timeline.clip.6, timeline.track.3, timeline.clip.7, preview
 media prepared: demo/interview.mp4 -> 60 frames
 media prepared: demo/bg.mp4 -> 80 frames
-preview textures loaded: 180
-preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
-preview: source=demo/opening.mp4 playhead=204 source_time=204 frame=2
-preview: source=demo/opening.mp4 playhead=306 source_time=306 frame=3
-preview: source=demo/opening.mp4 playhead=411 source_time=411 frame=4
-preview: source=demo/opening.mp4 playhead=500 source_time=500 frame=5
-preview: source=demo/opening.mp4 playhead=606 source_time=606 frame=6
-preview: source=demo/opening.mp4 playhead=706 source_time=706 frame=7
-preview: source=demo/opening.mp4 playhead=809 source_time=809 frame=8
-preview: source=demo/opening.mp4 playhead=919 source_time=919 frame=9
-preview: source=demo/opening.mp4 playhead=1001 source_time=1001 frame=10
-preview: source=demo/opening.mp4 playhead=1100 source_time=1100 frame=11
-preview: source=demo/opening.mp4 playhead=1208 source_time=1208 frame=12
-preview: source=demo/opening.mp4 playhead=1325 source_time=1325 frame=13
-preview: source=demo/opening.mp4 playhead=1427 source_time=1427 frame=14
-preview: source=demo/opening.mp4 playhead=1503 source_time=1503 frame=15
-preview: source=demo/opening.mp4 playhead=1620 source_time=1620 frame=16
-preview: source=demo/opening.mp4 playhead=1700 source_time=1700 frame=17
-preview: source=demo/opening.mp4 playhead=1818 source_time=1818 frame=18
-preview: source=demo/opening.mp4 playhead=1918 source_time=1918 frame=19
-preview: source=demo/bg.mp4 playhead=2004 source_time=2004 frame=20
-preview: source=demo/bg.mp4 playhead=2110 source_time=2110 frame=21
-preview: source=demo/bg.mp4 playhead=2207 source_time=2207 frame=22
-preview: source=demo/bg.mp4 playhead=2316 source_time=2316 frame=23
-preview: source=demo/bg.mp4 playhead=2415 source_time=2415 frame=24
-preview: source=demo/interview.mp4 playhead=2502 source_time=2 frame=0
-preview: source=demo/interview.mp4 playhead=2609 source_time=109 frame=1
-preview: source=demo/interview.mp4 playhead=2718 source_time=218 frame=2
-preview: source=demo/interview.mp4 playhead=2809 source_time=309 frame=3
-preview: source=demo/interview.mp4 playhead=2919 source_time=419 frame=4
-preview: source=demo/interview.mp4 playhead=3002 source_time=502 frame=5
-preview: source=demo/interview.mp4 playhead=3103 source_time=603 frame=6
-preview: source=demo/interview.mp4 playhead=3212 source_time=712 frame=7
-preview: source=demo/interview.mp4 playhead=3310 source_time=810 frame=8
-preview: source=demo/interview.mp4 playhead=3466 source_time=966 frame=9
-preview: source=demo/interview.mp4 playhead=3511 source_time=1011 frame=10
-preview: source=demo/interview.mp4 playhead=3610 source_time=1110 frame=11
-preview: source=demo/interview.mp4 playhead=3701 source_time=1201 frame=12
-preview: source=demo/interview.mp4 playhead=3810 source_time=1310 frame=13
-preview: source=demo/interview.mp4 playhead=3903 source_time=1403 frame=14
-preview: source=demo/interview.mp4 playhead=4001 source_time=1501 frame=15
-preview: source=demo/interview.mp4 playhead=4179 source_time=1679 frame=16
-preview: source=demo/interview.mp4 playhead=4221 source_time=1721 frame=17
-preview: source=demo/interview.mp4 playhead=4315 source_time=1815 frame=18
-preview: source=demo/interview.mp4 playhead=4413 source_time=1913 frame=19
-preview: source=demo/interview.mp4 playhead=4564 source_time=2064 frame=20
-preview: source=demo/interview.mp4 playhead=4682 source_time=2182 frame=21
-preview: source=demo/interview.mp4 playhead=4779 source_time=2279 frame=22
-preview: source=demo/interview.mp4 playhead=4855 source_time=2355 frame=23
-preview: source=demo/interview.mp4 playhead=4953 source_time=2453 frame=24
-preview: source=demo/interview.mp4 playhead=5059 source_time=2559 frame=25
-preview: source=demo/interview.mp4 playhead=5169 source_time=2669 frame=26
-preview: source=demo/interview.mp4 playhead=5248 source_time=2748 frame=27
-preview: source=demo/interview.mp4 playhead=5345 source_time=2845 frame=28
-preview: source=demo/interview.mp4 playhead=5455 source_time=2955 frame=29
-preview: source=demo/interview.mp4 playhead=5559 source_time=3059 frame=30
-preview: source=demo/interview.mp4 playhead=5657 source_time=3157 frame=31
-preview: source=demo/interview.mp4 playhead=5762 source_time=3262 frame=32
-preview: source=demo/interview.mp4 playhead=5840 source_time=3340 frame=33
-preview: source=demo/interview.mp4 playhead=5939 source_time=3439 frame=34
-preview: source=demo/interview.mp4 playhead=6046 source_time=3546 frame=35
-media prepared: demo/opening.mp4 -> 40 frames
+preview textures loaded: 140
+preview: source=demo/interview.mp4 playhead=0 source_time=0 frame=0
+preview: source=demo/interview.mp4 playhead=201 source_time=201 frame=2
+preview: source=demo/interview.mp4 playhead=358 source_time=358 frame=3
+preview: source=demo/interview.mp4 playhead=446 source_time=446 frame=4
+preview: source=demo/interview.mp4 playhead=535 source_time=535 frame=5
+preview: source=demo/interview.mp4 playhead=631 source_time=631 frame=6
+preview: source=demo/interview.mp4 playhead=736 source_time=736 frame=7
+preview: source=demo/interview.mp4 playhead=843 source_time=843 frame=8
+preview: source=demo/interview.mp4 playhead=925 source_time=925 frame=9
+preview: source=demo/interview.mp4 playhead=1071 source_time=1071 frame=10
+preview: source=demo/interview.mp4 playhead=1139 source_time=1139 frame=11
+preview: source=demo/interview.mp4 playhead=1232 source_time=1232 frame=12
+preview: source=demo/interview.mp4 playhead=1331 source_time=1331 frame=13
+preview: source=demo/interview.mp4 playhead=1425 source_time=1425 frame=14
+preview: source=demo/interview.mp4 playhead=1517 source_time=1517 frame=15
+preview: source=demo/interview.mp4 playhead=1715 source_time=1715 frame=17
+preview: source=demo/interview.mp4 playhead=1813 source_time=1813 frame=18
+preview: source=demo/interview.mp4 playhead=1942 source_time=1942 frame=19
+preview: source=demo/interview.mp4 playhead=2032 source_time=2032 frame=20
+preview: source=demo/interview.mp4 playhead=2127 source_time=2127 frame=21
+preview: source=demo/interview.mp4 playhead=2219 source_time=2219 frame=22
+preview: source=demo/interview.mp4 playhead=2334 source_time=2334 frame=23
+preview: source=demo/interview.mp4 playhead=2413 source_time=2413 frame=24
 media prepared: demo/interview.mp4 -> 60 frames
 media prepared: demo/bg.mp4 -> 80 frames
-preview textures loaded: 180
+preview textures loaded: 140
 after duplicate: {
-  "name": "untitled video",
+  "name": "issue44 tuned",
   "tracks": [
     {
       "id": 1,
@@ -172,46 +120,32 @@ after duplicate: {
       "kind": "video",
       "clips": [
         {
-          "id": 4,
-          "name": "opening",
-          "start_ms": 0,
-          "duration_ms": 2000,
-          "source": "demo/opening.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
           "id": 5,
           "name": "interview",
-          "start_ms": 2500,
-          "duration_ms": 4000,
+          "start_ms": 0,
+          "duration_ms": 8000,
           "source": "demo/interview.mp4",
           "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
+          "gain": 0.5,
+          "cutout": true,
+          "pitch_semitones": 3.0,
+          "color": "mint",
+          "fade_in_ms": 300,
+          "fade_out_ms": 400
         },
         {
           "id": 8,
           "name": "interview",
-          "start_ms": 6500,
-          "duration_ms": 4000,
+          "start_ms": 8000,
+          "duration_ms": 8000,
           "source": "demo/interview.mp4",
           "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
+          "gain": 0.5,
+          "cutout": true,
+          "pitch_semitones": 3.0,
+          "color": "mint",
+          "fade_in_ms": 300,
+          "fade_out_ms": 400
         }
       ],
       "volume": 1.0,
@@ -269,15 +203,113 @@ after duplicate: {
   ],
   "next_id": 9
 }
-preview: source=demo/interview.mp4 playhead=6069 source_time=3569 frame=35
-preview: source=demo/interview.mp4 playhead=4944 source_time=2444 frame=24
-preview: source=demo/interview.mp4 playhead=5039 source_time=2539 frame=25
-media prepared: demo/opening.mp4 -> 40 frames
+preview: source=demo/interview.mp4 playhead=2440 source_time=2440 frame=24
+preview: source=demo/interview.mp4 playhead=7726 source_time=7726 frame=77
+preview: source=demo/interview.mp4 playhead=7825 source_time=7825 frame=78
+preview: source=demo/interview.mp4 playhead=7914 source_time=7914 frame=79
+preview: source=demo/interview.mp4 playhead=8020 source_time=20 frame=0
+preview: source=demo/interview.mp4 playhead=8107 source_time=107 frame=1
+preview: source=demo/interview.mp4 playhead=8217 source_time=217 frame=2
+preview: source=demo/interview.mp4 playhead=8301 source_time=301 frame=3
+preview: source=demo/interview.mp4 playhead=8414 source_time=414 frame=4
+preview: source=demo/interview.mp4 playhead=8508 source_time=508 frame=5
+preview: source=demo/interview.mp4 playhead=8604 source_time=604 frame=6
+preview: source=demo/interview.mp4 playhead=8710 source_time=710 frame=7
+preview: source=demo/interview.mp4 playhead=8822 source_time=822 frame=8
+preview: source=demo/interview.mp4 playhead=8914 source_time=914 frame=9
+preview: source=demo/interview.mp4 playhead=9011 source_time=1011 frame=10
+copied clip: interview
+preview: source=demo/interview.mp4 playhead=9118 source_time=1118 frame=11
+preview: source=demo/interview.mp4 playhead=9209 source_time=1209 frame=12
+preview: source=demo/interview.mp4 playhead=9308 source_time=1308 frame=13
+preview: source=demo/interview.mp4 playhead=9408 source_time=1408 frame=14
+preview: source=demo/interview.mp4 playhead=9515 source_time=1515 frame=15
+preview: source=demo/interview.mp4 playhead=9616 source_time=1616 frame=16
+preview: source=demo/interview.mp4 playhead=9710 source_time=1710 frame=17
+preview: source=demo/interview.mp4 playhead=9815 source_time=1815 frame=18
+preview: source=demo/interview.mp4 playhead=9916 source_time=1916 frame=19
+preview: source=demo/interview.mp4 playhead=10002 source_time=2002 frame=20
+preview: source=demo/interview.mp4 playhead=10116 source_time=2116 frame=21
+preview: source=demo/interview.mp4 playhead=10218 source_time=2218 frame=22
+preview: source=demo/interview.mp4 playhead=10320 source_time=2320 frame=23
+preview: source=demo/interview.mp4 playhead=10403 source_time=2403 frame=24
+preview: source=demo/interview.mp4 playhead=10511 source_time=2511 frame=25
+preview: source=demo/interview.mp4 playhead=10676 source_time=2676 frame=26
+preview: source=demo/interview.mp4 playhead=10795 source_time=2795 frame=27
+preview: source=demo/interview.mp4 playhead=10848 source_time=2848 frame=28
+preview: source=demo/interview.mp4 playhead=10902 source_time=2902 frame=29
+preview: source=demo/interview.mp4 playhead=11000 source_time=3000 frame=30
+preview: source=demo/interview.mp4 playhead=11132 source_time=3132 frame=31
+preview: source=demo/interview.mp4 playhead=11218 source_time=3218 frame=32
+preview: source=demo/interview.mp4 playhead=11312 source_time=3312 frame=33
+preview: source=demo/interview.mp4 playhead=11467 source_time=3467 frame=34
+preview: source=demo/interview.mp4 playhead=11508 source_time=3508 frame=35
+preview: source=demo/interview.mp4 playhead=11665 source_time=3665 frame=36
+preview: source=demo/interview.mp4 playhead=11760 source_time=3760 frame=37
+preview: source=demo/interview.mp4 playhead=11812 source_time=3812 frame=38
+preview: source=demo/interview.mp4 playhead=11905 source_time=3905 frame=39
+preview: source=demo/interview.mp4 playhead=12008 source_time=4008 frame=40
+preview: source=demo/interview.mp4 playhead=12165 source_time=4165 frame=41
+preview: source=demo/interview.mp4 playhead=12260 source_time=4260 frame=42
+preview: source=demo/interview.mp4 playhead=12303 source_time=4303 frame=43
+preview: source=demo/interview.mp4 playhead=12461 source_time=4461 frame=44
+preview: source=demo/interview.mp4 playhead=12554 source_time=4554 frame=45
+preview: source=demo/interview.mp4 playhead=12660 source_time=4660 frame=46
+preview: source=demo/interview.mp4 playhead=12757 source_time=4757 frame=47
+preview: source=demo/interview.mp4 playhead=12856 source_time=4856 frame=48
+preview: source=demo/interview.mp4 playhead=12956 source_time=4956 frame=49
+preview: source=demo/interview.mp4 playhead=13052 source_time=5052 frame=50
+preview: source=demo/interview.mp4 playhead=13149 source_time=5149 frame=51
+preview: source=demo/interview.mp4 playhead=13257 source_time=5257 frame=52
+preview: source=demo/interview.mp4 playhead=13356 source_time=5356 frame=53
+preview: source=demo/interview.mp4 playhead=13447 source_time=5447 frame=54
+preview: source=demo/interview.mp4 playhead=13539 source_time=5539 frame=55
+preview: source=demo/interview.mp4 playhead=13641 source_time=5641 frame=56
+preview: source=demo/interview.mp4 playhead=13739 source_time=5739 frame=57
+preview: source=demo/interview.mp4 playhead=13844 source_time=5844 frame=58
+preview: source=demo/interview.mp4 playhead=13945 source_time=5945 frame=59
+preview: source=demo/interview.mp4 playhead=14040 source_time=6040 frame=60
+preview: source=demo/interview.mp4 playhead=14131 source_time=6131 frame=61
+preview: source=demo/interview.mp4 playhead=14245 source_time=6245 frame=62
+preview: source=demo/interview.mp4 playhead=14340 source_time=6340 frame=63
+preview: source=demo/interview.mp4 playhead=14429 source_time=6429 frame=64
+preview: source=demo/interview.mp4 playhead=14538 source_time=6538 frame=65
+preview: source=demo/interview.mp4 playhead=14627 source_time=6627 frame=66
+preview: source=demo/interview.mp4 playhead=14734 source_time=6734 frame=67
+preview: source=demo/interview.mp4 playhead=14829 source_time=6829 frame=68
+preview: source=demo/interview.mp4 playhead=14927 source_time=6927 frame=69
+preview: source=demo/interview.mp4 playhead=15047 source_time=7047 frame=70
+preview: source=demo/interview.mp4 playhead=15128 source_time=7128 frame=71
+preview: source=demo/interview.mp4 playhead=15222 source_time=7222 frame=72
+preview: source=demo/interview.mp4 playhead=15327 source_time=7327 frame=73
+preview: source=demo/interview.mp4 playhead=15424 source_time=7424 frame=74
+preview: source=demo/interview.mp4 playhead=15521 source_time=7521 frame=75
+preview: source=demo/interview.mp4 playhead=15642 source_time=7642 frame=76
+preview: source=demo/interview.mp4 playhead=15723 source_time=7723 frame=77
+preview: source=demo/interview.mp4 playhead=15820 source_time=7820 frame=78
+preview: source=demo/interview.mp4 playhead=15929 source_time=7929 frame=79
+preview: source=demo/interview.mp4 playhead=19 source_time=19 frame=0
+preview: source=demo/interview.mp4 playhead=111 source_time=111 frame=1
+preview: source=demo/interview.mp4 playhead=209 source_time=209 frame=2
+preview: source=demo/interview.mp4 playhead=309 source_time=309 frame=3
+preview: source=demo/interview.mp4 playhead=413 source_time=413 frame=4
+preview: source=demo/interview.mp4 playhead=509 source_time=509 frame=5
+preview: source=demo/interview.mp4 playhead=628 source_time=628 frame=6
+preview: source=demo/interview.mp4 playhead=706 source_time=706 frame=7
+preview: source=demo/interview.mp4 playhead=816 source_time=816 frame=8
+preview: source=demo/interview.mp4 playhead=905 source_time=905 frame=9
+preview: source=demo/interview.mp4 playhead=1007 source_time=1007 frame=10
+preview: source=demo/interview.mp4 playhead=1119 source_time=1119 frame=11
+preview: source=demo/interview.mp4 playhead=1204 source_time=1204 frame=12
+preview: source=demo/interview.mp4 playhead=1323 source_time=1323 frame=13
+preview: source=demo/interview.mp4 playhead=1422 source_time=1422 frame=14
+preview: source=demo/interview.mp4 playhead=1514 source_time=1514 frame=15
+preview: source=demo/interview.mp4 playhead=1620 source_time=1620 frame=16
 media prepared: demo/interview.mp4 -> 60 frames
 media prepared: demo/bg.mp4 -> 80 frames
-preview textures loaded: 180
-after duplicate: {
-  "name": "untitled video",
+preview textures loaded: 140
+after paste: {
+  "name": "issue44 tuned",
   "tracks": [
     {
       "id": 1,
@@ -285,60 +317,32 @@ after duplicate: {
       "kind": "video",
       "clips": [
         {
-          "id": 4,
-          "name": "opening",
-          "start_ms": 0,
-          "duration_ms": 2000,
-          "source": "demo/opening.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
           "id": 5,
           "name": "interview",
-          "start_ms": 2500,
-          "duration_ms": 4000,
+          "start_ms": 0,
+          "duration_ms": 8000,
           "source": "demo/interview.mp4",
           "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
+          "gain": 0.5,
+          "cutout": true,
+          "pitch_semitones": 3.0,
+          "color": "mint",
+          "fade_in_ms": 300,
+          "fade_out_ms": 400
         },
         {
           "id": 8,
           "name": "interview",
-          "start_ms": 6500,
-          "duration_ms": 4000,
+          "start_ms": 8000,
+          "duration_ms": 8000,
           "source": "demo/interview.mp4",
           "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
-          "id": 9,
-          "name": "interview",
-          "start_ms": 6500,
-          "duration_ms": 4000,
-          "source": "demo/interview.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
+          "gain": 0.5,
+          "cutout": true,
+          "pitch_semitones": 3.0,
+          "color": "mint",
+          "fade_in_ms": 300,
+          "fade_out_ms": 400
         }
       ],
       "volume": 1.0,
@@ -363,6 +367,20 @@ after duplicate: {
           "color": null,
           "fade_in_ms": 0,
           "fade_out_ms": 0
+        },
+        {
+          "id": 9,
+          "name": "interview",
+          "start_ms": 1620,
+          "duration_ms": 8000,
+          "source": "demo/interview.mp4",
+          "offset_ms": 0,
+          "gain": 0.5,
+          "cutout": true,
+          "pitch_semitones": 3.0,
+          "color": "mint",
+          "fade_in_ms": 300,
+          "fade_out_ms": 400
         }
       ],
       "volume": 1.0,
@@ -396,305 +414,13 @@ after duplicate: {
   ],
   "next_id": 10
 }
-preview: source=demo/interview.mp4 playhead=5066 source_time=2566 frame=25
-preview: source=demo/opening.mp4 playhead=983 source_time=983 frame=9
-preview: source=demo/opening.mp4 playhead=1034 source_time=1034 frame=10
-preview: source=demo/opening.mp4 playhead=1145 source_time=1145 frame=11
-preview: source=demo/opening.mp4 playhead=1241 source_time=1241 frame=12
-preview: source=demo/opening.mp4 playhead=1331 source_time=1331 frame=13
-preview: source=demo/opening.mp4 playhead=1466 source_time=1466 frame=14
-preview: source=demo/opening.mp4 playhead=1538 source_time=1538 frame=15
-preview: source=demo/opening.mp4 playhead=1639 source_time=1639 frame=16
-preview: source=demo/opening.mp4 playhead=1731 source_time=1731 frame=17
-preview: source=demo/opening.mp4 playhead=1850 source_time=1850 frame=18
-preview: source=demo/opening.mp4 playhead=1932 source_time=1932 frame=19
-preview: source=demo/bg.mp4 playhead=2033 source_time=2033 frame=20
-preview: source=demo/bg.mp4 playhead=2155 source_time=2155 frame=21
-preview: source=demo/bg.mp4 playhead=2239 source_time=2239 frame=22
-preview: source=demo/bg.mp4 playhead=2329 source_time=2329 frame=23
-preview: source=demo/bg.mp4 playhead=2424 source_time=2424 frame=24
-preview: source=demo/interview.mp4 playhead=2529 source_time=29 frame=0
-preview: source=demo/interview.mp4 playhead=2633 source_time=133 frame=1
-preview: source=demo/interview.mp4 playhead=2728 source_time=228 frame=2
-preview: source=demo/interview.mp4 playhead=2863 source_time=363 frame=3
-preview: source=demo/interview.mp4 playhead=2953 source_time=453 frame=4
-preview: source=demo/interview.mp4 playhead=3030 source_time=530 frame=5
-preview: source=demo/interview.mp4 playhead=3124 source_time=624 frame=6
-preview: source=demo/interview.mp4 playhead=3486 source_time=986 frame=9
-preview: source=demo/interview.mp4 playhead=3627 source_time=1127 frame=11
-preview: source=demo/interview.mp4 playhead=3707 source_time=1207 frame=12
-preview: source=demo/interview.mp4 playhead=3823 source_time=1323 frame=13
-preview: source=demo/interview.mp4 playhead=3916 source_time=1416 frame=14
-preview: source=demo/interview.mp4 playhead=4032 source_time=1532 frame=15
-preview: source=demo/interview.mp4 playhead=4112 source_time=1612 frame=16
-preview: source=demo/interview.mp4 playhead=4214 source_time=1714 frame=17
-preview: source=demo/interview.mp4 playhead=4310 source_time=1810 frame=18
-preview: source=demo/interview.mp4 playhead=4412 source_time=1912 frame=19
-preview: source=demo/interview.mp4 playhead=4538 source_time=2038 frame=20
-preview: source=demo/interview.mp4 playhead=4617 source_time=2117 frame=21
-preview: source=demo/interview.mp4 playhead=4714 source_time=2214 frame=22
-preview: source=demo/interview.mp4 playhead=4811 source_time=2311 frame=23
-preview: source=demo/interview.mp4 playhead=4921 source_time=2421 frame=24
-preview: source=demo/interview.mp4 playhead=5000 source_time=2500 frame=25
-preview: source=demo/interview.mp4 playhead=5111 source_time=2611 frame=26
-preview: source=demo/interview.mp4 playhead=5210 source_time=2710 frame=27
-preview: source=demo/interview.mp4 playhead=5319 source_time=2819 frame=28
-preview: source=demo/interview.mp4 playhead=5408 source_time=2908 frame=29
-preview: source=demo/interview.mp4 playhead=5519 source_time=3019 frame=30
-preview: source=demo/interview.mp4 playhead=5606 source_time=3106 frame=31
-preview: source=demo/interview.mp4 playhead=5706 source_time=3206 frame=32
-preview: source=demo/interview.mp4 playhead=5801 source_time=3301 frame=33
-preview: source=demo/interview.mp4 playhead=5925 source_time=3425 frame=34
-preview: source=demo/interview.mp4 playhead=6026 source_time=3526 frame=35
-preview: source=demo/interview.mp4 playhead=6102 source_time=3602 frame=36
-preview: source=demo/interview.mp4 playhead=6220 source_time=3720 frame=37
-preview: source=demo/interview.mp4 playhead=6322 source_time=3822 frame=38
-preview: source=demo/interview.mp4 playhead=6400 source_time=3900 frame=39
-preview: source=demo/interview.mp4 playhead=6516 source_time=16 frame=0
-preview: source=demo/interview.mp4 playhead=6613 source_time=113 frame=1
-preview: source=demo/interview.mp4 playhead=6721 source_time=221 frame=2
-preview: source=demo/interview.mp4 playhead=6806 source_time=306 frame=3
-preview: source=demo/interview.mp4 playhead=6984 source_time=484 frame=4
-copied clip: interview
-preview: source=demo/interview.mp4 playhead=7019 source_time=519 frame=5
-preview: source=demo/interview.mp4 playhead=7121 source_time=621 frame=6
-preview: source=demo/interview.mp4 playhead=7285 source_time=785 frame=7
-preview: source=demo/interview.mp4 playhead=7327 source_time=827 frame=8
-preview: source=demo/interview.mp4 playhead=7407 source_time=907 frame=9
-preview: source=demo/interview.mp4 playhead=7510 source_time=1010 frame=10
-preview: source=demo/interview.mp4 playhead=7610 source_time=1110 frame=11
-preview: source=demo/interview.mp4 playhead=7726 source_time=1226 frame=12
-preview: source=demo/interview.mp4 playhead=7801 source_time=1301 frame=13
-preview: source=demo/interview.mp4 playhead=7920 source_time=1420 frame=14
-preview: source=demo/interview.mp4 playhead=8003 source_time=1503 frame=15
-preview: source=demo/interview.mp4 playhead=8106 source_time=1606 frame=16
-preview: source=demo/interview.mp4 playhead=8204 source_time=1704 frame=17
-preview: source=demo/interview.mp4 playhead=8301 source_time=1801 frame=18
-preview: source=demo/interview.mp4 playhead=8466 source_time=1966 frame=19
-preview: source=demo/interview.mp4 playhead=8503 source_time=2003 frame=20
-preview: source=demo/interview.mp4 playhead=8604 source_time=2104 frame=21
-preview: source=demo/interview.mp4 playhead=8705 source_time=2205 frame=22
-preview: source=demo/interview.mp4 playhead=8804 source_time=2304 frame=23
-preview: source=demo/interview.mp4 playhead=8900 source_time=2400 frame=24
-preview: source=demo/interview.mp4 playhead=9000 source_time=2500 frame=25
-preview: source=demo/interview.mp4 playhead=9100 source_time=2600 frame=26
-preview: source=demo/interview.mp4 playhead=9264 source_time=2764 frame=27
-preview: source=demo/interview.mp4 playhead=9357 source_time=2857 frame=28
-preview: source=demo/interview.mp4 playhead=9457 source_time=2957 frame=29
-preview: source=demo/interview.mp4 playhead=9552 source_time=3052 frame=30
-preview: source=demo/interview.mp4 playhead=9655 source_time=3155 frame=31
-preview: source=demo/interview.mp4 playhead=9757 source_time=3257 frame=32
-preview: source=demo/interview.mp4 playhead=9851 source_time=3351 frame=33
-preview: source=demo/interview.mp4 playhead=9959 source_time=3459 frame=34
-preview: source=demo/interview.mp4 playhead=10048 source_time=3548 frame=35
-preview: source=demo/interview.mp4 playhead=10151 source_time=3651 frame=36
-preview: source=demo/interview.mp4 playhead=10251 source_time=3751 frame=37
-preview: source=demo/interview.mp4 playhead=10353 source_time=3853 frame=38
-preview: source=demo/interview.mp4 playhead=10441 source_time=3941 frame=39
-preview: source=demo/opening.mp4 playhead=39 source_time=39 frame=0
-preview: source=demo/opening.mp4 playhead=139 source_time=139 frame=1
-preview: source=demo/opening.mp4 playhead=238 source_time=238 frame=2
-preview: source=demo/opening.mp4 playhead=346 source_time=346 frame=3
-preview: source=demo/opening.mp4 playhead=441 source_time=441 frame=4
-preview: source=demo/opening.mp4 playhead=538 source_time=538 frame=5
-preview: source=demo/opening.mp4 playhead=630 source_time=630 frame=6
-preview: source=demo/opening.mp4 playhead=741 source_time=741 frame=7
-preview: source=demo/opening.mp4 playhead=830 source_time=830 frame=8
-preview: source=demo/opening.mp4 playhead=930 source_time=930 frame=9
-preview: source=demo/opening.mp4 playhead=1032 source_time=1032 frame=10
-preview: source=demo/opening.mp4 playhead=1137 source_time=1137 frame=11
-preview: source=demo/opening.mp4 playhead=1222 source_time=1222 frame=12
-preview: source=demo/opening.mp4 playhead=1322 source_time=1322 frame=13
-preview: source=demo/opening.mp4 playhead=1425 source_time=1425 frame=14
-preview: source=demo/opening.mp4 playhead=1524 source_time=1524 frame=15
-preview: source=demo/opening.mp4 playhead=1624 source_time=1624 frame=16
-preview: source=demo/opening.mp4 playhead=1725 source_time=1725 frame=17
-preview: source=demo/opening.mp4 playhead=1825 source_time=1825 frame=18
-preview: source=demo/opening.mp4 playhead=1925 source_time=1925 frame=19
-preview: source=demo/bg.mp4 playhead=2029 source_time=2029 frame=20
-preview: source=demo/bg.mp4 playhead=2149 source_time=2149 frame=21
-preview: source=demo/bg.mp4 playhead=2211 source_time=2211 frame=22
-preview: source=demo/bg.mp4 playhead=2318 source_time=2318 frame=23
-preview: source=demo/bg.mp4 playhead=2416 source_time=2416 frame=24
-preview: source=demo/interview.mp4 playhead=2511 source_time=11 frame=0
-preview: source=demo/interview.mp4 playhead=2611 source_time=111 frame=1
-preview: source=demo/interview.mp4 playhead=2737 source_time=237 frame=2
-preview: source=demo/interview.mp4 playhead=2816 source_time=316 frame=3
-preview: source=demo/interview.mp4 playhead=2907 source_time=407 frame=4
-preview: source=demo/interview.mp4 playhead=3006 source_time=506 frame=5
-preview: source=demo/interview.mp4 playhead=3114 source_time=614 frame=6
-preview: source=demo/interview.mp4 playhead=3207 source_time=707 frame=7
-preview: source=demo/interview.mp4 playhead=3302 source_time=802 frame=8
-preview: source=demo/interview.mp4 playhead=3409 source_time=909 frame=9
-preview: source=demo/interview.mp4 playhead=3513 source_time=1013 frame=10
-preview: source=demo/interview.mp4 playhead=3613 source_time=1113 frame=11
-preview: source=demo/interview.mp4 playhead=3714 source_time=1214 frame=12
-preview: source=demo/interview.mp4 playhead=3832 source_time=1332 frame=13
-preview: source=demo/interview.mp4 playhead=3931 source_time=1431 frame=14
-preview: source=demo/interview.mp4 playhead=4003 source_time=1503 frame=15
-preview: source=demo/interview.mp4 playhead=4124 source_time=1624 frame=16
-preview: source=demo/interview.mp4 playhead=4205 source_time=1705 frame=17
-preview: source=demo/interview.mp4 playhead=4306 source_time=1806 frame=18
-preview: source=demo/interview.mp4 playhead=4415 source_time=1915 frame=19
-preview: source=demo/interview.mp4 playhead=4501 source_time=2001 frame=20
-preview: source=demo/interview.mp4 playhead=4621 source_time=2121 frame=21
-preview: source=demo/interview.mp4 playhead=4715 source_time=2215 frame=22
-preview: source=demo/interview.mp4 playhead=4806 source_time=2306 frame=23
-preview: source=demo/interview.mp4 playhead=4910 source_time=2410 frame=24
-preview: source=demo/interview.mp4 playhead=5015 source_time=2515 frame=25
-preview: source=demo/interview.mp4 playhead=5112 source_time=2612 frame=26
-preview: source=demo/interview.mp4 playhead=5205 source_time=2705 frame=27
-preview: source=demo/interview.mp4 playhead=5316 source_time=2816 frame=28
-preview: source=demo/interview.mp4 playhead=5409 source_time=2909 frame=29
-preview: source=demo/interview.mp4 playhead=5524 source_time=3024 frame=30
-preview: source=demo/interview.mp4 playhead=5619 source_time=3119 frame=31
-preview: source=demo/interview.mp4 playhead=5704 source_time=3204 frame=32
-preview: source=demo/interview.mp4 playhead=5824 source_time=3324 frame=33
-preview: source=demo/interview.mp4 playhead=5921 source_time=3421 frame=34
-preview: source=demo/interview.mp4 playhead=6006 source_time=3506 frame=35
-preview: source=demo/interview.mp4 playhead=6168 source_time=3668 frame=36
-preview: source=demo/interview.mp4 playhead=6264 source_time=3764 frame=37
-media prepared: demo/opening.mp4 -> 40 frames
-media prepared: demo/interview.mp4 -> 60 frames
-media prepared: demo/bg.mp4 -> 80 frames
-preview textures loaded: 180
-after paste: {
-  "name": "untitled video",
-  "tracks": [
-    {
-      "id": 1,
-      "name": "V1",
-      "kind": "video",
-      "clips": [
-        {
-          "id": 4,
-          "name": "opening",
-          "start_ms": 0,
-          "duration_ms": 2000,
-          "source": "demo/opening.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
-          "id": 5,
-          "name": "interview",
-          "start_ms": 2500,
-          "duration_ms": 4000,
-          "source": "demo/interview.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
-          "id": 8,
-          "name": "interview",
-          "start_ms": 6500,
-          "duration_ms": 4000,
-          "source": "demo/interview.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
-          "id": 9,
-          "name": "interview",
-          "start_ms": 6500,
-          "duration_ms": 4000,
-          "source": "demo/interview.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        }
-      ],
-      "volume": 1.0,
-      "pan": 0.0,
-      "color": null
-    },
-    {
-      "id": 2,
-      "name": "A1",
-      "kind": "audio",
-      "clips": [
-        {
-          "id": 6,
-          "name": "bgm",
-          "start_ms": 0,
-          "duration_ms": 8000,
-          "source": "demo/bgm.wav",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        },
-        {
-          "id": 10,
-          "name": "interview",
-          "start_ms": 6264,
-          "duration_ms": 4000,
-          "source": "demo/interview.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        }
-      ],
-      "volume": 1.0,
-      "pan": 0.0,
-      "color": null
-    },
-    {
-      "id": 3,
-      "name": "V2",
-      "kind": "video",
-      "clips": [
-        {
-          "id": 7,
-          "name": "bg",
-          "start_ms": 0,
-          "duration_ms": 8000,
-          "source": "demo/bg.mp4",
-          "offset_ms": 0,
-          "gain": 1.0,
-          "cutout": false,
-          "pitch_semitones": 0.0,
-          "color": null,
-          "fade_in_ms": 0,
-          "fade_out_ms": 0
-        }
-      ],
-      "volume": 1.0,
-      "pan": 0.0,
-      "color": null
-    }
-  ],
-  "next_id": 11
-}
-preview: source=demo/interview.mp4 playhead=6283 source_time=3783 frame=37
-preview: source=demo/bg.mp4 playhead=2012 source_time=2012 frame=20
-preview: source=demo/bg.mp4 playhead=2169 source_time=2169 frame=21
-preview: source=demo/bg.mp4 playhead=2270 source_time=2270 frame=22
-preview: source=demo/bg.mp4 playhead=2300 source_time=2300 frame=23
-preview: source=demo/bg.mp4 playhead=2468 source_time=2468 frame=24
+preview: source=demo/interview.mp4 playhead=1699 source_time=1699 frame=16
+preview: source=demo/interview.mp4 playhead=6744 source_time=6744 frame=67
+preview: source=demo/interview.mp4 playhead=6800 source_time=6800 frame=68
+preview: source=demo/interview.mp4 playhead=6913 source_time=6913 frame=69
+preview: source=demo/interview.mp4 playhead=7035 source_time=7035 frame=70
+preview: source=demo/interview.mp4 playhead=7107 source_time=7107 frame=71
+preview: source=demo/interview.mp4 playhead=7223 source_time=7223 frame=72
+preview: source=demo/interview.mp4 playhead=7384 source_time=7384 frame=73
+preview: source=demo/interview.mp4 playhead=7412 source_time=7412 frame=74
+preview: source=demo/interview.mp4 playhead=7584 source_time=7584 frame=75

@@ -1181,8 +1181,22 @@ mod tests {
     }
 
     #[test]
+    fn placement_application_failure_leaves_state_and_history_unchanged() {
+        // Issue #44 レビュー round 2 対応: 配置が失敗する場合
+        // （存在しないトラックへの貼り付け）、プロジェクトも履歴も
+        // 変わらない。試行が複製の上で行われることの担保。
+        let (project, _track, clip_id) = project_with_tuned_clip();
+        let mut history = studio_core::History::new(project);
+        let before = history.project().dump_json();
+        let (_, clip) = history.project().clip(clip_id).unwrap();
+        let placement = paste_placement(clip, 999, 4_200);
+        assert!(apply_placement(&mut history, &placement).is_err());
+        assert_eq!(history.project().dump_json(), before);
+        assert!(!history.can_undo());
+    }
+
+    #[test]
     fn placement_application_is_a_single_undo_step() {
-        // Issue #44 レビュー対応: 配置（AddClip＋パラメータ設定）の
         // 適用は履歴に1件だけ積まれ、1回の undo で複製前の状態へ
         // 完全に戻る。コマンドごとに履歴へ積むと、途中の undo で
         // 半端なパラメータの複製が残ってしまう。
