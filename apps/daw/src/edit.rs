@@ -153,6 +153,143 @@ impl HistoryKeyTracker {
     }
 }
 
+/// 複製・コピー＆ペーストのキー操作（Issue #33）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditOp {
+    Duplicate,
+    Copy,
+    Paste,
+}
+
+/// Ctrl+D / Ctrl+C / Ctrl+V の押下エッジ追跡（Issue #33）。
+/// 履歴キーと同じく、発火はキー自体の押下エッジでのみ行い、
+/// 編集中のエッジは消費して持ち越さない。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EditKeyTracker {
+    d_down: bool,
+    c_down: bool,
+    v_down: bool,
+}
+
+impl EditKeyTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 現在のキー状態を受け取り、発火すべき編集操作があれば返す。
+    pub fn update(
+        &mut self,
+        editing: bool,
+        ctrl: bool,
+        d_down: bool,
+        c_down: bool,
+        v_down: bool,
+    ) -> Option<EditOp> {
+        let d_edge = d_down && !self.d_down;
+        let c_edge = c_down && !self.c_down;
+        let v_edge = v_down && !self.v_down;
+        self.d_down = d_down;
+        self.c_down = c_down;
+        self.v_down = v_down;
+        if editing || !ctrl {
+            return None;
+        }
+        if d_edge {
+            Some(EditOp::Duplicate)
+        } else if c_edge {
+            Some(EditOp::Copy)
+        } else if v_edge {
+            Some(EditOp::Paste)
+        } else {
+            None
+        }
+    }
+
+    /// 発火させずに押下状態だけを同期する（編集中用）。
+    pub fn sync(&mut self, d_down: bool, c_down: bool, v_down: bool) {
+        self.d_down = d_down;
+        self.c_down = c_down;
+        self.v_down = v_down;
+    }
+}
+
+/// クリップの配置計画（Issue #33）。複製・貼り付けは新しいコア
+/// コマンドを作らず、コピー元のパラメータを使った AddClip と、
+/// 適用で得た新クリップ id へのパラメータ設定コマンドで表す。
+/// ただし `offset_ms` は設定コマンドが存在しないため引き継げない
+/// （分割したクリップの複製では素材の先頭から再生される。
+/// フォローアップ PBI で扱う）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipPlacement {
+    pub add: Command,
+    gain: f32,
+    pitch_semitones: f32,
+    cutout: bool,
+    color: Option<studio_core::ColorTag>,
+}
+
+impl ClipPlacement {
+    fn from_clip(clip: &studio_core::Clip, track_id: u64, start_ms: i64) -> Self {
+        ClipPlacement {
+            add: Command::AddClip {
+                track_id,
+                name: clip.name.clone(),
+                start_ms,
+                duration_ms: clip.duration_ms,
+                source: clip.source.clone(),
+            },
+            gain: clip.gain,
+            pitch_semitones: clip.pitch_semitones,
+            cutout: clip.cutout,
+            color: clip.color,
+        }
+    }
+
+    /// AddClip の適用で得た新クリップ id へ、コピー元のパラメータを
+    /// 設定するコマンド列。既定値のパラメータはコマンドを出さない。
+    pub fn follow_up_commands(&self, new_clip_id: u64) -> Vec<Command> {
+        let mut cmds = Vec::new();
+        if self.gain != 1.0 {
+            cmds.push(Command::SetClipGain {
+                clip_id: new_clip_id,
+                gain: self.gain,
+            });
+        }
+        if self.pitch_semitones != 0.0 {
+            cmds.push(Command::SetClipPitch {
+                clip_id: new_clip_id,
+                semitones: self.pitch_semitones,
+            });
+        }
+        if self.cutout {
+            cmds.push(Command::SetClipCutout {
+                clip_id: new_clip_id,
+                enabled: true,
+            });
+        }
+        if self.color.is_some() {
+            cmds.push(Command::SetClipColor {
+                clip_id: new_clip_id,
+                color: self.color,
+            });
+        }
+        cmds
+    }
+}
+
+/// 複製の配置計画（Issue #33）: 元クリップの終端に接する位置へ、
+/// 同じトラックに置く。未知のクリップは None。
+pub fn duplicate_placement(project: &Project, clip_id: u64) -> Option<ClipPlacement> {
+    let (track, clip) = project.clip(clip_id)?;
+    Some(ClipPlacement::from_clip(clip, track.id, clip.end_ms()))
+}
+
+/// 貼り付けの配置計画（Issue #33）: クリップボードのクリップを
+/// 指定トラックの指定位置へ置く。
+pub fn paste_placement(clipboard: &studio_core::Clip, track_id: u64, at_ms: i64) -> ClipPlacement {
+    ClipPlacement::from_clip(clipboard, track_id, at_ms)
+}
+
 /// ヒットテストの結果。
 #[derive(Debug, Clone, PartialEq)]
 pub enum HitTarget {
@@ -834,5 +971,166 @@ mod tests {
             tracker.update(false, true, false, true, false),
             Some(HistoryOp::Undo)
         );
+    }
+
+    /// パラメータ付きクリップ（ゲイン・ピッチ・切り抜き・色）を用意する。
+    fn project_with_tuned_clip() -> (Project, u64, u64) {
+        let mut project = Project::new("test");
+        let track = apply(
+            &mut project,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let clip = apply(
+            &mut project,
+            &Command::AddClip {
+                track_id: track,
+                name: "phrase".into(),
+                start_ms: 1_000,
+                duration_ms: 2_000,
+                source: "phrase.wav".into(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::SetClipGain {
+                clip_id: clip,
+                gain: 0.5,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::SetClipPitch {
+                clip_id: clip,
+                semitones: 3.0,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::SetClipCutout {
+                clip_id: clip,
+                enabled: true,
+            },
+        )
+        .unwrap();
+        apply(
+            &mut project,
+            &Command::SetClipColor {
+                clip_id: clip,
+                color: Some(studio_core::ColorTag::Mint),
+            },
+        )
+        .unwrap();
+        (project, track, clip)
+    }
+
+    #[test]
+    fn duplicate_command_copies_all_clip_parameters() {
+        // Issue #33: 複製は元クリップの直後に置かれ、全パラメータ
+        // （ゲイン・ピッチ・切り抜き・色）を引き継ぐ。
+        let (mut project, _track, clip_id) = project_with_tuned_clip();
+        let placement = duplicate_placement(&project, clip_id).expect("clip exists");
+        match &placement.add {
+            Command::AddClip {
+                name,
+                start_ms,
+                duration_ms,
+                source,
+                ..
+            } => {
+                assert_eq!(name, "phrase");
+                assert_eq!(*start_ms, 3_000, "元の終端に接する位置");
+                assert_eq!(*duration_ms, 2_000);
+                assert_eq!(source, "phrase.wav");
+            }
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        // 実際に適用すると、パラメータが一致した複製ができる。
+        let new_id = apply(&mut project, &placement.add).unwrap().unwrap();
+        for cmd in placement.follow_up_commands(new_id) {
+            apply(&mut project, &cmd).unwrap();
+        }
+        let (_, src) = project.clip(clip_id).unwrap();
+        let (_, dup) = project.clip(new_id).unwrap();
+        assert_eq!(dup.gain, src.gain);
+        assert_eq!(dup.pitch_semitones, src.pitch_semitones);
+        assert_eq!(dup.cutout, src.cutout);
+        assert_eq!(dup.color, src.color);
+        assert_eq!(dup.duration_ms, src.duration_ms);
+    }
+
+    #[test]
+    fn duplicate_placement_unknown_clip_is_none() {
+        let (project, _, _) = project_with_tuned_clip();
+        assert!(duplicate_placement(&project, 999).is_none());
+    }
+
+    #[test]
+    fn paste_placement_puts_clip_at_playhead_on_target_track() {
+        // Issue #33: 貼り付けは指定トラックの再生ヘッド位置に、
+        // コピー元のパラメータで置かれる。
+        let (project, track, clip_id) = project_with_tuned_clip();
+        let (_, clip) = project.clip(clip_id).unwrap();
+        let placement = paste_placement(clip, track, 4_200);
+        match &placement.add {
+            Command::AddClip {
+                track_id,
+                start_ms,
+                duration_ms,
+                ..
+            } => {
+                assert_eq!(*track_id, track);
+                assert_eq!(*start_ms, 4_200);
+                assert_eq!(*duration_ms, 2_000);
+            }
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        let follow = placement.follow_up_commands(42);
+        assert!(follow.contains(&Command::SetClipGain {
+            clip_id: 42,
+            gain: 0.5
+        }));
+        assert!(follow.contains(&Command::SetClipPitch {
+            clip_id: 42,
+            semitones: 3.0
+        }));
+    }
+
+    #[test]
+    fn edit_key_tracker_fires_on_ctrl_edges_only() {
+        // Issue #33: Ctrl+D/C/V は押下エッジでのみ発火し、押しっぱなしや
+        // Ctrl なしでは発火しない。編集中は発火せず持ち越さない。
+        let mut tracker = EditKeyTracker::new();
+        // (editing, ctrl, d, c, v)
+        assert_eq!(tracker.update(false, false, true, false, false), None);
+        assert_eq!(tracker.update(false, true, false, false, false), None);
+        assert_eq!(
+            tracker.update(false, true, true, false, false),
+            Some(EditOp::Duplicate)
+        );
+        // 押しっぱなしでは再発火しない
+        assert_eq!(tracker.update(false, true, true, false, false), None);
+        assert_eq!(tracker.update(false, false, false, false, false), None);
+        assert_eq!(
+            tracker.update(false, true, false, true, false),
+            Some(EditOp::Copy)
+        );
+        assert_eq!(tracker.update(false, false, false, false, false), None);
+        assert_eq!(
+            tracker.update(false, true, false, false, true),
+            Some(EditOp::Paste)
+        );
+        assert_eq!(tracker.update(false, false, false, false, false), None);
+        // 編集中のエッジは消費され、編集終了後に持ち越さない
+        assert_eq!(tracker.update(true, true, true, false, false), None);
+        assert_eq!(tracker.update(false, true, true, false, false), None);
     }
 }
