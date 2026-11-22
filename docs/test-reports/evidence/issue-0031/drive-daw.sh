@@ -64,6 +64,30 @@ echo "after ctrl+z(2) start_ms: $(start_ms) (expect 1000)"
 key_hold ctrl+y
 shot 05-after-ctrl-y.png
 echo "after ctrl+y start_ms: $(start_ms) (expect 2000)"
+# Shift 先行離し（#31 レビュー対応）: Ctrl+Shift+Z の後、Z より先に
+# Shift を離しても undo が誤発しないこと。redo は空なので押下自体も無動作。
+UNDO_BEFORE=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
+xdotool keydown ctrl; sleep 0.3; xdotool keydown shift; sleep 0.3; xdotool keydown z; sleep 0.9
+xdotool keyup shift; sleep 0.9; xdotool keyup z; sleep 0.3; xdotool keyup ctrl; sleep 0.6
+UNDO_AFTER=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
+echo "undo lines after shift-first release: before=$UNDO_BEFORE after=$UNDO_AFTER (expect equal)"
+echo "start_ms after shift-first release: $(start_ms) (expect 2000)"
+# 編集中ガード（DAW）: リネーム開始 → Ctrl+Z → 履歴は動かず、編集も継続する
+dblclick() { # x y
+  xdotool mousemove "$1" "$2"; sleep 0.2
+  xdotool mousedown 1; sleep 0.15; xdotool mouseup 1; sleep 0.1
+  xdotool mousedown 1; sleep 0.15; xdotool mouseup 1; sleep 0.6
+}
+dblclick 60 48
+grep -o "rename begin.*" "$OUT/gui-stdout.txt" | head -1
+UNDO_BEFORE=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
+key_hold ctrl+z
+UNDO_AFTER=$(grep -c "after undo:" "$OUT/gui-stdout.txt")
+echo "undo lines during rename: before=$UNDO_BEFORE after=$UNDO_AFTER (expect equal)"
+echo "start_ms during rename: $(start_ms) (expect 2000)"
+shot 06-renaming-guard.png
+xdotool key Escape; sleep 0.6
+grep -o "rename cancelled" "$OUT/gui-stdout.txt" | head -1
 grep -c "after undo:" "$OUT/gui-stdout.txt" | sed 's/^/after undo count: /'
 grep -c "after redo:" "$OUT/gui-stdout.txt" | sed 's/^/after redo count: /'
 kill "$GUI_PID" 2>/dev/null

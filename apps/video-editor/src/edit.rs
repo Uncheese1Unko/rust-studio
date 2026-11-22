@@ -59,6 +59,56 @@ pub fn apply_history_op(history: &mut studio_core::History, op: HistoryOp) -> bo
     }
 }
 
+/// Undo/Redo キーの押下エッジ追跡（Issue #31 レビュー対応）。
+///
+/// 発火は Z/Y キー自体の押下エッジでのみ行い、操作はその瞬間の
+/// 修飾キーで決める。組み合わせの「現在の解釈」でレベル判定すると、
+/// Ctrl+Shift+Z の後に Shift を先に離しただけで undo が誤発する
+/// （redo を打ち消す）ため、この方式にする。編集中は発火せず、
+/// 押下状態だけを同期する（ガード）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HistoryKeyTracker {
+    z_down: bool,
+    y_down: bool,
+}
+
+impl HistoryKeyTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 現在のキー状態を受け取り、発火すべき履歴操作があれば返す。
+    pub fn update(
+        &mut self,
+        editing: bool,
+        ctrl: bool,
+        shift: bool,
+        z_down: bool,
+        y_down: bool,
+    ) -> Option<HistoryOp> {
+        let z_edge = z_down && !self.z_down;
+        let y_edge = y_down && !self.y_down;
+        self.z_down = z_down;
+        self.y_down = y_down;
+        if editing {
+            return None;
+        }
+        if z_edge {
+            resolve_history_op(false, ctrl, shift, true, false)
+        } else if y_edge {
+            resolve_history_op(false, ctrl, shift, false, true)
+        } else {
+            None
+        }
+    }
+
+    /// 発火させずに押下状態だけを同期する（編集中用）。
+    pub fn sync(&mut self, z_down: bool, y_down: bool) {
+        self.z_down = z_down;
+        self.y_down = y_down;
+    }
+}
+
 /// ヒットテストの結果。
 #[derive(Debug, Clone, PartialEq)]
 pub enum HitTarget {
@@ -706,5 +756,44 @@ mod tests {
         assert!(apply_history_op(&mut history, HistoryOp::Undo));
         assert!(apply_history_op(&mut history, HistoryOp::Redo));
         assert_eq!(history.project().dump_json(), applied);
+    }
+    #[test]
+    fn history_key_tracker_fires_on_key_press_edge_only() {
+        // Issue #31 レビュー対応: 発火は Z/Y の押下エッジのみ。
+        // Ctrl+Shift+Z で redo した後、Z より先に Shift を離しても
+        // undo は発火しない（旧方式はレベル判定で誤発した）。
+        let mut tracker = HistoryKeyTracker::new();
+        assert_eq!(
+            tracker.update(false, true, true, true, false),
+            Some(HistoryOp::Redo)
+        );
+        assert_eq!(tracker.update(false, true, false, true, false), None);
+        assert_eq!(tracker.update(false, false, false, false, false), None);
+        // Ctrl+Z で undo。押したまま Shift を足しても redo は誤発しない。
+        assert_eq!(
+            tracker.update(false, true, false, true, false),
+            Some(HistoryOp::Undo)
+        );
+        assert_eq!(tracker.update(false, true, true, true, false), None);
+        assert_eq!(tracker.update(false, false, false, false, false), None);
+        // Ctrl+Y でも redo できる。
+        assert_eq!(
+            tracker.update(false, true, false, false, true),
+            Some(HistoryOp::Redo)
+        );
+    }
+
+    #[test]
+    fn history_key_tracker_respects_editing_guard() {
+        // Issue #31 レビュー対応: 編集中の押下エッジは発火せず、編集を
+        // 終えても（キーを離すまで）持ち越し発火しない。
+        let mut tracker = HistoryKeyTracker::new();
+        assert_eq!(tracker.update(true, true, false, true, false), None);
+        assert_eq!(tracker.update(false, true, false, true, false), None);
+        assert_eq!(tracker.update(false, false, false, false, false), None);
+        assert_eq!(
+            tracker.update(false, true, false, true, false),
+            Some(HistoryOp::Undo)
+        );
     }
 }

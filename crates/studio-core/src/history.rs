@@ -62,8 +62,13 @@ impl History {
 
     /// 外部で控えたスナップショットを undo スタックへ積む
     /// （Issue #31: ジェスチャ単位の取り消し）。上限と redo の消去は
-    /// 通常の適用と同じ規則に従う。
+    /// 通常の適用と同じ規則に従う。ただしスナップショットが現在の
+    /// 状態と同じなら何もしない（動かさないクリック等が「幽霊 undo」
+    /// を積んだり redo を消したりしないため、#31 レビュー対応）。
     pub fn record_undo_snapshot(&mut self, snapshot: Project) {
+        if snapshot.dump_json() == self.project.dump_json() {
+            return;
+        }
         self.push_snapshot(snapshot);
     }
 

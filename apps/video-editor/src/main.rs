@@ -50,9 +50,8 @@ struct Model {
     cutout_job: Option<std::sync::Arc<std::sync::Mutex<cutout::JobState>>>,
     cutout_job_reported: bool,
     prev_k_down: bool,
-    // Issue #31: Undo/Redo キーの押下エッジ検出。
-    prev_history_undo: bool,
-    prev_history_redo: bool,
+    // Issue #31: Undo/Redo キーの押下エッジ追跡。
+    history_keys: edit::HistoryKeyTracker,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -218,8 +217,7 @@ fn model(app: &App) -> Model {
         cutout_job: None,
         cutout_job_reported: false,
         prev_k_down: false,
-        prev_history_undo: false,
-        prev_history_redo: false,
+        history_keys: edit::HistoryKeyTracker::new(),
     }
 }
 
@@ -249,6 +247,8 @@ fn watch_project_file(app: &App, model: &mut Model) {
             model.drag = None;
             model.last_drag_cmd = None;
             model.last_rejection = None;
+            model.drag_before = None;
+            model.drag_snapshot_recorded = false;
             // リネーム編集も打ち切る（バグ #60: DAW と同じ理由）。
             model.rename = None;
             // ソース集合が変わったらメディアも準備し直す
@@ -335,9 +335,10 @@ fn update(app: &App, model: &mut Model, update: Update) {
         // エッジ検出用の prev は編集中も同期する（バグ #60: 同期しないと
         // K を押したままリネームを確定した直後に切り抜きが誤発する）。
         model.prev_k_down = app.keys.down.contains(&Key::K);
-        let (undo_down, redo_down) = history_key_states(app);
-        model.prev_history_undo = undo_down;
-        model.prev_history_redo = redo_down;
+        model.history_keys.sync(
+            app.keys.down.contains(&Key::Z),
+            app.keys.down.contains(&Key::Y),
+        );
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
@@ -384,26 +385,13 @@ fn shift_down(app: &App) -> bool {
 }
 
 /// 現在のキー状態から見た undo/redo の押下状態（エッジ検出用）。
-fn history_key_states(app: &App) -> (bool, bool) {
-    let ctrl = ctrl_down(app);
-    let shift = shift_down(app);
-    let z = app.keys.down.contains(&Key::Z);
-    let y = app.keys.down.contains(&Key::Y);
-    (ctrl && z && !shift, ctrl && ((z && shift) || y))
-}
-
 /// Undo/Redo キー（Issue #31）: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y。
 /// 履歴が実際に動いたときだけ、メディア（フレーム・テクスチャ）と
 /// 選択を追従させ、プロジェクトファイルへ保存する。
 fn handle_history_keys(app: &App, model: &mut Model) {
-    let (undo_down, redo_down) = history_key_states(app);
-    let edge = (undo_down && !model.prev_history_undo) || (redo_down && !model.prev_history_redo);
-    model.prev_history_undo = undo_down;
-    model.prev_history_redo = redo_down;
-    if !edge {
-        return;
-    }
-    let Some(op) = edit::resolve_history_op(
+    // 発火は Z/Y の押下エッジのみ（HistoryKeyTracker）。組み合わせの
+    // レベル判定は Shift の離し順で誤発するため使わない（#31 レビュー）。
+    let Some(op) = model.history_keys.update(
         false,
         ctrl_down(app),
         shift_down(app),
@@ -623,10 +611,17 @@ fn record_gesture_snapshot(
     recorded: &mut bool,
 ) {
     if !*recorded {
-        if let Some(snapshot) = before.take() {
+        // 実際に状態が変わったときだけ記録する。動かさないクリックや
+        // 原位置に戻したドラッグでは積まない（幽霊 undo と redo 消去の
+        // 防止、#31 レビュー対応）。
+        let changed = before
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.dump_json() != history.project().dump_json());
+        if changed {
+            let snapshot = before.take().expect("checked above");
             history.record_undo_snapshot(snapshot);
+            *recorded = true;
         }
-        *recorded = true;
     }
 }
 
@@ -1071,6 +1066,48 @@ fn view(app: &App, model: &Model, frame: Frame) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gesture_snapshot_skips_unchanged_state() {
+        // Issue #31 レビュー対応: 動かさないクリック（無変化の逐次適用）
+        // ではスナップショットは積まれず、redo も消えない。実際に
+        // 変わった後の適用では1件だけ積まれる。
+        let mut history = History::new(demo_project());
+        let clip_id = history.project().tracks[0].clips[0].id;
+        // redo を用意する: 適用→undo で redo が積まれた状態にする
+        history
+            .apply(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 500,
+            })
+            .unwrap();
+        assert!(history.undo());
+        assert!(history.can_redo());
+        let mut before = Some(history.project().clone());
+        let mut recorded = false;
+        // 無変化の逐次適用（同じ位置への MoveClip）
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: history.project().tracks[0].clips[0].start_ms,
+            })
+            .unwrap();
+        record_gesture_snapshot(&mut history, &mut before, &mut recorded);
+        assert!(!recorded);
+        assert!(!history.can_undo());
+        assert!(history.can_redo());
+        // 実際に動かすと記録される
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 700,
+            })
+            .unwrap();
+        record_gesture_snapshot(&mut history, &mut before, &mut recorded);
+        assert!(recorded);
+        assert!(history.can_undo());
+        assert!(!history.can_redo());
+    }
 
     #[test]
     fn saved_file_stamp_matches_dump_stamp() {

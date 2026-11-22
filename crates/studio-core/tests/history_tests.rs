@@ -141,3 +141,17 @@ fn transient_apply_alone_does_not_record_history() {
     assert!(!history.can_undo());
     assert_eq!(history.project().tracks.len(), 1);
 }
+
+#[test]
+fn record_undo_snapshot_skips_state_equal_to_current() {
+    // Issue #31 レビュー対応: 現在と同じスナップショットは積まれず、
+    // redo スタックも消えない（無変化ジェスチャの幽霊 undo 防止）。
+    let mut history = History::new(Project::new("t"));
+    history.apply(&add_track("A1")).unwrap();
+    assert!(history.undo());
+    assert!(history.can_redo());
+    let same = history.project().clone();
+    history.record_undo_snapshot(same);
+    assert!(!history.can_undo());
+    assert!(history.can_redo());
+}

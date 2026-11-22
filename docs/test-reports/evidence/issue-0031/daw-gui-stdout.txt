@@ -163,3 +163,5 @@ after redo: {
   ],
   "next_id": 3
 }
+rename begin: track 1
+rename cancelled
