@@ -62,3 +62,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #50 動画編集でクリップにテキスト（タイトル）を重ねられる | [issue-0050-clip-title.md](issue-0050-clip-title.md) |
 | 2026-11-22 | #53 動画編集へファイルをドラッグ＆ドロップで取り込める | [issue-0053-drag-drop-import.md](issue-0053-drag-drop-import.md) |
 | 2026-11-22 | #43 動画編集でクリップを分割できる | [issue-0043-clip-split.md](issue-0043-clip-split.md) |
+| 2026-11-22 | #49 隣接クリップ境界にクロスディゾルブを設定できる | [issue-0049-clip-transition.md](issue-0049-clip-transition.md) |
