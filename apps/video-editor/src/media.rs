@@ -871,18 +871,22 @@ fn compose_export_frame(
                 if let Some(parent) = out.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                let resized = image::open(&base).map(|img| {
+                let resized = image::open(&base).and_then(|img| {
                     img.resize_exact(
                         settings.width,
                         settings.height,
                         image::imageops::FilterType::Triangle,
                     )
+                    .save(&out)
                 });
-                match resized {
-                    Ok(img) => {
-                        let _ = img.save(&out);
-                    }
-                    Err(_) => return base,
+                if resized.is_err() {
+                    // Issue #54 レビュー round 2 残件: 失敗時に
+                    // プレビュー解像度（320x180）のファイルを返すと
+                    // 書き出し列に寸法が混在する。書き出し解像度の
+                    // 素フレーム（無ければ黒）で代替する。
+                    return store
+                        .frame_path(&source, source_time_ms)
+                        .map_or_else(|| black.to_path_buf(), Path::to_path_buf);
                 }
             }
             out
@@ -958,6 +962,13 @@ pub fn export_mp4(
         std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
         progress(i + 1, plan.frame_count);
     }
+    // 書き出し先のディレクトリはエンコード前に用意する
+    // （一時ファイルも同じ場所に作るため）。
+    if let Some(parent) = out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
     let mix = mix_audio(project, plan.duration_ms);
     let wav = work.join("mix.wav");
     write_mix_wav(&wav, &mix)?;
@@ -989,11 +1000,6 @@ pub fn export_mp4(
     if !status.success() {
         let _ = std::fs::remove_file(&tmp_out);
         return Err(format!("ffmpeg が失敗しました（{status}）"));
-    }
-    if let Some(parent) = out_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
     }
     std::fs::rename(&tmp_out, out_path).map_err(|e| e.to_string())?;
     Ok(ExportReport {
