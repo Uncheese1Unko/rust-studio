@@ -39,11 +39,7 @@ impl History {
         let snapshot = self.project.clone();
         match apply(&mut self.project, command) {
             Ok(created_id) => {
-                self.undo_stack.push(snapshot);
-                if self.undo_stack.len() > HISTORY_LIMIT {
-                    self.undo_stack.remove(0);
-                }
-                self.redo_stack.clear();
+                self.push_snapshot(snapshot);
                 Ok(created_id)
             }
             Err(e) => {
@@ -53,6 +49,32 @@ impl History {
                 Err(e)
             }
         }
+    }
+
+    /// 履歴に積まずにコマンドを適用する（Issue #31: GUI のドラッグの
+    /// ように、1つのジェスチャで何度も適用し直す操作の逐次適用用）。
+    /// ジェスチャの開始時に控えたスナップショットを、最初の成功時に
+    /// [`History::record_undo_snapshot`] で積むこと。失敗時は状態が
+    /// 変わらない（コマンド層の契約どおり）。
+    pub fn apply_transient(&mut self, command: &Command) -> Result<Option<u64>, CommandError> {
+        apply(&mut self.project, command)
+    }
+
+    /// 外部で控えたスナップショットを undo スタックへ積む
+    /// （Issue #31: ジェスチャ単位の取り消し）。上限と redo の消去は
+    /// 通常の適用と同じ規則に従う。
+    pub fn record_undo_snapshot(&mut self, snapshot: Project) {
+        self.push_snapshot(snapshot);
+    }
+
+    /// スナップショットを undo スタックへ積み、上限を超えたら古い
+    /// ものから捨て、redo スタックを消す。
+    fn push_snapshot(&mut self, snapshot: Project) {
+        self.undo_stack.push(snapshot);
+        if self.undo_stack.len() > HISTORY_LIMIT {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
     }
 
     /// 1つ前の状態に戻す。戻せたら true、履歴が空なら false

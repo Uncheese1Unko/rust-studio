@@ -18,6 +18,47 @@ pub const NEW_CLIP_DURATION_MS: i64 = 2_000;
 pub const DOUBLE_CLICK_MS: u64 = 400;
 pub const DOUBLE_CLICK_PX: f32 = 5.0;
 
+/// Undo/Redo のキー操作（Issue #31）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryOp {
+    Undo,
+    Redo,
+}
+
+/// キー状態から履歴操作を決める純粋関数。
+/// テキスト編集中はショートカットを奪わず、Ctrl なしの Z/Y も対象外。
+/// Ctrl+Z = undo、Ctrl+Shift+Z / Ctrl+Y = redo。
+pub fn resolve_history_op(
+    editing: bool,
+    ctrl: bool,
+    shift: bool,
+    z_down: bool,
+    y_down: bool,
+) -> Option<HistoryOp> {
+    if editing || !ctrl {
+        return None;
+    }
+    if z_down {
+        Some(if shift {
+            HistoryOp::Redo
+        } else {
+            HistoryOp::Undo
+        })
+    } else if y_down {
+        Some(HistoryOp::Redo)
+    } else {
+        None
+    }
+}
+
+/// 解決した履歴操作を History に適用する。実施できたら true。
+pub fn apply_history_op(history: &mut studio_core::History, op: HistoryOp) -> bool {
+    match op {
+        HistoryOp::Undo => history.undo(),
+        HistoryOp::Redo => history.redo(),
+    }
+}
+
 /// ヒットテストの結果。
 #[derive(Debug, Clone, PartialEq)]
 pub enum HitTarget {
@@ -618,5 +659,52 @@ mod tests {
         let mut session = RenameSession::begin(track_id, "V1");
         session.handle(RenameInput::Char('X'));
         assert_eq!(session.handle(RenameInput::Escape), RenameAction::Cancel);
+    }
+    #[test]
+    fn ctrl_z_restores_state_before_last_edit() {
+        // Issue #31（指定テスト）: Ctrl+Z で直前の編集前に戻る。
+        let mut history = studio_core::History::new(sample_project());
+        let clip_id = history.project().tracks[0].clips[0].id;
+        let before = history.project().dump_json();
+        history
+            .apply(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 2_500,
+            })
+            .unwrap();
+        assert_ne!(history.project().dump_json(), before);
+        let op = resolve_history_op(false, true, false, true, false)
+            .expect("Ctrl+Z は undo として解決される");
+        assert_eq!(op, HistoryOp::Undo);
+        assert!(apply_history_op(&mut history, op));
+        assert_eq!(history.project().dump_json(), before);
+    }
+
+    #[test]
+    fn history_keys_cover_redo_and_editing_guard() {
+        // Issue #31: Ctrl+Shift+Z と Ctrl+Y は redo。編集中と Ctrl なしは対象外。
+        assert_eq!(
+            resolve_history_op(false, true, true, true, false),
+            Some(HistoryOp::Redo)
+        );
+        assert_eq!(
+            resolve_history_op(false, true, false, false, true),
+            Some(HistoryOp::Redo)
+        );
+        assert_eq!(resolve_history_op(true, true, false, true, false), None);
+        assert_eq!(resolve_history_op(false, false, false, true, false), None);
+
+        let mut history = studio_core::History::new(sample_project());
+        let clip_id = history.project().tracks[0].clips[0].id;
+        history
+            .apply(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 2_500,
+            })
+            .unwrap();
+        let applied = history.project().dump_json();
+        assert!(apply_history_op(&mut history, HistoryOp::Undo));
+        assert!(apply_history_op(&mut history, HistoryOp::Redo));
+        assert_eq!(history.project().dump_json(), applied);
     }
 }

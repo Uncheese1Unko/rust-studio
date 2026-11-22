@@ -1,0 +1,185 @@
+project file mode: /tmp/issue31-video/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "undo-evidence-video",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 1000,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.1, preview
+sample media generated: /tmp/rust-studio-video-editor-media/opening.mp4
+sample media generated: /tmp/rust-studio-video-editor-media/interview.mp4
+sample media generated: /tmp/rust-studio-video-editor-media/bgm.wav
+sample media generated: /tmp/rust-studio-video-editor-media/bg.mp4
+media prepared: demo/opening.mp4 -> 40 frames
+preview textures loaded: 40
+preview: source=demo/opening.mp4 playhead=1001 source_time=1 frame=0
+preview: source=demo/opening.mp4 playhead=1106 source_time=106 frame=1
+preview: source=demo/opening.mp4 playhead=1207 source_time=207 frame=2
+preview: source=demo/opening.mp4 playhead=1314 source_time=314 frame=3
+preview: source=demo/opening.mp4 playhead=1401 source_time=401 frame=4
+preview: source=demo/opening.mp4 playhead=1513 source_time=513 frame=5
+preview: source=demo/opening.mp4 playhead=1603 source_time=603 frame=6
+preview: source=demo/opening.mp4 playhead=1703 source_time=703 frame=7
+preview: source=demo/opening.mp4 playhead=1801 source_time=801 frame=8
+preview: source=demo/opening.mp4 playhead=1922 source_time=922 frame=9
+preview: source=demo/opening.mp4 playhead=2011 source_time=1011 frame=10
+preview: source=demo/opening.mp4 playhead=2102 source_time=1102 frame=11
+preview: source=demo/opening.mp4 playhead=2215 source_time=1215 frame=12
+preview: source=demo/opening.mp4 playhead=2316 source_time=1316 frame=13
+preview: source=demo/opening.mp4 playhead=2407 source_time=1407 frame=14
+preview: source=demo/opening.mp4 playhead=2511 source_time=1511 frame=15
+preview: source=demo/opening.mp4 playhead=2615 source_time=1615 frame=16
+preview: source=demo/opening.mp4 playhead=2700 source_time=1700 frame=17
+preview: source=demo/opening.mp4 playhead=2785 source_time=1285 frame=12
+preview: source=demo/opening.mp4 playhead=2805 source_time=1305 frame=13
+preview: source=demo/opening.mp4 playhead=2912 source_time=1412 frame=14
+preview: source=demo/opening.mp4 playhead=3008 source_time=1508 frame=15
+preview: source=demo/opening.mp4 playhead=3104 source_time=1604 frame=16
+preview: source=demo/opening.mp4 playhead=3185 source_time=1185 frame=11
+preview: source=demo/opening.mp4 playhead=3201 source_time=1201 frame=12
+preview: source=demo/opening.mp4 playhead=3304 source_time=1304 frame=13
+preview: source=demo/opening.mp4 playhead=3400 source_time=1400 frame=14
+preview: source=demo/opening.mp4 playhead=3502 source_time=1502 frame=15
+after drag: {
+  "name": "undo-evidence-video",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 2000,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
+preview: source=demo/opening.mp4 playhead=3613 source_time=1613 frame=16
+preview: source=demo/opening.mp4 playhead=3706 source_time=1706 frame=17
+preview: source=demo/opening.mp4 playhead=3801 source_time=1801 frame=18
+preview: source=demo/opening.mp4 playhead=3917 source_time=1917 frame=19
+media prepared: demo/opening.mp4 -> 40 frames
+preview textures loaded: 40
+after undo: {
+  "name": "undo-evidence-video",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 1000,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
+preview: source=demo/opening.mp4 playhead=2424 source_time=1424 frame=14
+preview: source=demo/opening.mp4 playhead=2544 source_time=1544 frame=15
+preview: source=demo/opening.mp4 playhead=2651 source_time=1651 frame=16
+preview: source=demo/opening.mp4 playhead=2744 source_time=1744 frame=17
+preview: source=demo/opening.mp4 playhead=2845 source_time=1845 frame=18
+preview: source=demo/opening.mp4 playhead=2936 source_time=1936 frame=19
+media prepared: demo/opening.mp4 -> 40 frames
+preview textures loaded: 40
+after redo: {
+  "name": "undo-evidence-video",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 1,
+          "name": "move",
+          "start_ms": 2000,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null
+        }
+      ],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null
+    }
+  ],
+  "next_id": 3
+}
+preview: source=demo/opening.mp4 playhead=2058 source_time=58 frame=0
+preview: source=demo/opening.mp4 playhead=2127 source_time=127 frame=1
+preview: source=demo/opening.mp4 playhead=2229 source_time=229 frame=2
+preview: source=demo/opening.mp4 playhead=2331 source_time=331 frame=3
+preview: source=demo/opening.mp4 playhead=2426 source_time=426 frame=4
+preview: source=demo/opening.mp4 playhead=2521 source_time=521 frame=5
+preview: source=demo/opening.mp4 playhead=2629 source_time=629 frame=6
+preview: source=demo/opening.mp4 playhead=2728 source_time=728 frame=7
+preview: source=demo/opening.mp4 playhead=2823 source_time=823 frame=8
+preview: source=demo/opening.mp4 playhead=2913 source_time=913 frame=9
+preview: source=demo/opening.mp4 playhead=3017 source_time=1017 frame=10
+preview: source=demo/opening.mp4 playhead=3117 source_time=1117 frame=11
+preview: source=demo/opening.mp4 playhead=3217 source_time=1217 frame=12
+preview: source=demo/opening.mp4 playhead=3312 source_time=1312 frame=13
+rename begin: track 1
+preview: source=demo/opening.mp4 playhead=3409 source_time=1409 frame=14
+preview: source=demo/opening.mp4 playhead=3535 source_time=1535 frame=15
+preview: source=demo/opening.mp4 playhead=3601 source_time=1601 frame=16
+preview: source=demo/opening.mp4 playhead=3703 source_time=1703 frame=17
+preview: source=demo/opening.mp4 playhead=3807 source_time=1807 frame=18
+preview: source=demo/opening.mp4 playhead=3907 source_time=1907 frame=19
+preview: source=demo/opening.mp4 playhead=2005 source_time=5 frame=0
+preview: source=demo/opening.mp4 playhead=2176 source_time=176 frame=1
+preview: source=demo/opening.mp4 playhead=2259 source_time=259 frame=2
+preview: source=demo/opening.mp4 playhead=2300 source_time=300 frame=3
+rename cancelled

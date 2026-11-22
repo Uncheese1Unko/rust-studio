@@ -96,3 +96,48 @@ fn history_is_capped_at_100_entries() {
     assert_eq!(undos, 100);
     assert_eq!(history.project().tracks.len(), 5);
 }
+
+#[test]
+fn transient_applies_with_recorded_snapshot_undo_as_one_step() {
+    // Issue #31: ドラッグ中の逐次適用は、開始時スナップショットを
+    // 1件だけ積むことで「ジェスチャ全体が1回の undo」になる。
+    let mut history = History::new(Project::new("t"));
+    let track_id = history.apply(&add_track("A1")).unwrap().unwrap();
+    let clip_id = history
+        .apply(&Command::AddClip {
+            track_id,
+            name: "c".into(),
+            start_ms: 0,
+            duration_ms: 1_000,
+            source: "demo/c.wav".into(),
+        })
+        .unwrap()
+        .unwrap();
+    let before = history.project().dump_json();
+    let snapshot = history.project().clone();
+    history
+        .apply_transient(&Command::MoveClip {
+            clip_id,
+            new_start_ms: 500,
+        })
+        .unwrap();
+    history.record_undo_snapshot(snapshot);
+    history
+        .apply_transient(&Command::MoveClip {
+            clip_id,
+            new_start_ms: 900,
+        })
+        .unwrap();
+    // undo 1回でジェスチャ開始前に戻る（途中の 500 には戻らない）
+    assert!(history.undo());
+    assert_eq!(history.project().dump_json(), before);
+}
+
+#[test]
+fn transient_apply_alone_does_not_record_history() {
+    // Issue #31: transient 適用だけでは履歴に積まれない。
+    let mut history = History::new(Project::new("t"));
+    history.apply_transient(&add_track("A1")).unwrap();
+    assert!(!history.can_undo());
+    assert_eq!(history.project().tracks.len(), 1);
+}

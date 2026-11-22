@@ -15,15 +15,19 @@ mod palette;
 mod timeline;
 
 use nannou::prelude::*;
-use studio_core::{apply, Command, Project, TrackKind};
+use studio_core::{apply, Command, History, Project, TrackKind};
 
 struct Model {
     _window: WindowId,
-    project: Project,
+    history: History,
     playhead_ms: i64,
     // Issue #9: ポインタ編集の状態。
     drag: Option<edit::Drag>,
     last_drag_cmd: Option<Command>,
+    // Issue #31: ドラッグ開始時のスナップショットと、履歴へ積んだ
+    // かどうかのフラグ。
+    drag_before: Option<Project>,
+    drag_snapshot_recorded: bool,
     last_rejection: Option<String>,
     prev_left_down: bool,
     clicks: edit::ClickTracker,
@@ -46,6 +50,9 @@ struct Model {
     cutout_job: Option<std::sync::Arc<std::sync::Mutex<cutout::JobState>>>,
     cutout_job_reported: bool,
     prev_k_down: bool,
+    // Issue #31: Undo/Redo キーの押下エッジ検出。
+    prev_history_undo: bool,
+    prev_history_redo: bool,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -190,10 +197,12 @@ fn model(app: &App) -> Model {
     let initial_selected = project.tracks.first().map(|t| t.id);
     Model {
         _window: window,
-        project,
+        history: History::new(project),
         playhead_ms: 0,
         drag: None,
         last_drag_cmd: None,
+        drag_before: None,
+        drag_snapshot_recorded: false,
         last_rejection: None,
         prev_left_down: false,
         clicks: edit::ClickTracker::new(),
@@ -209,6 +218,8 @@ fn model(app: &App) -> Model {
         cutout_job: None,
         cutout_job_reported: false,
         prev_k_down: false,
+        prev_history_undo: false,
+        prev_history_redo: false,
     }
 }
 
@@ -250,12 +261,12 @@ fn watch_project_file(app: &App, model: &mut Model) {
             new_sources.dedup();
             let mut old_sources = model.frames.sources();
             old_sources.sort();
-            model.project = new_project;
+            model.history = History::new(new_project);
             if new_sources != old_sources {
-                model.frames = media::prepare_media(&model.project);
-                model.textures = load_textures(app, &model.project, &model.frames);
+                model.frames = media::prepare_media(model.history.project());
+                model.textures = load_textures(app, model.history.project(), &model.frames);
             }
-            println!("project reloaded: {}", model.project.dump_json());
+            println!("project reloaded: {}", model.history.project().dump_json());
         }
         Err(e) => {
             println!("warning: project reload failed: {e}");
@@ -269,9 +280,9 @@ fn save_project_file(model: &mut Model) {
     let Some(path) = model.project_file.clone() else {
         return;
     };
-    match model.project.save_to_path(&path) {
+    match model.history.project().save_to_path(&path) {
         Ok(()) => {
-            model.file_stamp = media::fnv1a(model.project.dump_json().as_bytes());
+            model.file_stamp = media::fnv1a(model.history.project().dump_json().as_bytes());
         }
         Err(e) => println!("warning: cannot save project file {}: {e}", path.display()),
     }
@@ -305,10 +316,10 @@ fn event(_app: &App, model: &mut Model, event: Event) {
             model.rename = None;
             println!("rename cancelled");
         }
-        edit::RenameAction::Commit(cmd) => match apply(&mut model.project, &cmd) {
+        edit::RenameAction::Commit(cmd) => match model.history.apply(&cmd) {
             Ok(_) => {
                 model.rename = None;
-                println!("after rename: {}", model.project.dump_json());
+                println!("after rename: {}", model.history.project().dump_json());
                 save_project_file(model);
             }
             Err(e) => println!("rename rejected: {e}"),
@@ -324,22 +335,27 @@ fn update(app: &App, model: &mut Model, update: Update) {
         // エッジ検出用の prev は編集中も同期する（バグ #60: 同期しないと
         // K を押したままリネームを確定した直後に切り抜きが誤発する）。
         model.prev_k_down = app.keys.down.contains(&Key::K);
+        let (undo_down, redo_down) = history_key_states(app);
+        model.prev_history_undo = undo_down;
+        model.prev_history_redo = redo_down;
     } else {
         handle_pointer(app, model);
+        handle_history_keys(app, model);
         handle_cutout(app, model);
     }
     watch_project_file(app, model);
 
     let dt_ms = update.since_last.as_millis() as i64;
-    let end_ms = timeline::project_end_ms(&model.project);
+    let end_ms = timeline::project_end_ms(model.history.project());
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end_ms);
 
     // プレビューの表示フレームが変わったら観測用に記録する（Issue #10）。
-    let current = media::active_video_clip(&model.project, model.playhead_ms).and_then(|clip| {
-        let source_time = media::source_time_ms(clip, model.playhead_ms)?;
-        let frame = media::frame_index(source_time, model.frames.fps);
-        Some((clip.source.clone(), source_time, frame))
-    });
+    let current =
+        media::active_video_clip(model.history.project(), model.playhead_ms).and_then(|clip| {
+            let source_time = media::source_time_ms(clip, model.playhead_ms)?;
+            let frame = media::frame_index(source_time, model.frames.fps);
+            Some((clip.source.clone(), source_time, frame))
+        });
     let current_key = current
         .as_ref()
         .map(|(source, _, frame)| (source.clone(), *frame));
@@ -352,6 +368,71 @@ fn update(app: &App, model: &mut Model, update: Update) {
         }
         model.last_preview = current_key;
     }
+}
+
+/// Ctrl / Shift の押下判定。修飾キーは `app.keys.mods` ではなく
+/// `keys.down` に現れるキー（LControl 等）で判定する。
+/// ヘッドレス環境（Xvfb + XTEST）では ModifiersChanged が届かず
+/// `keys.mods` が更新されないことを実測したため（Issue #31 の証拠
+/// ドライブで確認）。実環境でもこちらで判定できる。
+fn ctrl_down(app: &App) -> bool {
+    app.keys.down.contains(&Key::LControl) || app.keys.down.contains(&Key::RControl)
+}
+
+fn shift_down(app: &App) -> bool {
+    app.keys.down.contains(&Key::LShift) || app.keys.down.contains(&Key::RShift)
+}
+
+/// 現在のキー状態から見た undo/redo の押下状態（エッジ検出用）。
+fn history_key_states(app: &App) -> (bool, bool) {
+    let ctrl = ctrl_down(app);
+    let shift = shift_down(app);
+    let z = app.keys.down.contains(&Key::Z);
+    let y = app.keys.down.contains(&Key::Y);
+    (ctrl && z && !shift, ctrl && ((z && shift) || y))
+}
+
+/// Undo/Redo キー（Issue #31）: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y。
+/// 履歴が実際に動いたときだけ、メディア（フレーム・テクスチャ）と
+/// 選択を追従させ、プロジェクトファイルへ保存する。
+fn handle_history_keys(app: &App, model: &mut Model) {
+    let (undo_down, redo_down) = history_key_states(app);
+    let edge = (undo_down && !model.prev_history_undo) || (redo_down && !model.prev_history_redo);
+    model.prev_history_undo = undo_down;
+    model.prev_history_redo = redo_down;
+    if !edge {
+        return;
+    }
+    let Some(op) = edit::resolve_history_op(
+        false,
+        ctrl_down(app),
+        shift_down(app),
+        app.keys.down.contains(&Key::Z),
+        app.keys.down.contains(&Key::Y),
+    ) else {
+        return;
+    };
+    if !edit::apply_history_op(&mut model.history, op) {
+        return;
+    }
+    model.drag = None;
+    model.last_drag_cmd = None;
+    model.last_rejection = None;
+    if model
+        .selected_track
+        .is_some_and(|id| model.history.project().track(id).is_none())
+    {
+        model.selected_track = model.history.project().tracks.first().map(|t| t.id);
+    }
+    model.frames = media::prepare_media(model.history.project());
+    model.textures = load_textures(app, model.history.project(), &model.frames);
+    model.last_preview = None;
+    let label = match op {
+        edit::HistoryOp::Undo => "undo",
+        edit::HistoryOp::Redo => "redo",
+    };
+    println!("after {label}: {}", model.history.project().dump_json());
+    save_project_file(model);
 }
 
 /// 人物切り抜き（Issue #22）: K キーで再生ヘッド位置の映像クリップに
@@ -373,7 +454,7 @@ fn handle_cutout(app: &App, model: &mut Model) {
                         "cutout done: clip {} ({} frames)",
                         snapshot.clip_id, snapshot.total
                     );
-                    if let Some((_, clip)) = model.project.clip(snapshot.clip_id) {
+                    if let Some((_, clip)) = model.history.project().clip(snapshot.clip_id) {
                         let dir = media::media_dir().join(cutout::composite_dir_name(&clip.source));
                         for i in 0..snapshot.total {
                             let path = dir.join(format!("f{i:03}.png"));
@@ -398,7 +479,8 @@ fn handle_cutout(app: &App, model: &mut Model) {
     if !pressed {
         return;
     }
-    let Some(clip) = media::active_video_clip(&model.project, model.playhead_ms).cloned() else {
+    let Some(clip) = media::active_video_clip(model.history.project(), model.playhead_ms).cloned()
+    else {
         println!("cutout: no video clip at playhead");
         return;
     };
@@ -433,18 +515,22 @@ fn handle_cutout(app: &App, model: &mut Model) {
         clip_id: clip.id,
         enabled,
     };
-    if let Err(e) = apply(&mut model.project, &cmd) {
+    if let Err(e) = model.history.apply(&cmd) {
         println!("command rejected: {e}");
         return;
     }
-    println!("after cutout toggle: {}", model.project.dump_json());
+    println!(
+        "after cutout toggle: {}",
+        model.history.project().dump_json()
+    );
     save_project_file(model);
     let Some((frames, model_path, dylib_path)) = job_inputs else {
         return;
     };
     // 背景フレーム: 別の映像トラックで同じ時刻を覆うクリップを探す。
     let fg_track = model
-        .project
+        .history
+        .project()
         .clip(clip.id)
         .map(|(t, _)| t.id)
         .unwrap_or_default();
@@ -452,7 +538,8 @@ fn handle_cutout(app: &App, model: &mut Model) {
         .map(|i| {
             let timeline_ms = clip.start_ms + (i as i64) * (1000 / model.frames.fps as i64);
             model
-                .project
+                .history
+                .project()
                 .tracks
                 .iter()
                 .filter(|t| t.kind == TrackKind::Video && t.id != fg_track)
@@ -504,7 +591,7 @@ fn apply_palette_click(
         palette::PaletteTarget::Clip => {
             let clip_id = model
                 .selected_track
-                .and_then(|tid| model.project.track(tid))
+                .and_then(|tid| model.history.project().track(tid))
                 .and_then(|t| {
                     t.clips
                         .iter()
@@ -518,12 +605,28 @@ fn apply_palette_click(
             Command::SetClipColor { clip_id, color }
         }
     };
-    match apply(&mut model.project, &cmd) {
+    match model.history.apply(&cmd) {
         Ok(_) => {
-            println!("after color: {}", model.project.dump_json());
+            println!("after color: {}", model.history.project().dump_json());
             save_project_file(model);
         }
         Err(e) => println!("command rejected: {e}"),
+    }
+}
+
+/// ジェスチャ（ドラッグ）の最初の成功適用で、開始時スナップショットを
+/// 履歴へ1件だけ積む（Issue #31）。逐次適用は `apply_transient` で
+/// 履歴に積まないため、ジェスチャ全体が1回の undo 単位になる。
+fn record_gesture_snapshot(
+    history: &mut History,
+    before: &mut Option<Project>,
+    recorded: &mut bool,
+) {
+    if !*recorded {
+        if let Some(snapshot) = before.take() {
+            history.record_undo_snapshot(snapshot);
+        }
+        *recorded = true;
     }
 }
 
@@ -538,7 +641,9 @@ fn handle_pointer(app: &App, model: &mut Model) {
     if left_down && !model.prev_left_down {
         // 色選択パネル（Issue #59）: トラック追加エリアの下のパネル。
         // 他の領域とは重ならない。
-        if let Some((target, color)) = palette::hit_palette(model.project.tracks.len(), lx, ly) {
+        if let Some((target, color)) =
+            palette::hit_palette(model.history.project().tracks.len(), lx, ly)
+        {
             apply_palette_click(model, target, color);
             model.prev_left_down = left_down;
             return;
@@ -546,22 +651,26 @@ fn handle_pointer(app: &App, model: &mut Model) {
         // トラック削除（Issue #57）: ヘッダー右端の帯。コマンド経由で
         // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
         // 選択を移す。
-        if let Some(index) = edit::hit_track_delete(&model.project, lx, ly) {
-            let track_id = model.project.tracks[index].id;
+        if let Some(index) = edit::hit_track_delete(model.history.project(), lx, ly) {
+            let track_id = model.history.project().tracks[index].id;
             let cmd = Command::RemoveTrack { track_id };
-            match apply(&mut model.project, &cmd) {
+            match model.history.apply(&cmd) {
                 Ok(_) => {
                     if model.selected_track == Some(track_id) {
                         model.selected_track = model
-                            .project
+                            .history
+                            .project()
                             .tracks
                             .get(index)
-                            .or_else(|| model.project.tracks.last())
+                            .or_else(|| model.history.project().tracks.last())
                             .map(|t| t.id);
                     }
                     model.drag = None;
                     model.last_drag_cmd = None;
-                    println!("after track remove: {}", model.project.dump_json());
+                    println!(
+                        "after track remove: {}",
+                        model.history.project().dump_json()
+                    );
                     save_project_file(model);
                 }
                 Err(e) => println!("command rejected: {e}"),
@@ -571,12 +680,12 @@ fn handle_pointer(app: &App, model: &mut Model) {
         }
         // トラック追加（Issue #57）: 最終行直下のヘッダー列。
         // 上半分が映像、下半分が音声。追加したトラックを選択する。
-        if let Some(kind) = edit::hit_track_add_area(&model.project, lx, ly) {
-            let cmd = edit::add_track_command(&model.project, kind);
-            match apply(&mut model.project, &cmd) {
+        if let Some(kind) = edit::hit_track_add_area(model.history.project(), lx, ly) {
+            let cmd = edit::add_track_command(model.history.project(), kind);
+            match model.history.apply(&cmd) {
                 Ok(created) => {
                     model.selected_track = created;
-                    println!("after track add: {}", model.project.dump_json());
+                    println!("after track add: {}", model.history.project().dump_json());
                     save_project_file(model);
                 }
                 Err(e) => println!("command rejected: {e}"),
@@ -586,28 +695,31 @@ fn handle_pointer(app: &App, model: &mut Model) {
         }
         // トラックヘッダーのクリックで選択（Issue #57、表示状態のみ）。
         // ダブルクリックでリネーム編集に入る。
-        if let Some(index) = edit::hit_track_header(&model.project, lx, ly) {
-            model.selected_track = Some(model.project.tracks[index].id);
+        if let Some(index) = edit::hit_track_header(model.history.project(), lx, ly) {
+            model.selected_track = Some(model.history.project().tracks[index].id);
             let now_ms = (app.time * 1_000.0) as u64;
             if model.header_clicks.register(now_ms, lx, ly) {
-                let track = &model.project.tracks[index];
+                let track = &model.history.project().tracks[index];
                 model.rename = Some(edit::RenameSession::begin(track.id, &track.name));
                 println!("rename begin: track {}", track.id);
             }
         }
-        let target = edit::hit_test(&model.project, win.w(), lx, ly);
-        if let Some(drag) = edit::Drag::begin(&model.project, &target, pointer_ms) {
+        let target = edit::hit_test(model.history.project(), win.w(), lx, ly);
+        if let Some(drag) = edit::Drag::begin(model.history.project(), &target, pointer_ms) {
             model.drag = Some(drag);
             model.last_drag_cmd = None;
+            model.drag_before = Some(model.history.project().clone());
+            model.drag_snapshot_recorded = false;
             model.last_rejection = None;
         } else if let edit::HitTarget::Empty { track_index } = target {
             let now_ms = (app.time * 1_000.0) as u64;
             if model.clicks.register(now_ms, lx, ly) {
-                if let Some(cmd) = edit::place_clip_command(&model.project, track_index, pointer_ms)
+                if let Some(cmd) =
+                    edit::place_clip_command(model.history.project(), track_index, pointer_ms)
                 {
-                    match apply(&mut model.project, &cmd) {
+                    match model.history.apply(&cmd) {
                         Ok(_) => {
-                            println!("placed: {}", model.project.dump_json());
+                            println!("placed: {}", model.history.project().dump_json());
                             save_project_file(model);
                         }
                         Err(e) => println!("command rejected: {e}"),
@@ -621,8 +733,15 @@ fn handle_pointer(app: &App, model: &mut Model) {
         if let Some(drag) = &model.drag {
             let cmd = drag.command_for(pointer_ms);
             if model.last_drag_cmd.as_ref() != Some(&cmd) {
-                match apply(&mut model.project, &cmd) {
-                    Ok(_) => model.last_drag_cmd = Some(cmd),
+                match model.history.apply_transient(&cmd) {
+                    Ok(_) => {
+                        record_gesture_snapshot(
+                            &mut model.history,
+                            &mut model.drag_before,
+                            &mut model.drag_snapshot_recorded,
+                        );
+                        model.last_drag_cmd = Some(cmd);
+                    }
                     Err(e) => model.last_rejection = Some(e.to_string()),
                 }
             }
@@ -630,12 +749,14 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if !left_down && model.prev_left_down && model.drag.take().is_some() {
-        println!("after drag: {}", model.project.dump_json());
+        println!("after drag: {}", model.history.project().dump_json());
         save_project_file(model);
         if let Some(rejection) = model.last_rejection.take() {
             println!("command rejected during drag: {rejection}");
         }
         model.last_drag_cmd = None;
+        model.drag_before = None;
+        model.drag_snapshot_recorded = false;
     }
 
     model.prev_left_down = left_down;
@@ -672,7 +793,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     // トラック行（timeline.track.<id>）: ヘッダーにトラック名、行背景は交互色。
-    for (index, track) in model.project.tracks.iter().enumerate() {
+    for (index, track) in model.history.project().tracks.iter().enumerate() {
         let top = timeline::track_top_y(index);
         let (bx, by) = rect_center(win, 0.0, top, win.w(), timeline::TRACK_HEIGHT_PX);
         let shade = if index % 2 == 0 { 0.11 } else { 0.14 };
@@ -742,7 +863,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     // トラック追加エリア（Issue #57）: 最終行直下のヘッダー列を
     // 上下に分け、上に「+ VIDEO」、下に「+ AUDIO」。
     {
-        let top = timeline::track_top_y(model.project.tracks.len());
+        let top = timeline::track_top_y(model.history.project().tracks.len());
         let half = timeline::TRACK_HEIGHT_PX / 2.0;
         for (i, label) in ["+ VIDEO", "+ AUDIO"].iter().enumerate() {
             let (cx, cy) = rect_center(
@@ -767,7 +888,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     // 選択中トラック、CLIP 行は選択中トラックの再生位置にあるクリップ
     // が対象。現在の色のスウォッチには明るい枠を付ける。
     {
-        let count = model.project.tracks.len();
+        let count = model.history.project().tracks.len();
         let top = palette::panel_top(count);
         let panel_h = palette::panel_height() + 8.0;
         let (px, py) = rect_center(win, 8.0, top - 8.0, 380.0, panel_h);
@@ -780,7 +901,9 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(lx, ly)
             .font_size(9)
             .color(rgb(0.65, 0.65, 0.70));
-        let selected_track = model.selected_track.and_then(|id| model.project.track(id));
+        let selected_track = model
+            .selected_track
+            .and_then(|id| model.history.project().track(id));
         let playhead_clip = selected_track.and_then(|t| {
             t.clips
                 .iter()
@@ -850,8 +973,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     // クリップ（timeline.clip.<id>）: コアの start/duration をそのまま矩形にする。
-    for rect in timeline::layout_clips(&model.project, win.w()) {
-        let clip = model.project.clip(rect.clip_id).map(|(_, c)| c);
+    for rect in timeline::layout_clips(model.history.project(), win.w()) {
+        let clip = model.history.project().clip(rect.clip_id).map(|(_, c)| c);
         // 表示色（Issue #59）: ユーザー色があればそれ、なければ種別色。
         let (r, g, b) = timeline::clip_display_color(clip.and_then(|c| c.color), rect.kind);
         let (cx, cy) = rect_center(win, rect.x, rect.y + 4.0, rect.w, rect.h - 8.0);
@@ -873,7 +996,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .x_y(pvx, pvy)
         .w_h(PREVIEW_W, PREVIEW_H)
         .color(rgb(0.04, 0.04, 0.05));
-    match media::active_video_clip(&model.project, model.playhead_ms) {
+    match media::active_video_clip(model.history.project(), model.playhead_ms) {
         Some(clip) => {
             let source_time = media::source_time_ms(clip, model.playhead_ms).unwrap_or(0);
             // 切り抜き有効で合成済みフレームがあれば、そちらを優先する。
