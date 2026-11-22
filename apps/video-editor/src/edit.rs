@@ -1684,6 +1684,25 @@ mod tests {
     }
 
     #[test]
+    fn hit_test_has_no_fade_in_corner_on_clipped_left() {
+        // Issue #51 レビュー Minor: 左端が画面外に切り取られた
+        // クリップは、上端帯でもフェードインコーナーを持たない
+        // （Issue #46 の左端と同じ扱い）。
+        let p = sample_project();
+        let id = clip_id(&p);
+        let scrolled = timeline::ViewScale {
+            zoom: 1.0,
+            offset_ms: 1_500,
+        };
+        // opening は 1000..3000、可視部分は x=120..246。上端帯の
+        // 左端付近（123, 26）はコーナーではなく本体になる。
+        assert_eq!(
+            hit_test(&p, 960.0, &scrolled, 123.0, 26.0),
+            HitTarget::ClipBody { clip_id: id }
+        );
+    }
+
+    #[test]
     fn hit_test_ignores_phantom_edge_of_clipped_clip() {
         // Issue #46 レビュー round 2 指摘: スクロールで左端が画面外に
         // 出たクリップは、切り取られた矩形の左端（ヘッダー境界）に
