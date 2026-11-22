@@ -85,6 +85,10 @@ assert z > 2.0, z
 print(f"OK zoomed to {z}")
 EOF
 shot "$OUT/02-zoomed.png"
+HDR_BEFORE=$(px "$OUT/01-initial.png" 10 26)
+HDR_AFTER=$(px "$OUT/02-zoomed.png" 10 26)
+echo "header pixel(10,26): before=$HDR_BEFORE after zoom=$HDR_AFTER"
+[ "$HDR_BEFORE" = "$HDR_AFTER" ] && echo "OK header not painted over" || echo "FAIL header painted over by clip"
 AFTER=$(px "$OUT/02-zoomed.png" 450 48)
 echo "pixel(450,48) after zoom: $AFTER (row background expected)"
 [ "$BEFORE" != "$AFTER" ] && echo "OK drawing changed with zoom" || echo "FAIL drawing unchanged"

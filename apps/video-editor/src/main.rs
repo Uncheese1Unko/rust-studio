@@ -912,6 +912,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
         if x > win.w() {
             break;
         }
+        // ヘッダー列の内側には目盛り・ラベルを描かない（Issue #46
+        // レビュー指摘。クリップ矩形の切り取りと同じ境界）。
+        if x < timeline::HEADER_WIDTH_PX {
+            continue;
+        }
         let nx = x - win.w() / 2.0;
         draw.line()
             .start(pt2(nx, win.h() / 2.0 - timeline::RULER_HEIGHT_PX))

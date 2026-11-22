@@ -170,17 +170,25 @@ pub struct ClipRect {
 }
 
 /// プロジェクトの全クリップの描画矩形を、トラック順・クリップ順で返す。
+/// 矩形はヘッダー列の右端で切り取る（Issue #46 レビュー指摘）:
+/// スクロールで左端が画面外に出たクリップがヘッダー（トラック名や
+/// 削除ボタン）の上へ描かれないようにし、ヒットテストの境界
+/// （x < HEADER_WIDTH_PX は Outside）と一致させる。
 pub fn layout_clips(project: &Project, view_width_px: f32, scale: &ViewScale) -> Vec<ClipRect> {
     let mut rects = Vec::new();
     for (index, track) in project.tracks.iter().enumerate() {
         for clip in &track.clips {
+            let raw_x = scale.time_to_x(clip.start_ms, view_width_px);
+            let raw_w = clip.duration_ms as f32 * scale.px_per_ms(view_width_px);
+            let x = raw_x.max(HEADER_WIDTH_PX);
+            let w = (raw_x + raw_w - x).max(0.0);
             rects.push(ClipRect {
                 clip_id: clip.id,
                 track_id: track.id,
                 kind: track.kind,
-                x: scale.time_to_x(clip.start_ms, view_width_px),
+                x,
                 y: track_top_y(index),
-                w: clip.duration_ms as f32 * scale.px_per_ms(view_width_px),
+                w,
                 h: TRACK_HEIGHT_PX,
             });
         }
@@ -320,6 +328,52 @@ mod tests {
         assert_eq!(opening.y, RULER_HEIGHT_PX);
         assert_eq!(opening.h, TRACK_HEIGHT_PX);
         assert_eq!(opening.kind, TrackKind::Video);
+    }
+
+    #[test]
+    fn layout_clips_rects_at_header_edge_when_scrolled() {
+        // Issue #46 レビュー指摘: オフセットより前から始まるクリップは
+        // ヘッダー列（x < HEADER_WIDTH_PX）へはみ出さず、見えている
+        // 部分だけの矩形になる（描画とヒットテストの境界を一致させる）。
+        let project = sample_project();
+        let scale = ViewScale {
+            zoom: 1.0,
+            offset_ms: 1_500,
+        };
+        let rects = layout_clips(&project, 960.0, &scale);
+        let opening = &rects[0]; // 1000..3000、左端は画面外
+        assert_eq!(opening.x, HEADER_WIDTH_PX);
+        // 見えているのは 1500..3000 の 1500ms 分
+        assert!(
+            (opening.w - 1_500.0 * 0.084).abs() < 0.01,
+            "w={}",
+            opening.w
+        );
+        // 完全に表示範囲より前のクリップは幅 0 になる
+        let mut p2 = Project::new("t");
+        let v = studio_core::apply(
+            &mut p2,
+            &studio_core::Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        studio_core::apply(
+            &mut p2,
+            &studio_core::Command::AddClip {
+                track_id: v,
+                name: "past".into(),
+                start_ms: 0,
+                duration_ms: 500,
+                source: "demo/opening.mp4".into(),
+            },
+        )
+        .unwrap();
+        let rects2 = layout_clips(&p2, 960.0, &scale);
+        assert_eq!(rects2[0].x, HEADER_WIDTH_PX);
+        assert_eq!(rects2[0].w, 0.0);
     }
 
     #[test]
