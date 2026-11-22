@@ -152,11 +152,6 @@ impl ViewScale {
     }
 }
 
-/// 時刻（ms）を、ウィンドウ左端からの x ピクセルに変換する。
-pub fn time_to_x(ms: i64, view_width_px: f32) -> f32 {
-    HEADER_WIDTH_PX + ms as f32 * px_per_ms(view_width_px)
-}
-
 /// トラック行の上端 y（ウィンドウ上端からのピクセル）。
 pub fn track_top_y(track_index: usize) -> f32 {
     RULER_HEIGHT_PX + track_index as f32 * TRACK_HEIGHT_PX
@@ -368,8 +363,11 @@ mod tests {
         // スクロールのクランプ
         assert_eq!(base.scroll_by(-500).offset_ms, 0);
         assert_eq!(base.scroll_by(700).offset_ms, 700);
-        // 既定スケールでは従来の換算と一致する
-        assert_eq!(base.time_to_x(5_000, 960.0), time_to_x(5_000, 960.0));
+        // 既定スケールでは従来の換算（ヘッダー＋ms×基準 px_per_ms）と一致する
+        assert_eq!(
+            base.time_to_x(5_000, 960.0),
+            HEADER_WIDTH_PX + 5_000.0 * px_per_ms(960.0)
+        );
         assert_eq!(base.px_per_ms(960.0), px_per_ms(960.0));
     }
 
