@@ -62,7 +62,7 @@
 - [ ] `cargo test` が 0 で終わった — 対象外（同上。本体コードを変更していないため、ワークスペースの状態は main のまま）
 - [x] 画面で観測できる受け入れ条件は実アプリで確認し、証拠を残した（試作アプリの表示をスクリーンショットで確認。実ディスプレイは未検証）
 - [x] push の前に独立した `code-reviewer` が `APPROVE` を返した（round 2。指摘と対応は上記「コードレビュー」）
-- [ ] この変更の commit で CI が緑
+- [x] この変更の commit で CI が緑（https://github.com/Uncheese1Unko/rust-studio/actions/runs/45004233151）
 - [x] 判断があれば ADR を同じ commit で足した（ADR-0014 を提案として記録。採用の決定は needs-decision として人間に渡した）
-- [ ] 試験レポートを `docs/test-reports/` に、証拠を `docs/test-reports/evidence/` に置いて push し、CI が緑
+- [x] 試験レポートを `docs/test-reports/` に、証拠を `docs/test-reports/evidence/` に置いて push し、CI が緑
 - [ ] 全部にチェックを入れ、commit・CI の URL・試験レポートへのリンクをコメントに書いて閉じた — **未了**: 本イシューは `needs-decision`（ADR-0014 の採用可否は人間の決定待ち）のため、決定後に close する。調査成果物は本レポートで完成している
