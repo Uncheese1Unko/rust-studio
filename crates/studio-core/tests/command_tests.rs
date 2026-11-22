@@ -539,3 +539,111 @@ fn legacy_json_without_color_loads_as_unset() {
     assert_eq!(project.tracks[0].color, None);
     assert_eq!(project.tracks[0].clips[0].color, None);
 }
+
+#[test]
+fn split_clip_creates_right_clip_with_advanced_offset() {
+    // Issue #32: 分割すると左は元の id のまま短くなり、右は新規 id で
+    // 素材内開始位置（offset_ms）が分割点まで進んでいる。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    // project_with_clip のクリップは start 0 / duration 5000。
+    let new_id = apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id,
+            at_ms: 2_000,
+        },
+    )
+    .unwrap()
+    .expect("split returns the new clip id");
+    assert_ne!(new_id, clip_id);
+    let (_, left) = p.clip(clip_id).unwrap();
+    assert_eq!(left.start_ms, 0);
+    assert_eq!(left.duration_ms, 2_000);
+    assert_eq!(left.offset_ms, 0);
+    let (track, right) = p.clip(new_id).unwrap();
+    assert_eq!(track.clips.len(), 2);
+    assert_eq!(right.start_ms, 2_000);
+    assert_eq!(right.duration_ms, 3_000);
+    assert_eq!(right.offset_ms, 2_000);
+    assert_eq!(right.source, left.source);
+    assert_eq!(right.name, left.name);
+    assert_eq!(right.gain, left.gain);
+}
+
+#[test]
+fn split_clip_outside_range_fails_and_keeps_state() {
+    // Issue #32: 分割位置がクリップ内部（start < t < end）でない場合は
+    // InvalidRange で失敗し、状態は変わらない。未知のクリップは
+    // ClipNotFound。
+    let (mut p, _, clip_id) = project_with_clip();
+    let before = p.dump_json();
+    for at_ms in [0, 5_000, -1, 6_000] {
+        let err = apply(&mut p, &Command::SplitClip { clip_id, at_ms });
+        assert!(
+            matches!(err, Err(CommandError::InvalidRange(_))),
+            "at_ms={at_ms}: {err:?}"
+        );
+        assert_eq!(p.dump_json(), before, "state must not change on failure");
+    }
+    let err = apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id: 999,
+            at_ms: 100,
+        },
+    );
+    assert_eq!(err, Err(CommandError::ClipNotFound(999)));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn split_clip_twice_accumulates_offset() {
+    // Issue #32: 右クリップをさらに分割すると、offset は元の
+    // オフセットから積み上がる。
+    let (mut p, _, clip_id) = project_with_clip();
+    let right_id = apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id,
+            at_ms: 1_000,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let third_id = apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id: right_id,
+            at_ms: 3_000,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let (_, middle) = p.clip(right_id).unwrap();
+    assert_eq!(middle.offset_ms, 1_000);
+    assert_eq!(middle.duration_ms, 2_000);
+    let (_, third) = p.clip(third_id).unwrap();
+    assert_eq!(third.start_ms, 3_000);
+    assert_eq!(third.duration_ms, 2_000);
+    assert_eq!(third.offset_ms, 3_000);
+}
+
+#[test]
+fn split_clip_command_round_trips_through_json() {
+    // Issue #32: コマンドは JSON 経路（API / MCP）でも往復できる。
+    let cmd = Command::SplitClip {
+        clip_id: 7,
+        at_ms: 1_234,
+    };
+    let json = serde_json::to_string(&cmd).unwrap();
+    let back: Command = serde_json::from_str(&json).unwrap();
+    assert_eq!(cmd, back);
+}
+
+#[test]
+fn legacy_json_without_offset_loads_as_zero() {
+    // Issue #32: offset_ms を含まない旧形式 JSON は 0 で読める。
+    let legacy = r#"{"name":"old","tracks":[{"id":1,"name":"A1","kind":"audio","clips":[{"id":2,"name":"c","start_ms":0,"duration_ms":1000,"source":"x.wav","gain":1.0}],"volume":1.0,"pan":0.0}],"next_id":3}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    assert_eq!(project.tracks[0].clips[0].offset_ms, 0);
+}

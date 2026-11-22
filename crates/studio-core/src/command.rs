@@ -43,6 +43,14 @@ pub enum Command {
         new_start_ms: i64,
         new_duration_ms: i64,
     },
+    /// クリップを指定時刻で2つに分割する（Issue #32）。
+    /// 左クリップは元の id のまま短くなり、右クリップは新規 id で、
+    /// `offset_ms` が分割点まで進む。分割位置はクリップ内部
+    /// （start < at_ms < end）でのみ有効。
+    SplitClip {
+        clip_id: u64,
+        at_ms: i64,
+    },
     RemoveClip {
         clip_id: u64,
     },
@@ -164,6 +172,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     start_ms: *start_ms,
                     duration_ms: *duration_ms,
                     source: source.clone(),
+                    offset_ms: 0,
                     gain: 1.0,
                     cutout: false,
                     pitch_semitones: 0.0,
@@ -215,6 +224,44 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             clip.start_ms = *new_start_ms;
             clip.duration_ms = *new_duration_ms;
             Ok(None)
+        }
+        Command::SplitClip { clip_id, at_ms } => {
+            let (track_idx, clip_idx) = project
+                .tracks
+                .iter()
+                .enumerate()
+                .find_map(|(ti, t)| {
+                    t.clips
+                        .iter()
+                        .position(|c| c.id == *clip_id)
+                        .map(|ci| (ti, ci))
+                })
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = &project.tracks[track_idx].clips[clip_idx];
+            if *at_ms <= clip.start_ms || *at_ms >= clip.end_ms() {
+                return Err(CommandError::InvalidRange(
+                    "split point must be inside the clip",
+                ));
+            }
+            let new_id = project.alloc_id();
+            let clip = &project.tracks[track_idx].clips[clip_idx];
+            let right = Clip {
+                id: new_id,
+                name: clip.name.clone(),
+                start_ms: *at_ms,
+                duration_ms: clip.end_ms() - *at_ms,
+                source: clip.source.clone(),
+                offset_ms: clip.offset_ms + (*at_ms - clip.start_ms),
+                gain: clip.gain,
+                cutout: clip.cutout,
+                pitch_semitones: clip.pitch_semitones,
+                color: clip.color,
+            };
+            let left_duration = *at_ms - clip.start_ms;
+            let track = &mut project.tracks[track_idx];
+            track.clips[clip_idx].duration_ms = left_duration;
+            track.clips.insert(clip_idx + 1, right);
+            Ok(Some(new_id))
         }
         Command::RemoveClip { clip_id } => {
             let track = project

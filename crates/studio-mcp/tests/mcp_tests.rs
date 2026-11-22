@@ -591,3 +591,48 @@ fn undo_on_empty_history_is_a_noop_not_an_error() {
     assert_eq!(text["ok"], true);
     assert_eq!(text["undone"], false);
 }
+
+#[test]
+fn split_clip_tool_applies_via_tools_call() {
+    // Issue #32: split_clip が tools/call 経由で適用でき、ダンプで
+    // 右クリップの offset_ms が観測できる。範囲外はエラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        60,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        61,
+        "add_clip",
+        json!({"track_id": 1, "name": "take", "start_ms": 0, "duration_ms": 4000, "source": "take.wav"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        62,
+        "split_clip",
+        json!({"clip_id": 2, "at_ms": 1500}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let clips = &project.tracks[0].clips;
+    assert_eq!(clips.len(), 2);
+    let right = clips.iter().find(|c| c.start_ms == 1500).unwrap();
+    assert_eq!(right.offset_ms, 1500);
+    assert_eq!(right.duration_ms, 2500);
+    // 範囲外（クリップ端）はエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        63,
+        "split_clip",
+        json!({"clip_id": 2, "at_ms": 1500}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    let dump_after = project_dump_via_tool(&server);
+    assert_eq!(dump, dump_after, "rejected call must not change state");
+}

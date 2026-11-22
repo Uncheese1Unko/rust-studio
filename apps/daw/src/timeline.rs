@@ -414,9 +414,36 @@ pub fn waveform_peaks(samples: &[f32], channels: usize, columns: usize) -> Vec<f
     peaks
 }
 
+/// クリップ内の表示位置が素材全体のどの割合に当たるか（Issue #32）。
+/// 分割で `offset_ms` が進んだクリップは素材の途中から読むため、
+/// 波形表示もオフセット分ずらす。割合は 0.0〜1.0 に丸める。
+pub fn waveform_source_frac(
+    clip_offset_ms: i64,
+    within_clip_ms: f32,
+    source_duration_ms: i64,
+) -> f32 {
+    if source_duration_ms <= 0 {
+        return 0.0;
+    }
+    ((clip_offset_ms as f32 + within_clip_ms) / source_duration_ms as f32).clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
 mod waveform_tests {
-    use super::waveform_peaks;
+    use super::{waveform_peaks, waveform_source_frac};
+
+    #[test]
+    fn source_frac_starts_at_clip_offset() {
+        // Issue #32: 分割した右クリップ（offset 1000ms、素材 2500ms）は
+        // 素材の 0.4 の位置から波形を読み始める。
+        assert!((waveform_source_frac(1000, 0.0, 2500) - 0.4).abs() < 1e-6);
+        assert!((waveform_source_frac(1000, 500.0, 2500) - 0.6).abs() < 1e-6);
+        // オフセットなしの従来クリップは先頭から。
+        assert!((waveform_source_frac(0, 500.0, 2500) - 0.2).abs() < 1e-6);
+        // 素材の終わりを超えたら 1.0 に丸める。不正な長さは 0。
+        assert_eq!(waveform_source_frac(2000, 1000.0, 2500), 1.0);
+        assert_eq!(waveform_source_frac(0, 0.0, 0), 0.0);
+    }
 
     #[test]
     fn peaks_capture_amplitude_and_silence() {

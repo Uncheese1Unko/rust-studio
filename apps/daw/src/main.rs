@@ -558,7 +558,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
             for (idx, (key, _)) in NOTE_KEYS.iter().enumerate() {
                 model.prev_note_keys[idx] = app.keys.down.contains(key);
             }
-        } else {
+        } else if !handle_split_key(app, model) {
             handle_sampler_keys(app, model);
         }
     }
@@ -725,6 +725,49 @@ fn handle_sampler_keys(app: &App, model: &mut Model) {
             }
         }
     }
+}
+
+/// 分割（Issue #32）: S キーの押下エッジで、選択中トラックの
+/// 再生ヘッド位置にあるクリップを再生ヘッド位置で分割する。
+/// S はサンプラーのノートキーと重なるため、再生ヘッドがクリップの
+/// 内部（端でない位置）にある場合だけこちらがキーを消費し、
+/// それ以外は従来どおりサンプラー演奏に渡す（イシューの実装方針）。
+/// 戻り値: このフレームで S を消費したら true。
+fn handle_split_key(app: &App, model: &mut Model) -> bool {
+    let s_idx = NOTE_KEYS
+        .iter()
+        .position(|(k, _)| *k == Key::S)
+        .expect("S is a note key");
+    let down = app.keys.down.contains(&Key::S);
+    if !down || model.prev_note_keys[s_idx] {
+        return false;
+    }
+    let target = model
+        .selected_track
+        .and_then(|tid| model.history.project().track(tid))
+        .and_then(|t| {
+            t.clips
+                .iter()
+                .find(|c| model.playhead_ms > c.start_ms && model.playhead_ms < c.end_ms())
+        })
+        .map(|c| c.id);
+    let Some(clip_id) = target else {
+        return false;
+    };
+    // サンプラー側の発火を抑止する（prev を現在値に同期）。
+    model.prev_note_keys[s_idx] = true;
+    let cmd = Command::SplitClip {
+        clip_id,
+        at_ms: model.playhead_ms,
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            println!("after split: {}", model.history.project().dump_json());
+            save_project_file(model);
+        }
+        Err(e) => println!("split rejected: {e}"),
+    }
+    true
 }
 
 /// ピッチ操作（Issue #18）: ↑↓ キーで再生ヘッド位置の音声クリップの
@@ -1221,9 +1264,10 @@ fn view(app: &App, model: &Model, frame: Frame) {
                     let mid_y = win.h() / 2.0 - (inner_y + inner_h / 2.0);
                     let cols = rect.w as usize;
                     for col in 0..cols {
-                        let offset_ms = (col as f32 / rect.w) * clip.duration_ms as f32;
-                        let frac = offset_ms / src_ms as f32;
-                        let idx = (frac.clamp(0.0, 1.0) * (peaks.len() - 1) as f32) as usize;
+                        let within_ms = (col as f32 / rect.w) * clip.duration_ms as f32;
+                        let frac =
+                            timeline::waveform_source_frac(clip.offset_ms, within_ms, src_ms);
+                        let idx = (frac * (peaks.len() - 1) as f32) as usize;
                         let half = (peaks[idx] * inner_h / 2.0).max(0.5);
                         let nx = rect.x + col as f32 + 0.5 - win.w() / 2.0;
                         draw.line()

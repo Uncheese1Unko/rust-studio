@@ -120,8 +120,11 @@ pub fn render_mix(
                 } else {
                     base_audio
                 };
-                // クリップ内位置 → ソースのフレーム位置（線形補間）
-                let pos = (t_ms - clip.start_ms as f64) * clip_audio.sample_rate as f64 / 1000.0;
+                // クリップ内位置＋素材内オフセット（Issue #32）→
+                // ソースのフレーム位置（線形補間）
+                let pos = (t_ms - clip.start_ms as f64 + clip.offset_ms as f64)
+                    * clip_audio.sample_rate as f64
+                    / 1000.0;
                 let i0 = pos.floor() as usize;
                 let frac = (pos - i0 as f64) as f32;
                 let ch = clip_audio.channels as usize;
@@ -767,5 +770,31 @@ mod review_fix_tests {
         let mut player = Player::new(3000);
         player.seek(9999);
         assert_eq!(player.position_ms, 3000);
+    }
+
+    #[test]
+    fn render_mix_matches_before_and_after_split() {
+        // Issue #32: 分割前後でレンダリング結果が一致する（右クリップは
+        // offset_ms 分だけ素材の途中から読まれる）。
+        let (p, audio) = project_with(&[("a.wav", 0, 2000, 1.0)]);
+        let before = render_mix(&p, &audio, 0, 2000, RATE);
+        let clip_id = p.tracks[0].clips[0].id;
+        let mut split = p.clone();
+        apply(
+            &mut split,
+            &Command::SplitClip {
+                clip_id,
+                at_ms: 1000,
+            },
+        )
+        .unwrap();
+        let after = render_mix(&split, &audio, 0, 2000, RATE);
+        assert_eq!(before.len(), after.len());
+        let max_diff = before
+            .iter()
+            .zip(after.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(max_diff < 1e-6, "split must not change the mix: {max_diff}");
     }
 }

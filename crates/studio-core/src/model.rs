@@ -38,6 +38,10 @@ pub struct Clip {
     pub duration_ms: i64,
     /// 素材への参照（ファイルパスや URI）。実体はアプリ側が持つ。
     pub source: String,
+    /// 素材内の開始位置（ミリ秒、Issue #32）。0 = 素材の先頭から。
+    /// 分割した右クリップでは分割点まで進んでいる。旧形式では 0。
+    #[serde(default)]
+    pub offset_ms: i64,
     /// 音量ゲイン（1.0 = 原音）。映像クリップでは未使用でも保持する。
     pub gain: f32,
     /// 人物切り抜きの適用有無（Issue #22）。旧形式の JSON では false。

@@ -217,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド14種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド15種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -316,6 +316,18 @@ fn tool_definitions() -> Value {
                     "new_duration_ms": {"type": "integer", "minimum": 1},
                 },
                 "required": ["clip_id", "new_start_ms", "new_duration_ms"],
+            },
+        },
+        {
+            "name": "split_clip",
+            "description": "クリップを指定時刻で2つに分割する（右クリップの offset_ms が分割点まで進む）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "at_ms": {"type": "integer", "minimum": 0},
+                },
+                "required": ["clip_id", "at_ms"],
             },
         },
         {
