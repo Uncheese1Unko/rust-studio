@@ -36,6 +36,81 @@ pub fn resolve_source(dir: &Path, source: &str) -> PathBuf {
     }
 }
 
+/// メディアビンに並べる素材の種別（Issue #47）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKind {
+    Video,
+    Image,
+}
+
+/// メディアビンの素材1件（Issue #47）。名前はファイル名で、
+/// AddClip の source にはこの名前をそのまま使う（resolve_source が
+/// メディアディレクトリ内で解決する）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaItem {
+    pub name: String,
+    pub kind: MediaKind,
+}
+
+/// メディアディレクトリ内の対応ファイルを名前順に列挙する
+/// （Issue #47）。対応拡張子は resolve_source の解決対象のうち
+/// 動画（mp4 / mov）と画像（png / jpg）。音声やフレーム置き場の
+/// ようなディレクトリは含めない。ディレクトリが無ければ空。
+pub fn list_media(dir: &Path) -> Vec<MediaItem> {
+    let mut items: Vec<MediaItem> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase());
+            let kind = match ext.as_deref() {
+                Some("mp4") | Some("mov") => MediaKind::Video,
+                Some("png") | Some("jpg") => MediaKind::Image,
+                _ => continue,
+            };
+            if let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) {
+                items.push(MediaItem { name, kind });
+            }
+        }
+    }
+    items.sort_by(|a, b| a.name.cmp(&b.name));
+    items
+}
+
+/// ffprobe の format=duration 出力（秒の文字列）をミリ秒にする
+/// （Issue #47）。解釈できなければ None。
+pub fn parse_duration_output(text: &str) -> Option<i64> {
+    let secs: f64 = text.trim().parse().ok()?;
+    if secs.is_sign_negative() {
+        return None;
+    }
+    Some((secs * 1_000.0).round() as i64)
+}
+
+/// 素材ファイルの実尺を ffprobe で調べる（Issue #47）。ffprobe が
+/// 無い・失敗した・解釈できない場合は None（呼び出し側は既定の
+/// クリップ長にフォールバックする）。
+pub fn probe_duration_ms(path: &Path) -> Option<i64> {
+    let output = ProcCommand::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_duration_output(&String::from_utf8_lossy(&output.stdout))
+}
+
 /// 再生ヘッド位置にある映像クリップを返す（トラック順で最初に覆うもの）。
 /// 音声トラックは対象外。どの映像クリップの範囲にもなければ None。
 pub fn active_video_clip(project: &Project, playhead_ms: i64) -> Option<&Clip> {
@@ -416,6 +491,45 @@ mod tests {
         );
         assert_eq!(store.frame_path("demo/unknown.mp4", 0), None);
         assert_eq!(store.frame_count("demo/opening.mp4"), 40);
+    }
+}
+
+#[cfg(test)]
+mod bin_tests {
+    use super::*;
+
+    #[test]
+    fn list_media_filters_by_extension() {
+        // Issue #47（イシュー指定のテスト）: 対応拡張子（動画 mp4/mov、
+        // 画像 png/jpg）のファイルだけが名前順に残る。音声・その他・
+        // ディレクトリは含めない。
+        let dir = std::env::temp_dir().join(format!("rust-studio-test-bin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "b.mov", "a.mp4", "c.png", "d.jpg", "e.wav", "f.txt", "noext", "UP.MP4",
+        ] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        std::fs::create_dir_all(dir.join("g.mp4")).unwrap();
+        let items = list_media(&dir);
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["UP.MP4", "a.mp4", "b.mov", "c.png", "d.jpg"]);
+        assert_eq!(items[1].kind, MediaKind::Video);
+        assert_eq!(items[3].kind, MediaKind::Image);
+        // 存在しないディレクトリは空
+        assert!(list_media(&dir.join("missing")).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn parse_duration_output_to_ms() {
+        // Issue #47: ffprobe の format=duration 出力（秒）を ms にする。
+        assert_eq!(parse_duration_output("6.000000\n"), Some(6_000));
+        assert_eq!(parse_duration_output("2.5"), Some(2_500));
+        assert_eq!(parse_duration_output("0.04"), Some(40));
+        assert_eq!(parse_duration_output("N/A"), None);
+        assert_eq!(parse_duration_output(""), None);
     }
 }
 

@@ -58,6 +58,11 @@ struct Model {
     // Issue #46: タイムラインの表示スケール（倍率と左端オフセット）。
     // 表示状態であり、プロジェクトには保存しない。
     view_scale: timeline::ViewScale,
+    // Issue #47: メディアビンの素材一覧と、ダブルクリック判定・
+    // 再読み込みキーの前回状態。
+    media_items: Vec<media::MediaItem>,
+    last_bin_click: Option<(f32, usize)>,
+    bin_reload_key_down: bool,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -66,6 +71,46 @@ const PREVIEW_Y: f32 = 150.0;
 const PREVIEW_W: f32 = 440.0;
 const PREVIEW_H: f32 = 248.0;
 const PREVIEW_ID: &str = "preview";
+
+/// メディアビンのパネル領域（左上原点ピクセル、Issue #47）。
+/// 要素識別子は `media-bin`。パレットパネル（#59）の下に置くため、
+/// 上端はトラック数から決まる（palette::panel_top と同じ式）。
+const MEDIA_BIN_ID: &str = "media-bin";
+const BIN_X: f32 = 8.0;
+const BIN_W: f32 = 460.0;
+const BIN_HEADER_H: f32 = 24.0;
+const BIN_ROW_H: f32 = 20.0;
+const BIN_GAP_PX: f32 = 12.0;
+
+/// ビンのパネル上端 y（パレットパネルの下）。
+fn bin_top(model: &Model) -> f32 {
+    palette::panel_top(model.history.project().tracks.len()) + palette::panel_height() + BIN_GAP_PX
+}
+
+/// ビンのパネル高さ（ヘッダー＋行数＋下余白）。
+fn bin_panel_h(item_count: usize) -> f32 {
+    BIN_HEADER_H + item_count as f32 * BIN_ROW_H + 8.0
+}
+
+/// 座標がビンの何行目か（ヘッダー・パネル外は None）。
+fn bin_row_at(model: &Model, lx: f32, ly: f32) -> Option<usize> {
+    let top = bin_top(model);
+    if lx < BIN_X || lx >= BIN_X + BIN_W || ly < top + BIN_HEADER_H {
+        return None;
+    }
+    let idx = ((ly - top - BIN_HEADER_H) / BIN_ROW_H) as usize;
+    if idx < model.media_items.len() {
+        Some(idx)
+    } else {
+        None
+    }
+}
+
+/// 座標がビンのヘッダー（再読み込み領域）かどうか。
+fn bin_header_at(model: &Model, lx: f32, ly: f32) -> bool {
+    let top = bin_top(model);
+    (BIN_X..BIN_X + BIN_W).contains(&lx) && (top..top + BIN_HEADER_H).contains(&ly)
+}
 
 fn main() {
     nannou::app(model).event(event).update(update).run();
@@ -186,11 +231,21 @@ fn model(app: &App) -> Model {
     println!("video-editor (issue #8: timeline UI)");
     println!("{}", project.dump_json());
     println!(
-        "elements: {}, {PREVIEW_ID}",
+        "elements: {}, {PREVIEW_ID}, {MEDIA_BIN_ID}",
         timeline::element_ids(&project).join(", ")
     );
     // メディア層（Issue #10）: フレーム列を準備し、テクスチャを読み込む。
     let frames = media::prepare_media(&project);
+    // メディアビン（Issue #47）: 素材一覧を読み、観測用に名前を出す。
+    let media_items = media::list_media(&media::media_dir());
+    println!(
+        "media bin: {}",
+        media_items
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let window = app
         .new_window()
         .size(960, 540)
@@ -226,6 +281,9 @@ fn model(app: &App) -> Model {
         edit_keys: edit::EditKeyTracker::new(),
         clipboard: None,
         view_scale: timeline::ViewScale::default(),
+        media_items,
+        last_bin_click: None,
+        bin_reload_key_down: false,
     }
 }
 
@@ -278,6 +336,73 @@ fn watch_project_file(app: &App, model: &mut Model) {
         Err(e) => {
             println!("warning: project reload failed: {e}");
         }
+    }
+}
+
+/// メディアビンの再読み込み（Issue #47）。素材の増減を再起動なしで
+/// 反映する。R キーとパネルヘッダーのクリックから呼ぶ。
+fn reload_media_bin(model: &mut Model) {
+    model.media_items = media::list_media(&media::media_dir());
+    model.last_bin_click = None;
+    println!(
+        "media bin: {}",
+        model
+            .media_items
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+}
+
+/// ビンの素材を選択中トラックの再生ヘッド位置に配置する
+/// （Issue #47）。配置は AddClip コマンド経由のみ。長さは動画なら
+/// ffprobe の実尺、判別できない場合と画像は既存の新規クリップ長。
+fn place_media_item(app: &App, model: &mut Model, idx: usize) {
+    let Some(item) = model.media_items.get(idx).cloned() else {
+        return;
+    };
+    let Some(track_id) = model.selected_track else {
+        println!("media bin: no track selected");
+        return;
+    };
+    let duration_ms = match item.kind {
+        media::MediaKind::Video => {
+            media::probe_duration_ms(&media::resolve_source(&media::media_dir(), &item.name))
+                .filter(|d| *d > 0)
+                .unwrap_or(edit::NEW_CLIP_DURATION_MS)
+        }
+        media::MediaKind::Image => edit::NEW_CLIP_DURATION_MS,
+    };
+    let name = std::path::Path::new(&item.name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| item.name.clone());
+    let cmd = Command::AddClip {
+        track_id,
+        name,
+        start_ms: model.playhead_ms,
+        duration_ms,
+        source: item.name.clone(),
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            println!(
+                "media bin placed: {} at {}ms (duration {}ms)",
+                item.name, model.playhead_ms, duration_ms
+            );
+            // 新しいクリップの素材もプレビューできるよう追従させる
+            // （apply_placement と同じ後処理）。
+            model.frames = media::prepare_media(model.history.project());
+            model.textures = load_textures(app, model.history.project(), &model.frames);
+            model.last_preview = None;
+            println!(
+                "project after edit: {}",
+                model.history.project().dump_json()
+            );
+            save_project_file(model);
+        }
+        Err(e) => println!("media bin placement rejected: {e}"),
     }
 }
 
@@ -391,11 +516,18 @@ fn update(app: &App, model: &mut Model, update: Update) {
             app.keys.down.contains(&Key::C),
             app.keys.down.contains(&Key::V),
         );
+        model.bin_reload_key_down = app.keys.down.contains(&Key::R);
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
         handle_edit_keys(app, model);
         handle_cutout(app, model);
+        // メディアビンの再読み込み（Issue #47）: R キーの押下エッジ。
+        let r_down = app.keys.down.contains(&Key::R);
+        if r_down && !model.bin_reload_key_down {
+            reload_media_bin(model);
+        }
+        model.bin_reload_key_down = r_down;
     }
     watch_project_file(app, model);
 
@@ -761,6 +893,29 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
 
     if left_down && !model.prev_left_down {
+        // メディアビン（Issue #47）: ヘッダーのクリックで再読み込み、
+        // 行のダブルクリックで選択中トラックの再生ヘッド位置に配置。
+        if bin_header_at(model, lx, ly) {
+            reload_media_bin(model);
+            model.prev_left_down = left_down;
+            return;
+        }
+        if let Some(idx) = bin_row_at(model, lx, ly) {
+            let now = app.time;
+            let is_double =
+                matches!(model.last_bin_click, Some((t, i)) if i == idx && now - t < 0.6);
+            if is_double {
+                model.last_bin_click = None;
+                place_media_item(app, model, idx);
+            } else {
+                model.last_bin_click = Some((now, idx));
+                if let Some(item) = model.media_items.get(idx) {
+                    println!("media bin selected: {}", item.name);
+                }
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
         // 色選択パネル（Issue #59）: トラック追加エリアの下のパネル。
         // 他の領域とは重ならない。
         if let Some((target, color)) =
@@ -1106,6 +1261,32 @@ fn view(app: &App, model: &Model, frame: Frame) {
                         .color(rgb(r, g, b));
                 }
             }
+        }
+    }
+
+    // メディアビン（media-bin、Issue #47）: パレットパネルの下。
+    // ヘッダー＋素材名の行。ダブルクリックで配置、ヘッダーの
+    // クリック（または R キー）で再読み込み。
+    {
+        let top = bin_top(model);
+        let h = bin_panel_h(model.media_items.len());
+        let (bx, by) = rect_center(win, BIN_X, top, BIN_W, h);
+        draw.rect()
+            .x_y(bx, by)
+            .w_h(BIN_W, h)
+            .color(rgb(0.13, 0.13, 0.16));
+        let (hx, hy) = rect_center(win, BIN_X + 8.0, top, 300.0, BIN_HEADER_H);
+        draw.text("MEDIA BIN (R: RELOAD)")
+            .x_y(hx, hy)
+            .font_size(10)
+            .color(rgb(0.65, 0.65, 0.70));
+        for (i, item) in model.media_items.iter().enumerate() {
+            let row_y = top + BIN_HEADER_H + i as f32 * BIN_ROW_H;
+            let (tx, ty) = rect_center(win, BIN_X + 8.0, row_y, 300.0, BIN_ROW_H);
+            draw.text(&item.name)
+                .x_y(tx, ty)
+                .font_size(11)
+                .color(rgb(0.85, 0.85, 0.88));
         }
     }
 
