@@ -1162,7 +1162,18 @@ fn handle_pointer(app: &App, model: &mut Model) {
 
     if left_down {
         if let Some(drag) = &model.drag {
-            let cmd = drag.command_for(pointer_ms);
+            // スナップ（Issue #37）: しきい値は画面の 8px を ms に換算し、
+            // Alt 押下中は無効化する。
+            let threshold_ms =
+                (edit::SNAP_THRESHOLD_PX / timeline::px_per_ms(win.w())).round() as i64;
+            let ctx = edit::SnapContext::from_project(
+                model.history.project(),
+                drag.clip_id,
+                model.playhead_ms,
+                threshold_ms,
+            );
+            let alt_down = app.keys.down.contains(&Key::LAlt) || app.keys.down.contains(&Key::RAlt);
+            let cmd = drag.snapped_command_for(pointer_ms, &ctx, !alt_down);
             if model.last_drag_cmd.as_ref() != Some(&cmd) {
                 match model.history.apply_transient(&cmd) {
                     Ok(_) => {

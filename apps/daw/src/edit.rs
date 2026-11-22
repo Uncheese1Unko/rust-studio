@@ -477,6 +477,130 @@ impl Drag {
             },
         }
     }
+
+    /// スナップを適用した候補コマンド（Issue #37）。移動は開始位置、
+    /// トリムは動かしている端が吸着する。フェードは対象外。
+    /// `snap_enabled` が false（Alt 押下中）のときは候補がそのまま返る。
+    pub fn snapped_command_for(
+        &self,
+        pointer_ms: i64,
+        ctx: &SnapContext,
+        snap_enabled: bool,
+    ) -> Command {
+        let raw = self.command_for(pointer_ms);
+        if !snap_enabled {
+            return raw;
+        }
+        match self.kind {
+            DragKind::Move => match raw {
+                Command::MoveClip {
+                    clip_id,
+                    new_start_ms,
+                } => Command::MoveClip {
+                    clip_id,
+                    new_start_ms: snap_target(new_start_ms, ctx),
+                },
+                other => other,
+            },
+            DragKind::TrimLeft => match raw {
+                Command::TrimClip {
+                    clip_id,
+                    new_start_ms,
+                    ..
+                } => {
+                    let snapped = snap_target(new_start_ms, ctx);
+                    Command::TrimClip {
+                        clip_id,
+                        new_start_ms: snapped,
+                        new_duration_ms: self.orig_start_ms + self.orig_duration_ms - snapped,
+                    }
+                }
+                other => other,
+            },
+            DragKind::TrimRight => match raw {
+                Command::TrimClip {
+                    clip_id,
+                    new_start_ms,
+                    new_duration_ms,
+                } => {
+                    let snapped_end = snap_target(new_start_ms + new_duration_ms, ctx);
+                    Command::TrimClip {
+                        clip_id,
+                        new_start_ms,
+                        new_duration_ms: snapped_end - new_start_ms,
+                    }
+                }
+                other => other,
+            },
+            _ => raw,
+        }
+    }
+}
+
+/// スナップのしきい値（画面上のピクセル、Issue #37）。
+pub const SNAP_THRESHOLD_PX: f32 = 8.0;
+
+/// スナップの文脈（Issue #37）: 吸着先の候補と、しきい値（ms）。
+/// 候補は再生ヘッド、他クリップの端（開始・終了）、小節線（BPM から
+/// 計算）。純粋関数 `snap_target` の入力として edit.rs 内で完結させる。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapContext {
+    pub playhead_ms: i64,
+    pub edges: Vec<i64>,
+    pub bpm: f32,
+    pub threshold_ms: i64,
+}
+
+impl SnapContext {
+    /// プロジェクトから文脈を作る。`exclude_clip_id`（ドラッグ中の
+    /// クリップ）の端は候補に入れない。
+    pub fn from_project(
+        project: &Project,
+        exclude_clip_id: u64,
+        playhead_ms: i64,
+        threshold_ms: i64,
+    ) -> SnapContext {
+        let mut edges = Vec::new();
+        for track in &project.tracks {
+            for clip in &track.clips {
+                if clip.id != exclude_clip_id {
+                    edges.push(clip.start_ms);
+                    edges.push(clip.end_ms());
+                }
+            }
+        }
+        SnapContext {
+            playhead_ms,
+            edges,
+            bpm: project.bpm,
+            threshold_ms,
+        }
+    }
+}
+
+/// 位置を最も近い吸着先へ寄せる（Issue #37）。しきい値内に対象が
+/// 無ければ元の位置を返す。優先順は 再生ヘッド → クリップ端 →
+/// 小節線で、同距離ではこの順に選ぶ。
+pub fn snap_target(target_ms: i64, ctx: &SnapContext) -> i64 {
+    // (位置, 優先順位) 優先順位は小さいほど優先。
+    let mut candidates: Vec<(i64, u8)> = vec![(ctx.playhead_ms, 0)];
+    candidates.extend(ctx.edges.iter().map(|&e| (e, 1)));
+    let bar_ms = crate::timeline::bar_duration_ms(ctx.bpm);
+    if bar_ms > 0.0 {
+        let k = (target_ms as f64 / bar_ms).floor() as i64;
+        for idx in [k, k + 1] {
+            candidates.push((crate::timeline::bar_start_ms(ctx.bpm, idx), 2));
+        }
+    }
+    let best = candidates
+        .iter()
+        .map(|&(pos, pri)| ((target_ms - pos).abs(), pri, pos))
+        .filter(|&(dist, _, _)| dist <= ctx.threshold_ms)
+        .min_by_key(|&(dist, pri, _)| (dist, pri));
+    match best {
+        Some((_, _, pos)) => pos,
+        None => target_ms,
+    }
 }
 
 /// ダブルクリック判定。前回のクリック時刻と位置を保持する。
@@ -1285,6 +1409,112 @@ mod tests {
             clip_id: 42,
             semitones: 3.0
         }));
+    }
+
+    #[test]
+    fn snap_picks_nearest_bar_line_within_threshold() {
+        // Issue #37: しきい値内では小節線に吸着し、しきい値外では
+        // 元の位置のまま。bpm=120 → 小節は 2000ms ごと、しきい値 95ms。
+        let ctx = SnapContext {
+            playhead_ms: -100_000,
+            edges: vec![],
+            bpm: 120.0,
+            threshold_ms: 95,
+        };
+        assert_eq!(snap_target(1_950, &ctx), 2_000);
+        assert_eq!(snap_target(2_050, &ctx), 2_000);
+        assert_eq!(snap_target(1_850, &ctx), 1_850);
+        assert_eq!(snap_target(90, &ctx), 0);
+        assert_eq!(snap_target(100, &ctx), 100);
+    }
+
+    #[test]
+    fn snap_prefers_playhead_then_clip_edge_on_ties() {
+        // Issue #37: 優先順は 再生ヘッド → クリップ端 → 小節線。
+        // 同距離ではこの順で選ぶ。
+        let ctx = SnapContext {
+            playhead_ms: 1_000,
+            edges: vec![1_020],
+            bpm: 120.0,
+            threshold_ms: 95,
+        };
+        // ヘッド（距離10）と端（距離10）の同点ではヘッド
+        assert_eq!(snap_target(1_010, &ctx), 1_000);
+        // 端の方が近ければ端
+        assert_eq!(snap_target(1_015, &ctx), 1_020);
+        // 端（1990）と小節線（2000）の同点では端
+        let ctx = SnapContext {
+            playhead_ms: -100_000,
+            edges: vec![1_990],
+            bpm: 120.0,
+            threshold_ms: 95,
+        };
+        assert_eq!(snap_target(1_995, &ctx), 1_990);
+    }
+
+    #[test]
+    fn drag_move_and_trim_snap_through_context() {
+        // Issue #37: 移動は開始位置、トリムは動かしている端が吸着する。
+        // Alt で無効化した場合は候補がそのまま返る。
+        let p = sample_project();
+        let id = clip_id(&p);
+        let ctx = SnapContext {
+            playhead_ms: 500,
+            edges: vec![],
+            bpm: 120.0,
+            threshold_ms: 95,
+        };
+        // 移動: raw 1980 → 小節線 2000 に吸着
+        let drag = Drag::begin(&p, &HitTarget::ClipBody { clip_id: id }, 1_000).unwrap();
+        assert_eq!(
+            drag.snapped_command_for(1_980, &ctx, true),
+            Command::MoveClip {
+                clip_id: id,
+                new_start_ms: 2_000
+            }
+        );
+        // 無効化時は raw のまま
+        assert_eq!(
+            drag.snapped_command_for(1_980, &ctx, false),
+            Command::MoveClip {
+                clip_id: id,
+                new_start_ms: 1_980
+            }
+        );
+        // 左トリム: raw 520 → 再生ヘッド 500 に吸着し、終端は不変
+        let drag = Drag::begin(&p, &HitTarget::ClipLeftEdge { clip_id: id }, 1_000).unwrap();
+        assert_eq!(
+            drag.snapped_command_for(520, &ctx, true),
+            Command::TrimClip {
+                clip_id: id,
+                new_start_ms: 500,
+                new_duration_ms: 2_500
+            }
+        );
+        // 右トリム: raw 終端 4950 → 他クリップの端 5000 に吸着
+        let mut p2 = sample_project();
+        let track = p2.tracks[0].id;
+        apply(
+            &mut p2,
+            &Command::AddClip {
+                track_id: track,
+                name: "next".into(),
+                start_ms: 5_000,
+                duration_ms: 1_000,
+                source: "demo/next.mp4".into(),
+            },
+        )
+        .unwrap();
+        let ctx2 = SnapContext::from_project(&p2, id, -100_000, 95);
+        let drag = Drag::begin(&p2, &HitTarget::ClipRightEdge { clip_id: id }, 3_000).unwrap();
+        assert_eq!(
+            drag.snapped_command_for(4_950, &ctx2, true),
+            Command::TrimClip {
+                clip_id: id,
+                new_start_ms: 1_000,
+                new_duration_ms: 4_000
+            }
+        );
     }
 
     #[test]
