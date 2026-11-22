@@ -69,3 +69,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #63 動画編集の複製・貼り付けで offset_ms を引き継げる | [issue-0063-duplicate-clip-offset.md](issue-0063-duplicate-clip-offset.md) |
 | 2026-11-22 | #64 切り抜きの背景フレーム選択が offset_ms を加味する | [issue-0064-cutout-background-offset.md](issue-0064-cutout-background-offset.md) |
 | 2026-11-22 | #65 バグ: 動画編集で Escape を押すとアプリが終了する | [issue-0065-video-editor-escape-quit.md](issue-0065-video-editor-escape-quit.md) |
+| 2026-11-22 | #72 Vital の音色でメロディーを鳴らせる（CLAP ヘッドレス連携） | [issue-0072-vital-plugin-playback.md](issue-0072-vital-plugin-playback.md) |
