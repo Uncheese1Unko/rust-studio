@@ -937,17 +937,15 @@ fn set_clip_transition_validates_and_round_trips() {
         );
     }
     // none に長さを持たせることはできない（解除は 0 のみ）
-    assert!(
-        apply(
-            &mut p,
-            &Command::SetClipTransition {
-                clip_id,
-                kind: TransitionKind::None,
-                duration_ms: 500,
-            },
-        )
-        .is_err()
-    );
+    assert!(apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id,
+            kind: TransitionKind::None,
+            duration_ms: 500,
+        },
+    )
+    .is_err());
     assert_eq!(p.dump_json(), before, "rejected calls keep state");
 
     // 解除（none + 0）で属性が消える
@@ -966,17 +964,15 @@ fn set_clip_transition_validates_and_round_trips() {
 
     // 存在しないクリップはエラーで状態不変
     let before = p.dump_json();
-    assert!(
-        apply(
-            &mut p,
-            &Command::SetClipTransition {
-                clip_id: 9999,
-                kind: TransitionKind::CrossDissolve,
-                duration_ms: 500,
-            },
-        )
-        .is_err()
-    );
+    assert!(apply(
+        &mut p,
+        &Command::SetClipTransition {
+            clip_id: 9999,
+            kind: TransitionKind::CrossDissolve,
+            duration_ms: 500,
+        },
+    )
+    .is_err());
     assert_eq!(p.dump_json(), before);
 }
 

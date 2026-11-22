@@ -469,10 +469,7 @@ fn toggle_transition(model: &mut Model) {
     };
     match model.history.apply(&cmd) {
         Ok(_) => {
-            println!(
-                "after transition: {}",
-                model.history.project().dump_json()
-            );
+            println!("after transition: {}", model.history.project().dump_json());
             save_project_file(model);
         }
         Err(e) => println!("transition rejected: {e}"),
@@ -1596,12 +1593,10 @@ fn view(app: &App, model: &Model, frame: Frame) {
             if clip.transition_in_kind == studio_core::TransitionKind::CrossDissolve
                 && clip.transition_in_ms > 0
             {
-                let w = (clip.transition_in_ms as f32
-                    * model.view_scale.px_per_ms(win.w()))
-                .min(rect.w);
+                let w = (clip.transition_in_ms as f32 * model.view_scale.px_per_ms(win.w()))
+                    .min(rect.w);
                 if w > 0.5 {
-                    let (sx, sy) =
-                        rect_center(win, rect.x, rect.y + 4.0, w, rect.h - 8.0);
+                    let (sx, sy) = rect_center(win, rect.x, rect.y + 4.0, w, rect.h - 8.0);
                     draw.rect()
                         .x_y(sx, sy)
                         .w_h(w, rect.h - 8.0)
