@@ -366,6 +366,72 @@ pub enum HitTarget {
     Outside,
 }
 
+/// ドロップで取り込める素材の種別（Issue #53）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropKind {
+    Video,
+    Image,
+    Audio,
+}
+
+/// ドロップされたパスの種別（Issue #53）。対応拡張子は media.rs の
+/// 利用対象（動画 mp4/mov、画像 png/jpg、音声 wav）。大文字小文字は
+/// 問わない。対応外は None。
+pub fn drop_kind(path: &std::path::Path) -> Option<DropKind> {
+    let ext = path.extension()?.to_string_lossy().to_lowercase();
+    match ext.as_str() {
+        "mp4" | "mov" => Some(DropKind::Video),
+        "png" | "jpg" => Some(DropKind::Image),
+        "wav" => Some(DropKind::Audio),
+        _ => None,
+    }
+}
+
+/// ドロップしたファイルの配置コマンド（Issue #53）。
+/// #30 の調査でドロップ座標は取得できないことが確定したため、
+/// 配置先は「素材種別に合うトラック（選択中トラックを優先、
+/// 合わなければその種別の先頭トラック）＋再生ヘッド位置」とする
+/// （DAW #42 の代替規則を、2種のトラックを持つ動画編集に合わせて
+/// 種別マッチまで広げた）。合うトラックが無い・長さが 0 なら
+/// 配置できない（None）。
+pub fn drop_placement_command(
+    project: &Project,
+    selected_track: Option<u64>,
+    playhead_ms: i64,
+    source: &str,
+    duration_ms: i64,
+    kind: DropKind,
+) -> Option<Command> {
+    if duration_ms <= 0 {
+        return None;
+    }
+    let want = match kind {
+        DropKind::Video | DropKind::Image => TrackKind::Video,
+        DropKind::Audio => TrackKind::Audio,
+    };
+    let track_id = selected_track
+        .filter(|id| project.tracks.iter().any(|t| t.id == *id && t.kind == want))
+        .or_else(|| {
+            project
+                .tracks
+                .iter()
+                .find(|t| t.kind == want)
+                .map(|t| t.id)
+        })?;
+    let name = std::path::Path::new(source)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "clip".to_string());
+    Some(Command::AddClip {
+        track_id,
+        name,
+        start_ms: playhead_ms.max(0),
+        duration_ms,
+        source: source.to_string(),
+    })
+}
+
 /// x ピクセルを時刻（ms）に変換する。ヘッダーより左では負になる。
 pub fn x_to_ms(x: f32, view_width_px: f32, scale: &timeline::ViewScale) -> i64 {
     scale.x_to_ms(x, view_width_px)
@@ -1611,6 +1677,100 @@ mod tests {
             hit_test(&p2, 960.0, &scrolled, 120.0, 48.0),
             HitTarget::Empty { track_index: 0 }
         );
+    }
+
+    // Issue #53: ドロップ取り込みの配置規則。
+    #[test]
+    fn drop_position_maps_to_track_and_time() {
+        // #30 の調査でドロップ座標は取得できないため、配置先は
+        // 「素材種別に合うトラック（選択中を優先）＋再生ヘッド位置」。
+        let mut p = Project::new("t");
+        let v1 = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "V1".into(),
+                kind: TrackKind::Video,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let a1 = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        // 映像ファイル: A1 を選択中でも映像トラックへ
+        let cmd = drop_placement_command(
+            &p,
+            Some(a1),
+            1_500,
+            "/tmp/clip.mp4",
+            2_000,
+            DropKind::Video,
+        )
+        .unwrap();
+        match cmd {
+            Command::AddClip {
+                track_id,
+                name,
+                start_ms,
+                duration_ms,
+                source,
+            } => {
+                assert_eq!(track_id, v1);
+                assert_eq!(name, "clip");
+                assert_eq!(start_ms, 1_500);
+                assert_eq!(duration_ms, 2_000);
+                assert_eq!(source, "/tmp/clip.mp4");
+            }
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        // 音声ファイル: 選択中の A1 へ
+        let cmd =
+            drop_placement_command(&p, Some(a1), 500, "/x.wav", 700, DropKind::Audio).unwrap();
+        match cmd {
+            Command::AddClip { track_id, .. } => assert_eq!(track_id, a1),
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        // 再生ヘッドが負なら 0 に丸める
+        let cmd =
+            drop_placement_command(&p, Some(v1), -50, "/x.mp4", 700, DropKind::Video).unwrap();
+        match cmd {
+            Command::AddClip { start_ms, .. } => assert_eq!(start_ms, 0),
+            other => panic!("expected AddClip, got {other:?}"),
+        }
+        // 合う種別のトラックが無い・長さ 0 は配置できない
+        let mut audio_only = Project::new("t");
+        apply(
+            &mut audio_only,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap();
+        assert!(
+            drop_placement_command(&audio_only, None, 0, "/x.mp4", 500, DropKind::Video).is_none()
+        );
+        assert!(drop_placement_command(&p, None, 0, "/x.mp4", 0, DropKind::Video).is_none());
+    }
+
+    #[test]
+    fn drop_kind_classifies_by_extension() {
+        // Issue #53: 対応拡張子は media.rs の利用対象（動画 mp4/mov、
+        // 画像 png/jpg、音声 wav）。大文字小文字は問わない。
+        use std::path::Path;
+        assert_eq!(drop_kind(Path::new("/a/b.mp4")), Some(DropKind::Video));
+        assert_eq!(drop_kind(Path::new("/a/b.MOV")), Some(DropKind::Video));
+        assert_eq!(drop_kind(Path::new("/a/b.png")), Some(DropKind::Image));
+        assert_eq!(drop_kind(Path::new("/a/b.jpg")), Some(DropKind::Image));
+        assert_eq!(drop_kind(Path::new("/a/b.wav")), Some(DropKind::Audio));
+        assert_eq!(drop_kind(Path::new("/a/b.txt")), None);
+        assert_eq!(drop_kind(Path::new("/a/b")), None);
     }
 
     // Issue #45: スナップ（移動・トリムの吸着）。

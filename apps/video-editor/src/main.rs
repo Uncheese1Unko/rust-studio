@@ -39,6 +39,8 @@ struct Model {
     // Issue #50: タイトル編集セッションと T キーの前回状態。
     title_input: Option<edit::TitleSession>,
     prev_t_down: bool,
+    // Issue #53: 直近のドロップ時刻（複数ファイルのバースト判定）。
+    last_drop_at: Option<f32>,
     // Issue #10: プレビュー再生の状態。
     frames: media::FrameStore,
     textures: std::collections::HashMap<std::path::PathBuf, wgpu::Texture>,
@@ -272,6 +274,7 @@ fn model(app: &App) -> Model {
         rename: None,
         title_input: None,
         prev_t_down: false,
+        last_drop_at: None,
         selected_track: initial_selected,
         frames,
         textures,
@@ -341,6 +344,76 @@ fn watch_project_file(app: &App, model: &mut Model) {
         Err(e) => {
             println!("warning: project reload failed: {e}");
         }
+    }
+}
+
+/// ファイルドロップの取り込み（Issue #53）。配置先は素材種別に合う
+/// トラック＋再生ヘッド位置（#30 調査: ドロップ座標は取得できない。
+/// DAW #42 の代替規則を種別マッチまで広げた）。対応外・配置不能は
+/// 何もせず理由をログに出す。複数ファイルのドロップは先頭1件だけ
+/// 処理し、残りはログに出す（1秒以内の連続ドロップを同じバースト
+/// とみなす。DAW #42 と同じヒューリスティクス）。
+fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
+    let now = app.time;
+    if let Some(last) = model.last_drop_at {
+        if now - last < 1.0 {
+            println!(
+                "drop skipped: {} (only the first file of a drop is imported)",
+                path.display()
+            );
+            return;
+        }
+    }
+    model.last_drop_at = Some(now);
+    let kind = match edit::drop_kind(path) {
+        Some(kind) => kind,
+        None => {
+            println!(
+                "drop rejected: {} (unsupported file type; video mp4/mov, image png/jpg, audio wav)",
+                path.display()
+            );
+            return;
+        }
+    };
+    let duration_ms = match kind {
+        edit::DropKind::Image => edit::NEW_CLIP_DURATION_MS,
+        _ => media::probe_duration_ms(path)
+            .filter(|d| *d > 0)
+            .unwrap_or(edit::NEW_CLIP_DURATION_MS),
+    };
+    let source = path.to_string_lossy().into_owned();
+    let cmd = match edit::drop_placement_command(
+        model.history.project(),
+        model.selected_track,
+        model.playhead_ms,
+        &source,
+        duration_ms,
+        kind,
+    ) {
+        Some(cmd) => cmd,
+        None => {
+            println!(
+                "drop rejected: {} (no matching track to place on)",
+                path.display()
+            );
+            return;
+        }
+    };
+    match model.history.apply(&cmd) {
+        Ok(_) => {
+            println!("drop imported: {} at {}ms", source, model.playhead_ms);
+            // 配置した素材もプレビューできるよう追従させる
+            // （メディアビンの配置と同じ後処理）。
+            model.frames = media::prepare_media(model.history.project());
+            model.textures = load_textures(app, model.history.project(), &model.frames);
+            model.last_preview = None;
+            println!(
+                "project after edit: {}",
+                model.history.project().dump_json()
+            );
+            save_project_file(model);
+        }
+        Err(e) => println!("drop rejected: {} ({e})", path.display()),
     }
 }
 
@@ -467,6 +540,15 @@ fn event(app: &App, model: &mut Model, event: Event) {
     } = event
     {
         mouse_wheel(app, model, delta);
+        return;
+    }
+    // ファイルドロップ（Issue #53）も編集状態によらず先に捌く。
+    if let Event::WindowEvent {
+        simple: Some(WindowEvent::DroppedFile(path)),
+        ..
+    } = &event
+    {
+        handle_drop(app, model, path);
         return;
     }
     if model.rename.is_none() && model.title_input.is_none() {

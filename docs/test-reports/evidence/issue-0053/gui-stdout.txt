@@ -1,0 +1,215 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue53/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue53",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 3
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.track.2, preview, media-bin
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 0
+drop imported: /tmp/drop53/movie.mp4 at 0ms
+media prepared: /tmp/drop53/movie.mp4 -> 30 frames
+preview textures loaded: 30
+project after edit: {
+  "name": "issue53",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "movie",
+          "start_ms": 0,
+          "duration_ms": 3000,
+          "source": "/tmp/drop53/movie.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": ""
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 4
+}
+preview: source=/tmp/drop53/movie.mp4 playhead=1222 source_time=1222 frame=12
+preview: source=/tmp/drop53/movie.mp4 playhead=1303 source_time=1303 frame=13
+preview: source=/tmp/drop53/movie.mp4 playhead=1404 source_time=1404 frame=14
+preview: source=/tmp/drop53/movie.mp4 playhead=1514 source_time=1514 frame=15
+preview: source=/tmp/drop53/movie.mp4 playhead=1609 source_time=1609 frame=16
+preview: source=/tmp/drop53/movie.mp4 playhead=1730 source_time=1730 frame=17
+preview: source=/tmp/drop53/movie.mp4 playhead=1805 source_time=1805 frame=18
+preview: source=/tmp/drop53/movie.mp4 playhead=1910 source_time=1910 frame=19
+preview: source=/tmp/drop53/movie.mp4 playhead=2003 source_time=2003 frame=20
+preview: source=/tmp/drop53/movie.mp4 playhead=2115 source_time=2115 frame=21
+preview: source=/tmp/drop53/movie.mp4 playhead=2217 source_time=2217 frame=22
+preview: source=/tmp/drop53/movie.mp4 playhead=2326 source_time=2326 frame=23
+preview: source=/tmp/drop53/movie.mp4 playhead=2470 source_time=2470 frame=24
+preview: source=/tmp/drop53/movie.mp4 playhead=2507 source_time=2507 frame=25
+preview: source=/tmp/drop53/movie.mp4 playhead=2627 source_time=2627 frame=26
+preview: source=/tmp/drop53/movie.mp4 playhead=2768 source_time=2768 frame=27
+preview: source=/tmp/drop53/movie.mp4 playhead=2870 source_time=2870 frame=28
+preview: source=/tmp/drop53/movie.mp4 playhead=2911 source_time=2911 frame=29
+preview: source=/tmp/drop53/movie.mp4 playhead=59 source_time=59 frame=0
+preview: source=/tmp/drop53/movie.mp4 playhead=100 source_time=100 frame=1
+preview: source=/tmp/drop53/movie.mp4 playhead=257 source_time=257 frame=2
+preview: source=/tmp/drop53/movie.mp4 playhead=302 source_time=302 frame=3
+preview: source=/tmp/drop53/movie.mp4 playhead=465 source_time=465 frame=4
+preview: source=/tmp/drop53/movie.mp4 playhead=564 source_time=564 frame=5
+preview: source=/tmp/drop53/movie.mp4 playhead=655 source_time=655 frame=6
+preview: source=/tmp/drop53/movie.mp4 playhead=756 source_time=756 frame=7
+preview: source=/tmp/drop53/movie.mp4 playhead=856 source_time=856 frame=8
+preview: source=/tmp/drop53/movie.mp4 playhead=954 source_time=954 frame=9
+preview: source=/tmp/drop53/movie.mp4 playhead=1057 source_time=1057 frame=10
+preview: source=/tmp/drop53/movie.mp4 playhead=1148 source_time=1148 frame=11
+preview: source=/tmp/drop53/movie.mp4 playhead=1261 source_time=1261 frame=12
+preview: source=/tmp/drop53/movie.mp4 playhead=1360 source_time=1360 frame=13
+preview: source=/tmp/drop53/movie.mp4 playhead=1448 source_time=1448 frame=14
+preview: source=/tmp/drop53/movie.mp4 playhead=1540 source_time=1540 frame=15
+preview: source=/tmp/drop53/movie.mp4 playhead=1646 source_time=1646 frame=16
+preview: source=/tmp/drop53/movie.mp4 playhead=1750 source_time=1750 frame=17
+preview: source=/tmp/drop53/movie.mp4 playhead=1851 source_time=1851 frame=18
+preview: source=/tmp/drop53/movie.mp4 playhead=1943 source_time=1943 frame=19
+preview: source=/tmp/drop53/movie.mp4 playhead=2038 source_time=2038 frame=20
+preview: source=/tmp/drop53/movie.mp4 playhead=2134 source_time=2134 frame=21
+preview: source=/tmp/drop53/movie.mp4 playhead=2238 source_time=2238 frame=22
+preview: source=/tmp/drop53/movie.mp4 playhead=2353 source_time=2353 frame=23
+preview: source=/tmp/drop53/movie.mp4 playhead=2459 source_time=2459 frame=24
+preview: source=/tmp/drop53/movie.mp4 playhead=2550 source_time=2550 frame=25
+preview: source=/tmp/drop53/movie.mp4 playhead=2641 source_time=2641 frame=26
+preview: source=/tmp/drop53/movie.mp4 playhead=2740 source_time=2740 frame=27
+preview: source=/tmp/drop53/movie.mp4 playhead=2836 source_time=2836 frame=28
+preview: source=/tmp/drop53/movie.mp4 playhead=2929 source_time=2929 frame=29
+preview: source=/tmp/drop53/movie.mp4 playhead=31 source_time=31 frame=0
+preview: source=/tmp/drop53/movie.mp4 playhead=124 source_time=124 frame=1
+preview: source=/tmp/drop53/movie.mp4 playhead=223 source_time=223 frame=2
+preview: source=/tmp/drop53/movie.mp4 playhead=330 source_time=330 frame=3
+drop rejected: /tmp/drop53/notes.txt (unsupported file type; video mp4/mov, image png/jpg, audio wav)
+preview: source=/tmp/drop53/movie.mp4 playhead=425 source_time=425 frame=4
+preview: source=/tmp/drop53/movie.mp4 playhead=536 source_time=536 frame=5
+preview: source=/tmp/drop53/movie.mp4 playhead=626 source_time=626 frame=6
+preview: source=/tmp/drop53/movie.mp4 playhead=724 source_time=724 frame=7
+preview: source=/tmp/drop53/movie.mp4 playhead=822 source_time=822 frame=8
+preview: source=/tmp/drop53/movie.mp4 playhead=916 source_time=916 frame=9
+preview: source=/tmp/drop53/movie.mp4 playhead=1017 source_time=1017 frame=10
+preview: source=/tmp/drop53/movie.mp4 playhead=1120 source_time=1120 frame=11
+preview: source=/tmp/drop53/movie.mp4 playhead=1212 source_time=1212 frame=12
+preview: source=/tmp/drop53/movie.mp4 playhead=1311 source_time=1311 frame=13
+preview: source=/tmp/drop53/movie.mp4 playhead=1406 source_time=1406 frame=14
+preview: source=/tmp/drop53/movie.mp4 playhead=1510 source_time=1510 frame=15
+preview: source=/tmp/drop53/movie.mp4 playhead=1613 source_time=1613 frame=16
+preview: source=/tmp/drop53/movie.mp4 playhead=1707 source_time=1707 frame=17
+preview: source=/tmp/drop53/movie.mp4 playhead=1805 source_time=1805 frame=18
+preview: source=/tmp/drop53/movie.mp4 playhead=1911 source_time=1911 frame=19
+preview: source=/tmp/drop53/movie.mp4 playhead=2009 source_time=2009 frame=20
+preview: source=/tmp/drop53/movie.mp4 playhead=2126 source_time=2126 frame=21
+preview: source=/tmp/drop53/movie.mp4 playhead=2202 source_time=2202 frame=22
+preview: source=/tmp/drop53/movie.mp4 playhead=2319 source_time=2319 frame=23
+preview: source=/tmp/drop53/movie.mp4 playhead=2403 source_time=2403 frame=24
+preview: source=/tmp/drop53/movie.mp4 playhead=2518 source_time=2518 frame=25
+preview: source=/tmp/drop53/movie.mp4 playhead=2618 source_time=2618 frame=26
+preview: source=/tmp/drop53/movie.mp4 playhead=2720 source_time=2720 frame=27
+preview: source=/tmp/drop53/movie.mp4 playhead=2809 source_time=2309 frame=23
+preview: source=/tmp/drop53/movie.mp4 playhead=2915 source_time=2415 frame=24
+preview: source=/tmp/drop53/movie.mp4 playhead=3016 source_time=2516 frame=25
+after drag: {
+  "name": "issue53",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "movie",
+          "start_ms": 500,
+          "duration_ms": 3000,
+          "source": "/tmp/drop53/movie.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": ""
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false
+    }
+  ],
+  "bpm": 120.0,
+  "next_id": 4
+}
+preview: source=/tmp/drop53/movie.mp4 playhead=3121 source_time=2621 frame=26
+preview: source=/tmp/drop53/movie.mp4 playhead=3210 source_time=2710 frame=27
+preview: source=/tmp/drop53/movie.mp4 playhead=3307 source_time=2807 frame=28
+preview: source=/tmp/drop53/movie.mp4 playhead=3416 source_time=2916 frame=29
+preview: source=/tmp/drop53/movie.mp4 playhead=509 source_time=9 frame=0
