@@ -368,6 +368,10 @@ fn load_textures(
 }
 
 fn model(app: &App) -> Model {
+    // Esc はリネーム編集のキャンセル（Issue #57）で使うため、
+    // nannou 既定の「Esc で終了」を切る（DAW #40 と同じ対応。
+    // Issue #65: 編集中でない Esc でアプリが終了してしまうバグ）。
+    app.set_exit_on_escape(false);
     let (project, project_file, file_stamp) = initial_project();
     // 観測経路（ADR-0005）: 画面に描かれる状態と同一のダンプを出す。
     println!("video-editor (issue #8: timeline UI)");
