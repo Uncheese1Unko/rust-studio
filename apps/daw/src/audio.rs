@@ -171,6 +171,82 @@ pub fn render_mix(
 
 /// サンプル列のピーク（絶対値の最大、Issue #27）。レベルメーターの
 /// 入力で、読み取り専用（音声処理そのものには手を入れない）。
+/// メトロノームのクリックの振幅（固定、Issue #36）。
+pub const CLICK_AMPLITUDE: f32 = 0.5;
+/// クリックの長さ（ミリ秒）。減衰しきるまでの長さ。
+pub const CLICK_DURATION_MS: f64 = 30.0;
+/// 強拍（小節頭）のクリック周波数（Hz）。
+pub const CLICK_ACCENT_HZ: f64 = 2_000.0;
+/// 弱拍のクリック周波数（Hz）。
+pub const CLICK_BEAT_HZ: f64 = 1_000.0;
+
+/// クリック波形（Issue #36）: 短いサイン波に指数減衰を掛けたもの。
+/// `t_ms` はクリック開始からの経過ミリ秒。
+pub fn click_waveform(freq_hz: f64, t_ms: f64) -> f32 {
+    if !(0.0..CLICK_DURATION_MS).contains(&t_ms) {
+        return 0.0;
+    }
+    let phase = 2.0 * std::f64::consts::PI * freq_hz * t_ms / 1000.0;
+    (phase.sin() as f32) * (-t_ms / 8.0).exp() as f32 * CLICK_AMPLITUDE
+}
+
+/// ミックスへメトロノームのクリックを合成する（Issue #36）。
+/// 拍はプロジェクト先頭（0ms）から数え、小節頭（4拍ごと）が強拍。
+/// `mix` はステレオインターリーブ、`start_ms` はミックス先頭の
+/// プロジェクト時刻。合成後に ±1 へクランプする。
+pub fn add_metronome_clicks(mix: &mut [f32], bpm: f32, start_ms: i64, out_rate: u32) {
+    let beat_ms = 60_000.0 / bpm as f64;
+    let frames = mix.len() / 2;
+    let duration_ms = frames as f64 * 1000.0 / out_rate as f64;
+    let first_beat = (start_ms as f64 / beat_ms).ceil() as i64;
+    let mut k = first_beat.max(0);
+    loop {
+        let beat_time = k as f64 * beat_ms;
+        if beat_time >= start_ms as f64 + duration_ms {
+            break;
+        }
+        let freq = if k % 4 == 0 {
+            CLICK_ACCENT_HZ
+        } else {
+            CLICK_BEAT_HZ
+        };
+        let offset_frames =
+            ((beat_time - start_ms as f64) * out_rate as f64 / 1000.0).round() as usize;
+        let click_frames = (CLICK_DURATION_MS * out_rate as f64 / 1000.0).ceil() as usize;
+        for i in 0..click_frames {
+            let frame = offset_frames + i;
+            if frame >= frames {
+                break;
+            }
+            let t_ms = i as f64 * 1000.0 / out_rate as f64;
+            let v = click_waveform(freq, t_ms);
+            mix[frame * 2] += v;
+            mix[frame * 2 + 1] += v;
+        }
+        k += 1;
+    }
+    for s in mix.iter_mut() {
+        *s = s.clamp(-1.0, 1.0);
+    }
+}
+
+/// render_mix にメトロノーム（Issue #36）を重ねた再生レンダリング。
+/// ON/OFF はアプリ側の再生状態で、プロジェクトには保存しない。
+pub fn render_mix_with_metronome(
+    project: &Project,
+    audio: &HashMap<String, ClipAudio>,
+    start_ms: i64,
+    duration_ms: i64,
+    out_rate: u32,
+    metronome_on: bool,
+) -> Vec<f32> {
+    let mut mix = render_mix(project, audio, start_ms, duration_ms, out_rate);
+    if metronome_on {
+        add_metronome_clicks(&mut mix, project.bpm, start_ms, out_rate);
+    }
+    mix
+}
+
 pub fn peak_of(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0f32, |acc, s| acc.max(s.abs()))
 }
@@ -884,5 +960,68 @@ mod review_fix_tests {
             "fade end must be silent: {}",
             at(1999)
         );
+    }
+
+    #[test]
+    fn metronome_clicks_land_on_beats() {
+        // Issue #36: メトロノーム ON では拍の位置（bpm=120 で
+        // 0, 500, 1000, 1500ms）にクリックが合成され、拍間は無音。
+        // 小節頭（0ms）は 2000Hz、それ以外の拍は 1000Hz。
+        let p = Project::new("metro");
+        let audio = HashMap::new();
+        let mix = render_mix_with_metronome(&p, &audio, 0, 2000, RATE, true);
+        let peak_in = |from: i64, to: i64| {
+            window(&mix, 2, from, to, RATE)
+                .iter()
+                .fold(0.0f32, |a, s| a.max(s.abs()))
+        };
+        for beat in [0, 500, 1000, 1500] {
+            assert!(
+                peak_in(beat, beat + 30) > 0.3,
+                "click at {beat}ms: {}",
+                peak_in(beat, beat + 30)
+            );
+        }
+        assert!(peak_in(240, 260) < 0.01, "between beats must be silent");
+        assert!(peak_in(740, 760) < 0.01, "between beats must be silent");
+        // 強拍は 2000Hz、弱拍は 1000Hz が支配的
+        let w0 = window(&mix, 2, 0, 25, RATE);
+        assert!(
+            goertzel(&w0, RATE, 2000.0) > goertzel(&w0, RATE, 1000.0),
+            "bar head must be 2000Hz"
+        );
+        let w1 = window(&mix, 2, 500, 525, RATE);
+        assert!(
+            goertzel(&w1, RATE, 1000.0) > goertzel(&w1, RATE, 2000.0),
+            "inner beat must be 1000Hz"
+        );
+    }
+
+    #[test]
+    fn metronome_off_adds_no_clicks() {
+        // Issue #36: OFF ではクリックが混ざらない（空のプロジェクト
+        // なのでミックスは完全な無音）。
+        let p = Project::new("metro off");
+        let audio = HashMap::new();
+        let mix = render_mix_with_metronome(&p, &audio, 0, 2000, RATE, false);
+        assert!(mix.iter().all(|s| *s == 0.0));
+    }
+
+    #[test]
+    fn metronome_interval_follows_bpm() {
+        // Issue #36: BPM を変えるとクリック間隔が追随する
+        // （bpm=60 では 1000ms 間隔で、500ms 地点には鳴らない）。
+        let mut p = Project::new("metro 60");
+        apply(&mut p, &Command::SetBpm { bpm: 60.0 }).unwrap();
+        let audio = HashMap::new();
+        let mix = render_mix_with_metronome(&p, &audio, 0, 2000, RATE, true);
+        let peak_in = |from: i64, to: i64| {
+            window(&mix, 2, from, to, RATE)
+                .iter()
+                .fold(0.0f32, |a, s| a.max(s.abs()))
+        };
+        assert!(peak_in(0, 30) > 0.3);
+        assert!(peak_in(1000, 1030) > 0.3);
+        assert!(peak_in(490, 510) < 0.01, "no click at 500ms when bpm=60");
     }
 }

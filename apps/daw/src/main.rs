@@ -164,6 +164,9 @@ struct Model {
     // Issue #35: BPM のインライン入力セッション（プロジェクトには
     // 含めない）。
     bpm_edit: Option<edit::BpmEdit>,
+    // Issue #36: メトロノームの ON/OFF（再生状態。プロジェクトには
+    // 保存しない）。
+    metronome_on: bool,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -343,6 +346,7 @@ fn model(app: &App) -> Model {
         edit_keys: edit::EditKeyTracker::new(),
         clipboard: None,
         bpm_edit: None,
+        metronome_on: false,
     }
 }
 
@@ -609,12 +613,13 @@ fn update(app: &App, model: &mut Model, update: Update) {
     // レンダリングしてピークを取る（読み取り専用。音声処理には
     // 手を入れない）。再生位置が 50ms 以上動いたときだけ再計算する。
     if (model.playhead_ms - model.level_at_ms).abs() >= 50 {
-        let mix = audio::render_mix(
+        let mix = audio::render_mix_with_metronome(
             model.history.project(),
             &model.audio_map,
             model.playhead_ms,
             LEVEL_WINDOW_MS,
             44_100,
+            model.metronome_on,
         );
         model.level_peak = audio::peak_of(&mix);
         model.level_at_ms = model.playhead_ms;
@@ -1038,6 +1043,17 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down && !model.prev_left_down {
+        // メトロノームトグル（Issue #36）: アプリ側の再生状態を切り替える。
+        let m_r = metronome_rect(model.history.project().tracks.len());
+        if lx >= m_r.x && lx < m_r.x + m_r.w && ly >= m_r.y && ly < m_r.y + m_r.h {
+            model.metronome_on = !model.metronome_on;
+            println!(
+                "metronome: {}",
+                if model.metronome_on { "on" } else { "off" }
+            );
+            model.prev_left_down = left_down;
+            return;
+        }
         // BPM 表示（Issue #35）: クリックで入力モードに入る。
         let bpm_r = bpm_rect(model.history.project().tracks.len());
         if lx >= bpm_r.x && lx < bpm_r.x + bpm_r.w && ly >= bpm_r.y && ly < bpm_r.y + bpm_r.h {
@@ -1240,6 +1256,16 @@ fn bpm_rect(track_count: usize) -> mixer::Rect {
         y: transport_top(track_count) + 6.0,
         w: 150.0,
         h: 36.0,
+    }
+}
+
+/// メトロノームトグルの矩形（Issue #36）。トランスポート左下のチップ。
+fn metronome_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 36.0,
+        y: transport_top(track_count) + 38.0,
+        w: 180.0,
+        h: 16.0,
     }
 }
 
@@ -1722,6 +1748,23 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(bcx, bcy)
             .font_size(theme::VALUE_FONT_SIZE)
             .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+        // メトロノームトグル（Issue #36）: ON はピンクのチップ。
+        let m_r = metronome_rect(count);
+        let (m_face, m_text_color) = if model.metronome_on {
+            (theme::ACCENT, theme::PANEL)
+        } else {
+            (theme::PANEL_SUNK, theme::TEXT_SUB)
+        };
+        draw_rounded_rect(&draw, win, m_r, 4.0, m_face);
+        let (mcx, mcy) = rect_center(win, m_r.x, m_r.y, m_r.w, m_r.h);
+        draw.text(if model.metronome_on {
+            "METRONOME ON"
+        } else {
+            "METRONOME OFF"
+        })
+        .x_y(mcx, mcy)
+        .font_size(10)
+        .color(rgb(m_text_color.0, m_text_color.1, m_text_color.2));
     }
 
     // 色選択パネル（Issue #58）: トランスポートの下。TRACK 行は選択中
