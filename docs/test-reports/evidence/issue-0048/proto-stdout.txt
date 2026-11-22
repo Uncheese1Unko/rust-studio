@@ -1,0 +1,8 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+proto: pixel A(8,8) = [60, 0, 0], B(8,8) = [0, 36, 0]
+proto: blend-025.png alpha=0.25 pixel(8,8) = [45, 9, 0]
+proto: blend-050.png alpha=0.5 pixel(8,8) = [30, 18, 0]
+proto: blend-075.png alpha=0.75 pixel(8,8) = [15, 27, 0]
+proto: texture loaded = true
