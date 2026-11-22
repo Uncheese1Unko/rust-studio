@@ -45,3 +45,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #33 DAW でクリップの複製とコピー＆ペーストができる | [issue-0033-duplicate-copy-paste.md](issue-0033-duplicate-copy-paste.md) |
 | 2026-11-22 | #34 DAW でクリップにフェードイン／フェードアウトを付けられる | [issue-0034-clip-fade.md](issue-0034-clip-fade.md) |
 | 2026-11-22 | #61 バグ修正: History::apply_transient の失敗時原子性 | [issue-0061-apply-transient-atomicity.md](issue-0061-apply-transient-atomicity.md) |
+| 2026-11-22 | #35 DAW に BPM（テンポ）を設定でき、小節グリッドが表示される | [issue-0035-bpm-grid.md](issue-0035-bpm-grid.md) |
