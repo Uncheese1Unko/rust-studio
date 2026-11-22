@@ -1,0 +1,19 @@
+Issue #71 試作: Rust からの CLAP プラグインホスティング（clack）の可否確認
+実施日: 2026-11-22、場所: /tmp/clack-proto（使い捨て、本体コードは変更していない）
+
+手順:
+  git clone --depth 1 https://github.com/prokopyl/clack.git clack-proto
+  cargo build -p clack-plugin-gain     # 例示プラグイン libclack_plugin_gain.so をビルド
+  cargo test -p clack-host --test loading
+
+結果（loading テスト 2件とも通過）:
+  test result: ok. 2 passed; 0 failed
+  - it_works: PluginEntry::load で .so を dlopen し、PluginFactory から
+    プラグイン記述子（id = "org.rust-audio.clack.gain"）を取得できた。
+  - it_works_concurrently: 300 スレッドからの同時ロードも成功。
+
+結論: clack-host による CLAP プラグインのロード（dlopen → ファクトリ →
+記述子列挙）はこの Linux 環境で動作する。ただしこれはロードまでの確認で、
+Vital 実バイナリでの音声処理・ステート注入・GUI 埋め込みは未検証
+（Vital の Linux バイナリは公式サイトのアカウント経由配布で、本調査では
+未入手。#72 のスパイクで確認する）。

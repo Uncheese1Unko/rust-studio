@@ -1,0 +1,24 @@
+Issue #71 確認: .vital プリセットの形式
+実施日: 2026-11-22
+
+入手元: Vital 公式の公開 S3（vitalpublic.s3...amazonaws.com）に置かれた
+実プリセット "Wormhole"（author: DC、Lead 系）。ファイルはリポジトリには
+含めない（ファクトリープリセットは再配布不可の別ライセンスのため、
+Vita プロジェクトの README にも明記がある）。
+
+実測:
+  - サイズ 622,940 バイト、プレーンな JSON テキストとしてパース可能。
+  - トップレベルキー: author, comments, macro1, macro2, macro3, macro4,
+    preset_name, preset_style, settings, synth_version
+  - settings は 776 エントリの数値パラメータ辞書（例: chorus_cutoff,
+    compressor_band_gain, ...）。
+  - ウェーブテーブルデータはプリセット内に埋め込まれる（KVR フォーラムでの
+    開発者・ユーザーの言及どおり）。このためファイルは大きくなりやすい。
+
+裏付け（エンジン状態 = プリセット JSON であること）:
+  - Vita（DBraun/Vita、GPLv3）: Vital のシンセエンジンをライブラリ化し、
+    to_json() で現在の状態を .vital ファイルとして書き出し、load_json() /
+    load_preset() で読み戻し、render() でヘッドレスに音声を生成する API を
+    公開している。つまりプリセット JSON はエンジンの状態そのものであり、
+    ホストからはプラグインのステート機構（CLAP state 等）で同じ JSON を
+    注入できる見込みが高い（実バイナリでの確認は #72 スパイク）。
