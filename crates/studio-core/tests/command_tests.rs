@@ -647,3 +647,90 @@ fn legacy_json_without_offset_loads_as_zero() {
     let project: Project = serde_json::from_str(legacy).unwrap();
     assert_eq!(project.tracks[0].clips[0].offset_ms, 0);
 }
+
+#[test]
+fn set_clip_fade_applies_and_validates() {
+    // Issue #34: SetClipFade は fade_in_ms / fade_out_ms を設定する。
+    // 負の値とクリップ長超過は InvalidRange で状態が変わらない。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetClipFade {
+            clip_id,
+            fade_in_ms: 500,
+            fade_out_ms: 800,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.fade_in_ms, 500);
+    assert_eq!(clip.fade_out_ms, 800);
+
+    let before = p.dump_json();
+    for (fi, fo) in [(-1, 0), (0, -5), (5_001, 0), (0, 5_001)] {
+        let result = apply(
+            &mut p,
+            &Command::SetClipFade {
+                clip_id,
+                fade_in_ms: fi,
+                fade_out_ms: fo,
+            },
+        );
+        assert!(
+            matches!(result, Err(CommandError::InvalidRange(_))),
+            "fade {fi}/{fo}: {result:?}"
+        );
+        assert_eq!(p.dump_json(), before, "状態が変わらないこと");
+    }
+    let result = apply(
+        &mut p,
+        &Command::SetClipFade {
+            clip_id: 999,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+        },
+    );
+    assert_eq!(result, Err(CommandError::ClipNotFound(999)));
+}
+
+#[test]
+fn legacy_json_without_fades_loads_as_zero() {
+    // Issue #34: フェードを含まない旧形式 JSON は 0 で読める。
+    let legacy = r#"{"name":"old","tracks":[{"id":1,"name":"A1","kind":"audio","clips":[{"id":2,"name":"c","start_ms":0,"duration_ms":1000,"source":"x.wav","gain":1.0}],"volume":1.0,"pan":0.0}],"next_id":3}"#;
+    let project: Project = serde_json::from_str(legacy).unwrap();
+    let clip = &project.tracks[0].clips[0];
+    assert_eq!(clip.fade_in_ms, 0);
+    assert_eq!(clip.fade_out_ms, 0);
+}
+
+#[test]
+fn split_clip_keeps_fades_on_the_outer_edges_only() {
+    // Issue #34: 分割すると、左は fade_in だけ（分割点は切り口なので
+    // fade_out は付けない）、右は fade_out だけを引き継ぐ。各フェードは
+    // 分割後の長さでクランプされる。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetClipFade {
+            clip_id,
+            fade_in_ms: 500,
+            fade_out_ms: 700,
+        },
+    )
+    .unwrap();
+    let new_id = apply(
+        &mut p,
+        &Command::SplitClip {
+            clip_id,
+            at_ms: 2_000,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let (_, left) = p.clip(clip_id).unwrap();
+    assert_eq!(left.fade_in_ms, 500);
+    assert_eq!(left.fade_out_ms, 0);
+    let (_, right) = p.clip(new_id).unwrap();
+    assert_eq!(right.fade_in_ms, 0);
+    assert_eq!(right.fade_out_ms, 700);
+}

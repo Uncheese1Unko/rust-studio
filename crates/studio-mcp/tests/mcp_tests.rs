@@ -49,6 +49,7 @@ fn tools_list_exposes_all_commands() {
         "move_clip",
         "trim_clip",
         "split_clip",
+        "set_clip_fade",
         "remove_clip",
         "set_clip_gain",
         "set_track_volume",
@@ -632,6 +633,49 @@ fn split_clip_tool_applies_via_tools_call() {
         63,
         "split_clip",
         json!({"clip_id": 2, "at_ms": 1500}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    let dump_after = project_dump_via_tool(&server);
+    assert_eq!(dump, dump_after, "rejected call must not change state");
+}
+
+#[test]
+fn set_clip_fade_tool_applies_via_tools_call() {
+    // Issue #34: set_clip_fade が tools/call 経由で適用でき、ダンプで
+    // fade_in_ms / fade_out_ms が観測できる。不正な値はエラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        70,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        71,
+        "add_clip",
+        json!({"track_id": 1, "name": "take", "start_ms": 0, "duration_ms": 4000, "source": "take.wav"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        72,
+        "set_clip_fade",
+        json!({"clip_id": 2, "fade_in_ms": 300, "fade_out_ms": 600}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let clip = &project.tracks[0].clips[0];
+    assert_eq!(clip.fade_in_ms, 300);
+    assert_eq!(clip.fade_out_ms, 600);
+    // クリップ長超過はエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        73,
+        "set_clip_fade",
+        json!({"clip_id": 2, "fade_in_ms": 4001, "fade_out_ms": 0}),
     );
     assert_eq!(res["result"]["isError"], true, "{res}");
     let dump_after = project_dump_via_tool(&server);

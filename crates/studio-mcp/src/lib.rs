@@ -217,7 +217,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド15種＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド16種＋状態ダンプ取得＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -328,6 +328,19 @@ fn tool_definitions() -> Value {
                     "at_ms": {"type": "integer", "minimum": 0},
                 },
                 "required": ["clip_id", "at_ms"],
+            },
+        },
+        {
+            "name": "set_clip_fade",
+            "description": "クリップのフェードイン／フェードアウトの長さ（ミリ秒、直線包絡）を設定する",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "fade_in_ms": {"type": "integer", "minimum": 0},
+                    "fade_out_ms": {"type": "integer", "minimum": 0},
+                },
+                "required": ["clip_id", "fade_in_ms", "fade_out_ms"],
             },
         },
         {

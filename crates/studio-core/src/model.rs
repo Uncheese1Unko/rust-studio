@@ -54,6 +54,14 @@ pub struct Clip {
     /// （既定の種別色）。旧形式の JSON では None。
     #[serde(default)]
     pub color: Option<ColorTag>,
+    /// フェードインの長さ（ミリ秒、Issue #34）。0 = フェードなし。
+    /// 旧形式の JSON では 0。
+    #[serde(default)]
+    pub fade_in_ms: i64,
+    /// フェードアウトの長さ（ミリ秒、Issue #34）。0 = フェードなし。
+    /// 旧形式の JSON では 0。
+    #[serde(default)]
+    pub fade_out_ms: i64,
 }
 
 impl Clip {

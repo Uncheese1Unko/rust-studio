@@ -74,6 +74,14 @@ pub enum Command {
         clip_id: u64,
         semitones: f32,
     },
+    /// クリップのフェードイン／フェードアウトの長さを設定する
+    /// （Issue #34）。どちらも 0 以上、クリップの長さ以下。
+    /// 包絡は直線のみ。
+    SetClipFade {
+        clip_id: u64,
+        fade_in_ms: i64,
+        fade_out_ms: i64,
+    },
     /// トラックの色を設定する（Issue #58、ADR-0013）。
     /// None は「なし（既定の種別色）」に戻す。
     SetTrackColor {
@@ -177,6 +185,8 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     cutout: false,
                     pitch_semitones: 0.0,
                     color: None,
+                    fade_in_ms: 0,
+                    fade_out_ms: 0,
                 });
             Ok(Some(id))
         }
@@ -223,6 +233,9 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .expect("checked above");
             clip.start_ms = *new_start_ms;
             clip.duration_ms = *new_duration_ms;
+            // フェードが新しい長さを超えないよう保つ（Issue #34）。
+            clip.fade_in_ms = clip.fade_in_ms.min(*new_duration_ms);
+            clip.fade_out_ms = clip.fade_out_ms.min(*new_duration_ms);
             Ok(None)
         }
         Command::SplitClip { clip_id, at_ms } => {
@@ -245,20 +258,30 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             }
             let new_id = project.alloc_id();
             let clip = &project.tracks[track_idx].clips[clip_idx];
+            let left_duration = *at_ms - clip.start_ms;
+            let right_duration = clip.end_ms() - *at_ms;
             let right = Clip {
                 id: new_id,
                 name: clip.name.clone(),
                 start_ms: *at_ms,
-                duration_ms: clip.end_ms() - *at_ms,
+                duration_ms: right_duration,
                 source: clip.source.clone(),
                 offset_ms: clip.offset_ms + (*at_ms - clip.start_ms),
                 gain: clip.gain,
                 cutout: clip.cutout,
                 pitch_semitones: clip.pitch_semitones,
                 color: clip.color,
+                // 分割点は切り口なので、右クリップはフェードインを
+                // 引き継がない。フェードアウトは外側の端として引き継ぐ
+                // （Issue #34、分割後の長さでクランプ）。
+                fade_in_ms: 0,
+                fade_out_ms: clip.fade_out_ms.min(right_duration),
             };
-            let left_duration = *at_ms - clip.start_ms;
             let track = &mut project.tracks[track_idx];
+            // 左クリップはフェードインを外側の端として引き継ぎ、
+            // フェードアウトは付けない（分割点は切り口）。
+            track.clips[clip_idx].fade_in_ms = track.clips[clip_idx].fade_in_ms.min(left_duration);
+            track.clips[clip_idx].fade_out_ms = 0;
             track.clips[clip_idx].duration_ms = left_duration;
             track.clips.insert(clip_idx + 1, right);
             Ok(Some(new_id))
@@ -346,6 +369,33 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.pitch_semitones = *semitones;
+            Ok(None)
+        }
+        Command::SetClipFade {
+            clip_id,
+            fade_in_ms,
+            fade_out_ms,
+        } => {
+            if *fade_in_ms < 0 || *fade_out_ms < 0 {
+                return Err(CommandError::InvalidRange("fade must be >= 0"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            if *fade_in_ms > clip.duration_ms || *fade_out_ms > clip.duration_ms {
+                return Err(CommandError::InvalidRange(
+                    "fade must not exceed the clip duration",
+                ));
+            }
+            clip.fade_in_ms = *fade_in_ms;
+            clip.fade_out_ms = *fade_out_ms;
             Ok(None)
         }
         Command::SetTrackColor { track_id, color } => {

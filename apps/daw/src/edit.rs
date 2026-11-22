@@ -12,6 +12,8 @@ use crate::timeline;
 
 /// クリップ端とみなす掴み幅（px）。
 pub const EDGE_GRAB_PX: f32 = 6.0;
+/// フェードコーナーとみなす上端帯の高さ（px、Issue #34）。
+pub const FADE_CORNER_PX: f32 = 12.0;
 /// ダブルクリックで配置するクリップの長さ（ms）。
 pub const NEW_CLIP_DURATION_MS: i64 = 2_000;
 /// ダブルクリックと判定する間隔（ms）と距離（px）。
@@ -226,6 +228,8 @@ pub struct ClipPlacement {
     pitch_semitones: f32,
     cutout: bool,
     color: Option<studio_core::ColorTag>,
+    fade_in_ms: i64,
+    fade_out_ms: i64,
 }
 
 impl ClipPlacement {
@@ -242,6 +246,8 @@ impl ClipPlacement {
             pitch_semitones: clip.pitch_semitones,
             cutout: clip.cutout,
             color: clip.color,
+            fade_in_ms: clip.fade_in_ms,
+            fade_out_ms: clip.fade_out_ms,
         }
     }
 
@@ -273,6 +279,13 @@ impl ClipPlacement {
                 color: self.color,
             });
         }
+        if self.fade_in_ms != 0 || self.fade_out_ms != 0 {
+            cmds.push(Command::SetClipFade {
+                clip_id: new_clip_id,
+                fade_in_ms: self.fade_in_ms,
+                fade_out_ms: self.fade_out_ms,
+            });
+        }
         cmds
     }
 }
@@ -302,6 +315,14 @@ pub enum HitTarget {
     ClipRightEdge {
         clip_id: u64,
     },
+    /// クリップ上端の左コーナー（フェードインの掴み位置、Issue #34）。
+    ClipFadeInCorner {
+        clip_id: u64,
+    },
+    /// クリップ上端の右コーナー（フェードアウトの掴み位置、Issue #34）。
+    ClipFadeOutCorner {
+        clip_id: u64,
+    },
     /// トラック行の何もない場所（配置先）。
     Empty {
         track_index: usize,
@@ -327,6 +348,19 @@ pub fn hit_test(project: &Project, view_width_px: f32, x: f32, y: f32) -> HitTar
     for rect in timeline::layout_clips(project, view_width_px) {
         if rect.track_id != project.tracks[track_index].id {
             continue;
+        }
+        // 上端帯の左右コーナーはフェードの掴み位置（Issue #34）。
+        // 同じ x でも上端帯より下は従来どおりトリム端になる。
+        let top_band = y >= rect.y && y < rect.y + FADE_CORNER_PX;
+        if top_band && (x - rect.x).abs() <= EDGE_GRAB_PX {
+            return HitTarget::ClipFadeInCorner {
+                clip_id: rect.clip_id,
+            };
+        }
+        if top_band && (x - (rect.x + rect.w)).abs() <= EDGE_GRAB_PX {
+            return HitTarget::ClipFadeOutCorner {
+                clip_id: rect.clip_id,
+            };
         }
         if (x - rect.x).abs() <= EDGE_GRAB_PX {
             return HitTarget::ClipLeftEdge {
@@ -368,6 +402,10 @@ pub enum DragKind {
     Move,
     TrimLeft,
     TrimRight,
+    /// フェードインの長さを変える（Issue #34）。
+    FadeIn,
+    /// フェードアウトの長さを変える（Issue #34）。
+    FadeOut,
 }
 
 /// ドラッグ中の状態。開始時点のスナップショットを持つ。
@@ -378,6 +416,9 @@ pub struct Drag {
     pub start_pointer_ms: i64,
     pub orig_start_ms: i64,
     pub orig_duration_ms: i64,
+    /// ドラッグ開始時点のフェード長（Issue #34）。
+    pub orig_fade_in_ms: i64,
+    pub orig_fade_out_ms: i64,
 }
 
 impl Drag {
@@ -388,6 +429,8 @@ impl Drag {
             HitTarget::ClipBody { clip_id } => (*clip_id, DragKind::Move),
             HitTarget::ClipLeftEdge { clip_id } => (*clip_id, DragKind::TrimLeft),
             HitTarget::ClipRightEdge { clip_id } => (*clip_id, DragKind::TrimRight),
+            HitTarget::ClipFadeInCorner { clip_id } => (*clip_id, DragKind::FadeIn),
+            HitTarget::ClipFadeOutCorner { clip_id } => (*clip_id, DragKind::FadeOut),
             _ => return None,
         };
         let (_, clip) = project.clip(clip_id)?;
@@ -397,6 +440,8 @@ impl Drag {
             start_pointer_ms: pointer_ms,
             orig_start_ms: clip.start_ms,
             orig_duration_ms: clip.duration_ms,
+            orig_fade_in_ms: clip.fade_in_ms,
+            orig_fade_out_ms: clip.fade_out_ms,
         })
     }
 
@@ -417,6 +462,18 @@ impl Drag {
                 clip_id: self.clip_id,
                 new_start_ms: self.orig_start_ms,
                 new_duration_ms: self.orig_duration_ms + delta,
+            },
+            // フェードは 0..=duration にクランプした候補を出す
+            // （検証はコマンド層でも行う、Issue #34）。
+            DragKind::FadeIn => Command::SetClipFade {
+                clip_id: self.clip_id,
+                fade_in_ms: (self.orig_fade_in_ms + delta).clamp(0, self.orig_duration_ms),
+                fade_out_ms: self.orig_fade_out_ms,
+            },
+            DragKind::FadeOut => Command::SetClipFade {
+                clip_id: self.clip_id,
+                fade_in_ms: self.orig_fade_in_ms,
+                fade_out_ms: (self.orig_fade_out_ms - delta).clamp(0, self.orig_duration_ms),
             },
         }
     }
@@ -646,6 +703,71 @@ mod tests {
         assert_eq!(hit_test(&p, 960.0, 280.0, 10.0), HitTarget::Outside);
         assert_eq!(hit_test(&p, 960.0, 60.0, 48.0), HitTarget::Outside);
         assert_eq!(hit_test(&p, 960.0, 280.0, 200.0), HitTarget::Outside);
+    }
+
+    #[test]
+    fn hit_test_top_corners_are_fade_handles() {
+        // Issue #34: クリップ上端の左右コーナーはフェードの掴み位置で、
+        // 同じ x でも上端帯より下は従来どおりトリム端になる。
+        let p = sample_project();
+        let id = clip_id(&p);
+        // 左上コーナー（左端 x=204、上端帯 y=28）
+        assert_eq!(
+            hit_test(&p, 960.0, 206.0, 28.0),
+            HitTarget::ClipFadeInCorner { clip_id: id }
+        );
+        // 右上コーナー（右端 x=372、上端帯 y=28）
+        assert_eq!(
+            hit_test(&p, 960.0, 370.0, 28.0),
+            HitTarget::ClipFadeOutCorner { clip_id: id }
+        );
+        // 上端帯より下（y=48）はトリム端のまま
+        assert_eq!(
+            hit_test(&p, 960.0, 206.0, 48.0),
+            HitTarget::ClipLeftEdge { clip_id: id }
+        );
+        assert_eq!(
+            hit_test(&p, 960.0, 370.0, 48.0),
+            HitTarget::ClipRightEdge { clip_id: id }
+        );
+    }
+
+    #[test]
+    fn drag_fade_corners_produce_set_clip_fade() {
+        // Issue #34: フェードコーナーのドラッグは SetClipFade を作る。
+        // フェードインは右へ引くほど長く、フェードアウトは左へ
+        // 引くほど長くなる。範囲は 0..=duration にクランプされる。
+        let p = sample_project();
+        let id = clip_id(&p);
+        let drag = Drag::begin(&p, &HitTarget::ClipFadeInCorner { clip_id: id }, 1_000)
+            .expect("fade-in drag");
+        assert_eq!(
+            drag.command_for(1_500),
+            Command::SetClipFade {
+                clip_id: id,
+                fade_in_ms: 500,
+                fade_out_ms: 0
+            }
+        );
+        // 左へ引き戻すと負にはならず 0 にクランプ
+        assert_eq!(
+            drag.command_for(500),
+            Command::SetClipFade {
+                clip_id: id,
+                fade_in_ms: 0,
+                fade_out_ms: 0
+            }
+        );
+        let drag = Drag::begin(&p, &HitTarget::ClipFadeOutCorner { clip_id: id }, 3_000)
+            .expect("fade-out drag");
+        assert_eq!(
+            drag.command_for(2_500),
+            Command::SetClipFade {
+                clip_id: id,
+                fade_in_ms: 0,
+                fade_out_ms: 500
+            }
+        );
     }
 
     #[test]

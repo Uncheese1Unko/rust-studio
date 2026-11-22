@@ -1380,6 +1380,29 @@ fn view(app: &App, model: &Model, frame: Frame) {
                     }
                 }
             }
+            // フェードの傾斜（Issue #34）: フェードインは左下→上、
+            // フェードアウトは上→右下の直線で包絡を示す。
+            let ppm = timeline::px_per_ms(win.w());
+            let face_x0 = rect.x + 1.5;
+            let face_x1 = rect.x + rect.w - 1.5;
+            let face_top = inner_y + 1.5;
+            let face_bottom = inner_y + inner_h - 1.5;
+            let to_nannou = |sx: f32, sy: f32| pt2(sx - win.w() / 2.0, win.h() / 2.0 - sy);
+            let line_color = rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2);
+            if clip.fade_in_ms > 0 {
+                draw.line()
+                    .start(to_nannou(face_x0, face_bottom))
+                    .end(to_nannou(face_x0 + clip.fade_in_ms as f32 * ppm, face_top))
+                    .weight(2.0)
+                    .color(line_color);
+            }
+            if clip.fade_out_ms > 0 {
+                draw.line()
+                    .start(to_nannou(face_x1 - clip.fade_out_ms as f32 * ppm, face_top))
+                    .end(to_nannou(face_x1, face_bottom))
+                    .weight(2.0)
+                    .color(line_color);
+            }
             draw.text(&clip.name).x_y(cx, cy).font_size(11).color(rgb(
                 theme::TEXT.0,
                 theme::TEXT.1,

@@ -74,6 +74,21 @@ pub fn pitch_shift(audio: &ClipAudio, semitones: f32) -> ClipAudio {
     }
 }
 
+/// フェード包絡（Issue #34）: クリップ内位置に対する直線フェードの
+/// 倍率。フェードインは区間内で 0→1、フェードアウトは 1→0。
+/// 両方が重なる区間では小さい方を取る。
+pub fn fade_envelope(clip: &studio_core::Clip, within_ms: f64) -> f32 {
+    let mut env = 1.0f64;
+    if clip.fade_in_ms > 0 {
+        env = env.min((within_ms / clip.fade_in_ms as f64).clamp(0.0, 1.0));
+    }
+    if clip.fade_out_ms > 0 {
+        let rest = clip.duration_ms as f64 - within_ms;
+        env = env.min((rest / clip.fade_out_ms as f64).clamp(0.0, 1.0));
+    }
+    env as f32
+}
+
 /// プロジェクトのミックスを指定範囲でレンダリングする（ステレオ出力）。
 /// 配置位置・ゲインはプロジェクトの状態どおりに反映される。
 pub fn render_mix(
@@ -140,7 +155,10 @@ pub fn render_mix(
                         .get((i0 + 1) * ch + src_ch)
                         .copied()
                         .unwrap_or(0.0);
-                    *slot += (a + (b - a) * frac) * clip.gain * channel_factor[out_ch];
+                    *slot += (a + (b - a) * frac)
+                        * clip.gain
+                        * fade_envelope(clip, t_ms - clip.start_ms as f64)
+                        * channel_factor[out_ch];
                 }
             }
         }
@@ -796,5 +814,75 @@ mod review_fix_tests {
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
         assert!(max_diff < 1e-6, "split must not change the mix: {max_diff}");
+    }
+
+    #[test]
+    fn render_mix_applies_linear_fade_in() {
+        // Issue #34: フェードイン区間では振幅が直線的に増える。
+        // 定数 0.8 の素材に fade_in 1000ms を付けると、クリップ内
+        // 0ms で 0、500ms で 0.4、1000ms で 0.8 になる。
+        let (mut p, _) = project_with(&[("a.wav", 0, 2000, 1.0)]);
+        let clip_id = p.tracks[0].clips[0].id;
+        // 定数素材に差し替える（サインでは直線性を判定しにくいため）
+        let mut audio = HashMap::new();
+        audio.insert(
+            "a.wav".to_string(),
+            ClipAudio {
+                sample_rate: RATE,
+                channels: 1,
+                samples: vec![0.8; RATE as usize * 3],
+            },
+        );
+        apply(
+            &mut p,
+            &Command::SetClipFade {
+                clip_id,
+                fade_in_ms: 1000,
+                fade_out_ms: 0,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 2000, RATE);
+        let at = |ms: usize| mix[ms * RATE as usize / 1000 * 2]; // 左ch
+        assert!(at(0).abs() < 0.01, "fade start must be silent: {}", at(0));
+        assert!((at(250) - 0.2).abs() < 0.01, "250ms: {}", at(250));
+        assert!((at(500) - 0.4).abs() < 0.01, "500ms: {}", at(500));
+        assert!((at(1000) - 0.8).abs() < 0.01, "1000ms: {}", at(1000));
+        assert!((at(1500) - 0.8).abs() < 0.01, "after fade: {}", at(1500));
+    }
+
+    #[test]
+    fn render_mix_applies_linear_fade_out() {
+        // Issue #34: フェードアウト区間では振幅が直線的に減る。
+        let (mut p, _) = project_with(&[("a.wav", 0, 2000, 1.0)]);
+        let clip_id = p.tracks[0].clips[0].id;
+        let mut audio = HashMap::new();
+        audio.insert(
+            "a.wav".to_string(),
+            ClipAudio {
+                sample_rate: RATE,
+                channels: 1,
+                samples: vec![0.8; RATE as usize * 3],
+            },
+        );
+        apply(
+            &mut p,
+            &Command::SetClipFade {
+                clip_id,
+                fade_in_ms: 0,
+                fade_out_ms: 1000,
+            },
+        )
+        .unwrap();
+        let mix = render_mix(&p, &audio, 0, 2000, RATE);
+        let at = |ms: usize| mix[ms * RATE as usize / 1000 * 2];
+        assert!((at(500) - 0.8).abs() < 0.01, "before fade: {}", at(500));
+        assert!((at(1000) - 0.8).abs() < 0.01, "fade start: {}", at(1000));
+        assert!((at(1500) - 0.4).abs() < 0.01, "1500ms: {}", at(1500));
+        assert!(
+            at(1999).abs() < 0.01,
+            "fade end must be silent: {}",
+            at(1999)
+        );
     }
 }
