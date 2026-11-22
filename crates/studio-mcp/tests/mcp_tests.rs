@@ -1241,6 +1241,24 @@ fn tone_tools_create_assign_and_observe_via_dump() {
     );
     assert_eq!(res["result"]["isError"], true, "{res}");
     assert_eq!(project_dump_via_tool(&server), dump);
+    // 中身の差し替え（レビュー指摘で追加: MCP 公開5コマンド全てを
+    // tools/call 経由で通す）。
+    let res = call_tool(
+        &server,
+        106,
+        "update_tone",
+        json!({"tone_id": tone_id, "instrument": {"type": "sampler", "source": "pad.wav", "root_note": 48}}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(
+        project.effective_instrument(&project.tracks[0]),
+        Some(studio_core::Instrument::Sampler {
+            source: "pad.wav".into(),
+            root_note: 48,
+        })
+    );
     // 削除すると割り当ても外れる。
     let res = call_tool(&server, 105, "remove_tone", json!({"tone_id": tone_id}));
     assert_eq!(res["result"]["isError"], false, "{res}");
