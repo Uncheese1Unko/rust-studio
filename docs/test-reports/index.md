@@ -46,6 +46,7 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #34 DAW でクリップにフェードイン／フェードアウトを付けられる | [issue-0034-clip-fade.md](issue-0034-clip-fade.md) |
 | 2026-11-22 | #61 バグ修正: History::apply_transient の失敗時原子性 | [issue-0061-apply-transient-atomicity.md](issue-0061-apply-transient-atomicity.md) |
 | 2026-11-22 | #48 調査: トランジションの表現とプレビュー合成方式の選定 | [issue-0048-transition-investigation.md](issue-0048-transition-investigation.md) |
+| 2026-11-22 | #52 調査: mp4 書き出し経路の選定 | [issue-0052-mp4-export-investigation.md](issue-0052-mp4-export-investigation.md) |
 | 2026-11-22 | #35 DAW に BPM（テンポ）を設定でき、小節グリッドが表示される | [issue-0035-bpm-grid.md](issue-0035-bpm-grid.md) |
 | 2026-11-22 | #36 DAW の再生でメトロノームが鳴らせる | [issue-0036-metronome.md](issue-0036-metronome.md) |
 | 2026-11-22 | #44 動画編集でクリップの複製とコピー＆ペーストができる | [issue-0044-duplicate-copy-paste.md](issue-0044-duplicate-copy-paste.md) |
