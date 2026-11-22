@@ -59,6 +59,50 @@ pub fn apply_history_op(history: &mut studio_core::History, op: HistoryOp) -> bo
     }
 }
 
+/// ジェスチャ開始時スナップショットを、現在の状態と異なるときだけ
+/// 履歴へ記録する（Issue #31）。同値ならスナップショットは保持した
+/// ままで何もしない。記録されないのにスナップショットだけが消費
+/// されると、継続中のジェスチャが二度と記録されなくなるため
+/// （レビュー round 4 対応）。
+pub fn flush_gesture_snapshot(history: &mut studio_core::History, before: &mut Option<Project>) {
+    let changed = before
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.dump_json() != history.project().dump_json());
+    if changed {
+        let snapshot = before.take().expect("checked above");
+        history.record_undo_snapshot(snapshot);
+    }
+}
+
+/// 履歴キー操作を、進行中ジェスチャへの配慮込みで適用する
+/// （Issue #31 レビュー round 3・4 対応）。
+///
+/// - Undo: 先にジェスチャを確定させる（`flush_gesture_snapshot`）。
+///   ジェスチャが変化済みなら undo はジェスチャ自身のエントリを
+///   消費して開始状態へ戻り、確定済みの過去状態は失われない。
+///   ジェスチャが未変化で undo が空振りしても、スナップショットは
+///   保持されたままなのでジェスチャは継続できる。
+/// - Redo: ジェスチャは確定させない。確定は redo スタックを消す
+///   ため、その直後の redo が必ず失敗し、失敗の巻き添えで継続中
+///   ジェスチャのスナップショットまで失われる。redo が成功したら
+///   呼び出し側がジェスチャを打ち切り、失敗したら何も変わらない
+///   （ジェスチャは継続し、終了時に通常どおり記録される）。
+///
+/// 実施できたら true。呼び出し側は true のときにジェスチャ状態を
+/// 打ち切ること。
+pub fn apply_history_key(
+    history: &mut studio_core::History,
+    op: HistoryOp,
+    gesture_befores: &mut [&mut Option<Project>],
+) -> bool {
+    if op == HistoryOp::Undo {
+        for before in gesture_befores.iter_mut() {
+            flush_gesture_snapshot(history, before);
+        }
+    }
+    apply_history_op(history, op)
+}
+
 /// Undo/Redo キーの押下エッジ追跡（Issue #31 レビュー対応）。
 ///
 /// 発火は Z/Y キー自体の押下エッジでのみ行い、操作はその瞬間の

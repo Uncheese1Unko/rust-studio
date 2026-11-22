@@ -64,6 +64,20 @@ echo "after ctrl+z start_ms: $(start_ms) (expect 1000)"
 key_hold ctrl+shift+z
 shot 04-after-redo.png
 echo "after ctrl+shift+z start_ms: $(start_ms) (expect 2000)"
+# ジェスチャ途中の Ctrl+Z（#31 レビュー round 3・4 対応）: DAW と同じ
+# 列。ドラッグで 3000 へ動かす途中で Ctrl+Z を押すと、ジェスチャが
+# 先に確定されてから undo されるため、戻り先はジェスチャ開始位置
+# （2000）。redo で途中状態（3000）へ進め、undo で 2000 に戻す。
+xdotool mousemove 372 48; sleep 0.2
+xdotool mousedown 1; sleep 0.45
+xdotool mousemove 456 48; sleep 0.6
+key_hold ctrl+z
+xdotool mouseup 1; sleep 0.8
+echo "after ctrl+z mid-gesture start_ms: $(start_ms) (expect 2000)"
+key_hold ctrl+shift+z
+echo "after redo mid-gesture start_ms: $(start_ms) (expect 3000)"
+key_hold ctrl+z
+echo "after undo again start_ms: $(start_ms) (expect 2000)"
 # 編集中ガード: リネーム開始 → Ctrl+Z → 履歴は動かず、編集も継続する
 dblclick 60 48
 grep -o "rename begin.*" "$OUT/gui-stdout.txt" | head -1

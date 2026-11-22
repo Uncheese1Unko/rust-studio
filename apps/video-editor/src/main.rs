@@ -396,14 +396,12 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     ) else {
         return;
     };
-    // 進行中ジェスチャ（ドラッグ）があれば、履歴操作の前に確定させる。
-    // 記録をジェスチャ終了時まで遅延しているため、このまま undo すると
-    // 未確定の途中状態ではなく直前の確定編集が消費され、確定状態が
-    // undo/redo どちらのスタックにも残らなくなる（#31 レビュー
-    // round 3 対応）。先に確定させれば、undo はジェスチャ自身の
-    // エントリを消費して開始状態へ戻る。
-    finish_gesture_snapshot(&mut model.history, &mut model.drag_before);
-    if !edit::apply_history_op(&mut model.history, op) {
+    // 進行中ジェスチャ（ドラッグ）への配慮は
+    // `edit::apply_history_key` に集約されている（Undo は先に
+    // ジェスチャを確定させ、Redo はジェスチャに触れずに試す。
+    // #31 レビュー round 3・4 対応）。成功したときだけ後始末する。
+    let applied = edit::apply_history_key(&mut model.history, op, &mut [&mut model.drag_before]);
+    if !applied {
         return;
     }
     model.drag = None;
@@ -609,15 +607,14 @@ fn apply_palette_click(
 /// ジェスチャ（ドラッグ）の終了時に、開始時スナップショットを履歴へ
 /// 1件だけ積む（Issue #31）。逐次適用は `apply_transient` で履歴に
 /// 積まないため、ジェスチャ全体が1回の undo 単位になる。記録を
-/// 終了時まで遅らせることで、最終状態と開始状態が同じなら
-/// `History::record_undo_snapshot` の同値ガードが記録自体を省く:
-/// 動かさないクリックはもちろん、一度動かして原位置へ戻した
-/// ドラッグでも「幽霊 undo」を積んだり redo を消したりしない
-/// （#31 レビュー round 2 対応）。
+/// 終了時まで遅らせることで、最終状態と開始状態が同じなら記録自体
+/// を省く: 動かさないクリックはもちろん、一度動かして原位置へ
+/// 戻したドラッグでも「幽霊 undo」を積んだり redo を消したり
+/// しない（#31 レビュー round 2 対応）。記録の実体は
+/// `edit::flush_gesture_snapshot` で、終了時はスロットも空にする。
 fn finish_gesture_snapshot(history: &mut History, before: &mut Option<Project>) {
-    if let Some(snapshot) = before.take() {
-        history.record_undo_snapshot(snapshot);
-    }
+    edit::flush_gesture_snapshot(history, before);
+    *before = None;
 }
 
 fn handle_pointer(app: &App, model: &mut Model) {
@@ -1163,12 +1160,77 @@ mod tests {
                 new_start_ms: 900,
             })
             .unwrap();
-        // handle_history_keys と同じ順序: ジェスチャ確定 → undo
-        finish_gesture_snapshot(&mut history, &mut before);
-        assert!(edit::apply_history_op(&mut history, edit::HistoryOp::Undo));
+        // handle_history_keys が使う純粋関数そのもので検証する:
+        // Undo はジェスチャを確定させてから消費する
+        assert!(edit::apply_history_key(
+            &mut history,
+            edit::HistoryOp::Undo,
+            &mut [&mut before],
+        ));
         assert_eq!(history.project().tracks[0].clips[0].start_ms, 500);
         assert!(edit::apply_history_op(&mut history, edit::HistoryOp::Redo));
         assert_eq!(history.project().tracks[0].clips[0].start_ms, 900);
+    }
+
+    #[test]
+    fn redo_during_changed_gesture_fails_without_losing_the_gesture() {
+        // Issue #31 レビュー round 4 対応: 変化済みジェスチャの途中で
+        // Redo を試しても、redo スタックが空なら失敗するだけで、
+        // ジェスチャのスナップショットも途中状態も失われない。
+        // ジェスチャは継続でき、終了時に通常どおり記録される。
+        // （旧実装は確定→redo の順で、確定が redo を消して必ず失敗し、
+        // スナップショットだけ消費していた。）
+        let mut history = History::new(demo_project());
+        let clip_id = history.project().tracks[0].clips[0].id;
+        let origin = history.project().tracks[0].clips[0].start_ms;
+        let mut before = Some(history.project().clone());
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 900,
+            })
+            .unwrap();
+        assert!(!edit::apply_history_key(
+            &mut history,
+            edit::HistoryOp::Redo,
+            &mut [&mut before],
+        ));
+        assert!(before.is_some());
+        assert_eq!(history.project().tracks[0].clips[0].start_ms, 900);
+        assert!(!history.can_undo());
+        // ジェスチャ終了時に記録され、undo で開始位置へ戻れる
+        finish_gesture_snapshot(&mut history, &mut before);
+        assert!(history.can_undo());
+        assert!(history.undo());
+        assert_eq!(history.project().tracks[0].clips[0].start_ms, origin);
+    }
+
+    #[test]
+    fn failed_undo_during_unchanged_gesture_keeps_the_gesture_armed() {
+        // Issue #31 レビュー round 4 対応: 未変化ジェスチャの途中で
+        // Undo が空振り（履歴が空）しても、スナップショットは消費
+        // されず、その後の動きが終了時に記録される。
+        let mut history = History::new(demo_project());
+        let clip_id = history.project().tracks[0].clips[0].id;
+        let origin = history.project().tracks[0].clips[0].start_ms;
+        let mut before = Some(history.project().clone());
+        assert!(!edit::apply_history_key(
+            &mut history,
+            edit::HistoryOp::Undo,
+            &mut [&mut before],
+        ));
+        assert!(before.is_some());
+        // そのままドラッグを続けて離すと記録される
+        history
+            .apply_transient(&Command::MoveClip {
+                clip_id,
+                new_start_ms: 900,
+            })
+            .unwrap();
+        finish_gesture_snapshot(&mut history, &mut before);
+        assert!(history.can_undo());
+        assert!(history.undo());
+        assert_eq!(history.project().tracks[0].clips[0].start_ms, origin);
     }
 
     #[test]
