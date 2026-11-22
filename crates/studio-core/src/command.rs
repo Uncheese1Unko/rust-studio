@@ -58,6 +58,14 @@ pub enum Command {
         clip_id: u64,
         gain: f32,
     },
+    /// クリップの素材内開始位置（offset_ms）を設定する（Issue #62）。
+    /// 0 = 素材の先頭から。負の値は受け付けない。素材の長さはコアでは
+    /// 分からないため、上限は検証しない（範囲外は再生側で無音／
+    /// フレームなしに倒れる）。
+    SetClipOffset {
+        clip_id: u64,
+        offset_ms: i64,
+    },
     /// クリップのタイトル文字列を設定する（Issue #50）。
     /// 空文字はタイトルなし（消去）。
     SetClipTitle {
@@ -374,6 +382,23 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.gain = *gain;
+            Ok(None)
+        }
+        Command::SetClipOffset { clip_id, offset_ms } => {
+            if *offset_ms < 0 {
+                return Err(CommandError::InvalidRange("offset must be >= 0"));
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.offset_ms = *offset_ms;
             Ok(None)
         }
         Command::SetClipTitle { clip_id, title } => {

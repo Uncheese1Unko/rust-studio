@@ -1075,6 +1075,47 @@ mod review_fix_tests {
     }
 
     #[test]
+    fn render_mix_matches_after_duplicating_split_clip() {
+        // Issue #62: 分割した右クリップを複製しても音が変わらない。
+        // コピーが offset_ms を引き継ぐため、コピーの再生区間は元の
+        // 右クリップの再生区間とサンプル単位で一致する。
+        let (p, audio) = project_with(&[("a.wav", 0, 2000, 1.0)]);
+        let clip_id = p.tracks[0].clips[0].id;
+        let mut split = p.clone();
+        let right_id = apply(
+            &mut split,
+            &Command::SplitClip {
+                clip_id,
+                at_ms: 1000,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        // 元の右クリップだけのミックス（1000〜2000ms）。
+        let original = render_mix(&split, &audio, 1000, 1000, RATE);
+        // DAW の配置計画で右クリップを複製する（終端 2000 に接する）。
+        let placement = crate::edit::duplicate_placement(&split, right_id).expect("clip exists");
+        let dup_id = apply(&mut split, &placement.add).unwrap().unwrap();
+        for cmd in placement.follow_up_commands(dup_id) {
+            apply(&mut split, &cmd).unwrap();
+        }
+        let (_, dup) = split.clip(dup_id).unwrap();
+        assert_eq!(dup.offset_ms, 1000, "duplicate must keep the offset");
+        // コピーだけのミックス（2000〜3000ms）が元と一致する。
+        let copied = render_mix(&split, &audio, 2000, 1000, RATE);
+        assert_eq!(original.len(), copied.len());
+        let max_diff = original
+            .iter()
+            .zip(copied.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_diff < 1e-6,
+            "duplicated split clip must sound the same: {max_diff}"
+        );
+    }
+
+    #[test]
     fn render_mix_applies_linear_fade_in() {
         // Issue #34: フェードイン区間では振幅が直線的に増える。
         // 定数 0.8 の素材に fade_in 1000ms を付けると、クリップ内

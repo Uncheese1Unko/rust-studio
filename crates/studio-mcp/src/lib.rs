@@ -331,6 +331,18 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "set_clip_offset",
+            "description": "クリップの素材内開始位置（offset_ms、ミリ秒、0 = 素材の先頭）を設定する",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "offset_ms": {"type": "integer", "minimum": 0},
+                },
+                "required": ["clip_id", "offset_ms"],
+            },
+        },
+        {
             "name": "set_clip_fade",
             "description": "クリップのフェードイン／フェードアウトの長さ（ミリ秒、直線包絡）を設定する",
             "inputSchema": {

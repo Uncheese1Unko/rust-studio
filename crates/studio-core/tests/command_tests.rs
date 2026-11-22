@@ -1069,3 +1069,69 @@ fn split_clip_clamps_left_transition_in() {
     assert_eq!(left.duration_ms, 200);
     assert_eq!(left.transition_in_ms, 200, "clamped to the left duration");
 }
+
+#[test]
+fn set_clip_offset_applies_and_validates() {
+    // Issue #62: SetClipOffset は素材内開始位置（offset_ms）を設定する。
+    // 負の値は InvalidRange で状態が変わらない。未知のクリップは
+    // ClipNotFound。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    apply(
+        &mut p,
+        &Command::SetClipOffset {
+            clip_id,
+            offset_ms: 1_500,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.offset_ms, 1_500);
+    // 0 に戻すこともできる（素材の先頭から再生）。
+    apply(
+        &mut p,
+        &Command::SetClipOffset {
+            clip_id,
+            offset_ms: 0,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.offset_ms, 0);
+
+    let before = p.dump_json();
+    let err = apply(
+        &mut p,
+        &Command::SetClipOffset {
+            clip_id,
+            offset_ms: -1,
+        },
+    );
+    assert!(
+        matches!(err, Err(CommandError::InvalidRange(_))),
+        "negative offset: {err:?}"
+    );
+    assert_eq!(p.dump_json(), before, "state must not change on failure");
+    let err = apply(
+        &mut p,
+        &Command::SetClipOffset {
+            clip_id: 999,
+            offset_ms: 100,
+        },
+    );
+    assert_eq!(err, Err(CommandError::ClipNotFound(999)));
+    assert_eq!(p.dump_json(), before);
+}
+
+#[test]
+fn set_clip_offset_command_round_trips_through_json() {
+    // Issue #62: コマンドは JSON 経路（API / MCP）でも往復できる。
+    // MCP のツール名は type タグ "set_clip_offset"。
+    let cmd = Command::SetClipOffset {
+        clip_id: 7,
+        offset_ms: 1_234,
+    };
+    let json = serde_json::to_string(&cmd).unwrap();
+    assert!(json.contains("\"set_clip_offset\""), "{json}");
+    let back: Command = serde_json::from_str(&json).unwrap();
+    assert_eq!(cmd, back);
+}

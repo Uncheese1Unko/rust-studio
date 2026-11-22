@@ -49,6 +49,7 @@ fn tools_list_exposes_all_commands() {
         "move_clip",
         "trim_clip",
         "split_clip",
+        "set_clip_offset",
         "set_clip_fade",
         "set_bpm",
         "remove_clip",
@@ -884,4 +885,44 @@ fn set_clip_transition_tool_applies_via_tools_call() {
     let clip = &project.tracks[0].clips[0];
     assert_eq!(clip.transition_in_kind, studio_core::TransitionKind::None);
     assert_eq!(clip.transition_in_ms, 0);
+}
+
+#[test]
+fn set_clip_offset_tool_applies_via_tools_call() {
+    // Issue #62: set_clip_offset が tools/call 経由で適用でき、ダンプで
+    // offset_ms が観測できる。負の値はエラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        60,
+        "add_track",
+        json!({"name": "A1", "kind": "audio"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        61,
+        "add_clip",
+        json!({"track_id": 1, "name": "take", "start_ms": 0, "duration_ms": 4000, "source": "take.wav"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        62,
+        "set_clip_offset",
+        json!({"clip_id": 2, "offset_ms": 1500}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].clips[0].offset_ms, 1500);
+    // 負の値はエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        63,
+        "set_clip_offset",
+        json!({"clip_id": 2, "offset_ms": -1}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
 }
