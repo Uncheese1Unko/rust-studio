@@ -54,6 +54,7 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-22 | #39 DAW でトラックをミュート／ソロにできる | [issue-0039-mute-solo.md](issue-0039-mute-solo.md) |
 | 2026-11-22 | #40 DAW で範囲を指定してループ再生できる | [issue-0040-loop-playback.md](issue-0040-loop-playback.md) |
 | 2026-11-22 | #41 DAW のミックスを WAV に書き出せる | [issue-0041-wav-export.md](issue-0041-wav-export.md) |
+| 2026-11-22 | #42 DAW にファイルをドラッグ＆ドロップで取り込める | [issue-0042-drag-drop-import.md](issue-0042-drag-drop-import.md) |
 | 2026-11-22 | #44 動画編集でクリップの複製とコピー＆ペーストができる | [issue-0044-duplicate-copy-paste.md](issue-0044-duplicate-copy-paste.md) |
 | 2026-11-22 | #45 動画編集のクリップ移動・トリムがスナップする | [issue-0045-clip-snap.md](issue-0045-clip-snap.md) |
 | 2026-11-22 | #46 動画編集のタイムラインをズームできる | [issue-0046-timeline-zoom.md](issue-0046-timeline-zoom.md) |
