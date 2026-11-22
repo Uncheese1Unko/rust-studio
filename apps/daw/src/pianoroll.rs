@@ -91,8 +91,10 @@ pub fn is_black_key(pitch: i32) -> bool {
 }
 
 impl PianoRoll {
-    /// クリップを開く。表示範囲はノートが収まる中心に決める
-    /// （ノートが無ければ C4 = 60 を中心にする）。
+    /// クリップを開く。表示範囲はノート列の中心に寄せる
+    /// （ノートが無ければ C4 = 60 を中心にする）。ノート列が
+    /// 表示範囲（25行）より広い場合は全ては収まらず、中心付近が
+    /// 見える（範囲外のノートは編集できない。スクロールは将来課題）。
     pub fn open(clip: &Clip) -> PianoRoll {
         let center = if clip.notes.is_empty() {
             60
@@ -284,10 +286,10 @@ impl NoteDrag {
 mod tests {
     use super::*;
 
-    const W: f32 = 960.0;
-    const H: f32 = 540.0;
+    pub const W: f32 = 960.0;
+    pub const H: f32 = 540.0;
 
-    fn clip_with_notes(notes: Vec<Note>) -> Clip {
+    pub fn clip_with_notes(notes: Vec<Note>) -> Clip {
         Clip {
             id: 2,
             name: "melody".into(),
@@ -308,7 +310,7 @@ mod tests {
         }
     }
 
-    fn note(pitch: u8, start_ms: i64, duration_ms: i64) -> Note {
+    pub fn note(pitch: u8, start_ms: i64, duration_ms: i64) -> Note {
         Note {
             pitch,
             start_ms,
@@ -462,5 +464,38 @@ mod tests {
         assert_eq!(pitch_name(59), "B3");
         assert!(is_black_key(61));
         assert!(!is_black_key(60));
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::tests::*;
+    use super::*;
+
+    #[test]
+    fn drag_clamps_pitch_at_the_bottom_row() {
+        // レビュー指摘（Issue #69）: 音高の下端クランプも固定する。
+        let clip = clip_with_notes(vec![note(60, 1_000, 500)]);
+        let roll = PianoRoll::open(&clip);
+        let rect = roll.note_rect(W, H, &clip, &clip.notes[0]);
+        let drag = roll
+            .begin_drag(W, H, &clip, 0, rect.x + 10.0, rect.y + rect.h / 2.0)
+            .unwrap();
+        let cmd = drag.command_for(&roll, W, H, &clip, rect.x + 10.0, H + 500.0);
+        match cmd {
+            Command::MoveNote { new_pitch, .. } => {
+                assert_eq!(new_pitch, (roll.top_pitch - ROWS + 1) as u8)
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn open_centers_even_when_notes_span_more_than_the_rows() {
+        // レビュー指摘（Issue #69）: 25行より広いノート列では
+        // 全ては収まらない。中心に寄せることを固定する。
+        let clip = clip_with_notes(vec![note(40, 0, 500), note(80, 500, 500)]);
+        let roll = PianoRoll::open(&clip);
+        assert_eq!(roll.top_pitch, 60 + ROWS / 2);
     }
 }

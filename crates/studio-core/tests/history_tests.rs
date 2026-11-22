@@ -155,3 +155,55 @@ fn record_undo_snapshot_skips_state_equal_to_current() {
     assert!(!history.can_undo());
     assert!(history.can_redo());
 }
+
+#[test]
+fn note_commands_round_trip_through_undo_and_redo() {
+    // レビュー指摘（Issue #69）: MoveNote / RemoveNote を History
+    // 経由で適用し、Undo で戻り、Redo で再適用されることを固定する
+    // （ピアノロールの受け入れ条件4の基盤）。
+    let mut history = History::new(Project::new("t"));
+    let track = history.apply(&add_track("Keys")).unwrap().unwrap();
+    let clip = history
+        .apply(&Command::AddClip {
+            track_id: track,
+            name: "melody".into(),
+            start_ms: 0,
+            duration_ms: 4_000,
+            source: String::new(),
+        })
+        .unwrap()
+        .unwrap();
+    history
+        .apply(&Command::AddNote {
+            clip_id: clip,
+            pitch: 60,
+            start_ms: 0,
+            duration_ms: 500,
+            velocity: 100,
+        })
+        .unwrap();
+    let with_note = history.project().dump_json();
+    history
+        .apply(&Command::MoveNote {
+            clip_id: clip,
+            note_index: 0,
+            new_pitch: 65,
+            new_start_ms: 300,
+        })
+        .unwrap();
+    let moved = history.project().dump_json();
+    assert_ne!(moved, with_note);
+    assert!(history.undo());
+    assert_eq!(history.project().dump_json(), with_note, "undo move");
+    assert!(history.redo());
+    assert_eq!(history.project().dump_json(), moved, "redo move");
+    history
+        .apply(&Command::RemoveNote {
+            clip_id: clip,
+            note_index: 0,
+        })
+        .unwrap();
+    assert!(history.project().clip(clip).unwrap().1.notes.is_empty());
+    assert!(history.undo());
+    assert_eq!(history.project().dump_json(), moved, "undo remove");
+}

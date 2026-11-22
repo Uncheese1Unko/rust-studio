@@ -527,6 +527,13 @@ fn watch_project_file(app: &App, model: &mut Model) {
             model.last_mixer_cmd = None;
             model.drag_before = None;
             model.mixer_before = None;
+            // ピアノロールも打ち切る（Issue #69 レビュー指摘）:
+            // ノート構成が変わると選択・ドラッグのインデックスが
+            // 別のノートを指し、旧プロジェクトの roll_before が
+            // 新しい History に記録され得るため、ロールごと閉じる。
+            model.piano_roll = None;
+            model.roll_before = None;
+            model.last_roll_cmd = None;
             // リネーム編集も打ち切る（バグ #60: 対象が消えると Enter の
             // たびに拒否され続け、残っていても外部変更後の名前を編集中
             // テキストで黙って上書きしてしまうため）。
@@ -814,6 +821,19 @@ fn update(app: &App, model: &mut Model, update: Update) {
     let esc_down = app.keys.down.contains(&Key::Escape);
     if esc_down && !model.prev_esc_down && model.rename.is_none() && model.bpm_edit.is_none() {
         if model.piano_roll.is_some() {
+            // ドラッグ中に閉じる場合はジェスチャを確定してから
+            // 閉じる（transient 適用済みの移動を、履歴に残らず
+            // Undo で戻せない状態で確定させない。Issue #69
+            // レビュー指摘）。
+            let had_drag = model
+                .piano_roll
+                .as_mut()
+                .map(|r| r.drag.take().is_some())
+                .unwrap_or(false);
+            if had_drag {
+                finish_gesture_snapshot(&mut model.history, &mut model.roll_before);
+                save_project_file(model);
+            }
             model.piano_roll = None;
             model.roll_before = None;
             model.last_roll_cmd = None;
@@ -893,6 +913,7 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     model.mixer_active = None;
     model.last_mixer_cmd = None;
     model.mixer_before = None;
+    model.roll_before = None;
     // ピアノロール（Issue #69）: 履歴が動いたらドラッグと選択を
     // 打ち切り、対象クリップが消えていたら閉じる。
     model.last_roll_cmd = None;
@@ -1230,8 +1251,13 @@ fn finish_gesture_snapshot(history: &mut History, before: &mut Option<Project>) 
 }
 
 /// ピアノロールを開けるクリップかどうか（Issue #69）。
-/// ノートクリップ、素材なしクリップ、楽器のあるトラックの
-/// クリップを対象とする。
+/// ノートクリップと素材なしクリップは常に対象。素材のある
+/// クリップは、楽器のあるトラックのものだけを意図的な導線として
+/// 対象にする（この場合、最初のノート配置でそのクリップは
+/// ノートクリップになり波形は鳴らなくなる。ADR-0016 の意味論
+/// どおりで、ダブルクリックという明示操作を変換点とする）。
+/// 楽器のないトラックの波形クリップは対象外（誤ってノート
+/// クリップ化しないため）。
 fn roll_openable(project: &Project, clip_id: u64) -> bool {
     let Some((track, clip)) = project.clip(clip_id) else {
         return false;
@@ -1562,10 +1588,8 @@ fn handle_pointer(app: &App, model: &mut Model) {
         }
         let target = edit::hit_test(model.history.project(), win.w(), &model.view_scale, lx, ly);
         // ピアノロールを開く導線（Issue #69）: クリップの
-        // ダブルクリックで、そのクリップのロールを開く。対象は
-        // ノートクリップ、素材なしクリップ、楽器のあるトラックの
-        // クリップに限る（波形クリップを誤ってノートクリップ化
-        // しないため）。
+        // ダブルクリックで、そのクリップのロールを開く。
+        // 対象の条件は roll_openable を参照。
         let target_clip = match &target {
             edit::HitTarget::ClipBody { clip_id }
             | edit::HitTarget::ClipLeftEdge { clip_id }
