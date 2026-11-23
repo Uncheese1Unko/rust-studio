@@ -179,7 +179,7 @@ impl ViewScale {
         if playhead_ms <= end {
             return *self;
         }
-        let visible = (end - self.offset_ms).max(1);
+        let visible = self.visible_ms(view_width_px).max(1);
         let pages = (playhead_ms - end + visible - 1) / visible;
         ViewScale {
             offset_ms: self.offset_ms + pages * visible,
