@@ -172,7 +172,7 @@ mlua 0.11.6（Lua 5.1、vendored ビルド。features = `lua51` + `vendored`、�
   2. **[Minor] 参照資料が再検証可能でない**: 結論の根拠（ヘッダの行数、実測件数等）が「実物を見た」という記述のみで、URL・版・集計方法が無い。→ 「参照資料」の節を追加し、資料ごとに取得元 URL、commit、集計方法（grep コマンド）を明記した。
   3. **[Minor] 試作の証拠が再現できない**: evidence に依存定義が無く、vendored ビルドの裏付けにならない。→ `spike-Cargo.toml`（mlua 0.11.6、features = lua51 + vendored）を evidence に追加し、試作の節に明記した。
   - なおレビュアーは AC1〜AC3 の内容、試作の数値（チェックサム 1,331,712、SJIS バイト列）を独立に再計算・照合し、一致を確認した。
-- round 2: （実施後に記入する）
+- round 2: 新規の独立 code-reviewer（イシュー番号と diff 範囲 `ad12556..3701063` のみを渡した）が **APPROVE**。round 1 の指摘3件はいずれも実態と一致して解消されていること（コメントの実在を `gh` で確認、参照資料節の追加、spike-Cargo.toml の追加）、AC1〜AC4 の充足、スコープ遵守（docs のみ8ファイル、本体コード変更なし）、ADR が「提案」のままであることを確認した。指摘なし。
 
 ## 完了の定義チェック
 
@@ -180,8 +180,8 @@ mlua 0.11.6（Lua 5.1、vendored ビルド。features = `lua51` + `vendored`、�
 - [ ] TDD で実装した — 対象外（調査 PBI。本体コードの変更なし）
 - [ ] `cargo test` が 0 で終わった — 対象外（同上。本体コードを変更していないため、ワークスペースの状態は main のまま）
 - [ ] 画面で観測できる受け入れ条件は実アプリで確認し、証拠を残した — 対象外（受け入れ条件は文書成果物のみ。試作の証拠は evidence/issue-0079/ に残した）
-- [ ] push の前に独立した `code-reviewer` が `APPROVE` を返した — （実施後に記入する）
-- [ ] この変更の commit で CI が緑 — （push 後に記入する）
+- [x] push の前に独立した `code-reviewer` が `APPROVE` を返した（round 2。指摘と対応は上記「コードレビュー」）
+- [x] この変更の commit で CI が緑（https://github.com/Uncheese1Unko/rust-studio/actions/runs/45141432771 。本ブックキーピング commit 自身の CI も push 後に確認する）
 - [x] 判断があれば ADR を同じ commit で足した（ADR-0019 を提案として記録。採用の決定は needs-decision として人間に渡した）
 - [x] 試験レポートを `docs/test-reports/` に、証拠を `docs/test-reports/evidence/` に置いた
 - [ ] 全部にチェックを入れ、commit・CI の URL・試験レポートへのリンクをコメントに書いて閉じた — **未了**: 本イシューは `needs-decision`（ADR-0019 の採用可否は人間の決定待ち）のため、決定後に close する。調査成果物は本レポートで完成している
