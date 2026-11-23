@@ -1,0 +1,11 @@
+directive: --track0:速度,-100,100,10
+directive: --track1:サイズ,10,200,64,1
+directive: --check0:反転,1
+dialog: 色/col,col=0xff0000;
+--- recorded host calls (in order) ---
+load kind=figure
+effect name_bytes=[90, 46, 92, b2, 95, e2, 90, b3] param_count=2
+draw argc=2
+buffer checksum after run: 1331712
+pixel(0,0) = (238,34,51,255)  (figure fill 0x11,0x22,0x33 inverted R by check0 -> expect (238,34,51,255))
+Lua version: Lua 5.1
