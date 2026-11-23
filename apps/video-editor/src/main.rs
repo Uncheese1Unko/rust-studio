@@ -74,6 +74,10 @@ struct Model {
     // Issue #46: タイムラインの表示スケール（倍率と左端オフセット）。
     // 表示状態であり、プロジェクトには保存しない。
     view_scale: timeline::ViewScale,
+    // Issue #84: 再生ヘッドへの表示追従のオン／オフ（既定オン）と
+    // F キーの押下エッジ追跡。表示状態であり、保存しない。
+    follow_playhead: bool,
+    prev_f_down: bool,
     // Issue #47: メディアビンの素材一覧と、ダブルクリック判定・
     // 再読み込みキーの前回状態。
     media_items: Vec<media::MediaItem>,
@@ -436,6 +440,8 @@ fn model(app: &App) -> Model {
         edit_keys: edit::EditKeyTracker::new(),
         clipboard: None,
         view_scale: timeline::ViewScale::default(),
+        follow_playhead: true,
+        prev_f_down: false,
         media_items,
         last_bin_click: None,
         bin_reload_key_down: false,
@@ -876,6 +882,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.prev_t_down = app.keys.down.contains(&Key::T);
         model.prev_s_down = app.keys.down.contains(&Key::S);
         model.prev_x_down = app.keys.down.contains(&Key::X);
+        model.prev_f_down = app.keys.down.contains(&Key::F);
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
@@ -930,12 +937,38 @@ fn update(app: &App, model: &mut Model, update: Update) {
             toggle_transition(model);
         }
         model.prev_x_down = x_down;
+        // 再生追従の切り替え（Issue #84）: F キーの押下エッジ。
+        let f_down = app.keys.down.contains(&Key::F);
+        if f_down && !model.prev_f_down {
+            model.follow_playhead = !model.follow_playhead;
+            println!(
+                "follow: {}",
+                if model.follow_playhead { "on" } else { "off" }
+            );
+        }
+        model.prev_f_down = f_down;
     }
     watch_project_file(app, model);
 
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(model.history.project());
+    let prev_playhead_ms = model.playhead_ms;
     model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end_ms);
+    // 再生追従（Issue #84）: 追従オンのとき、再生ヘッドが表示右端を
+    // 超えたらページ送りで表示を進める。巻き戻り（ラップアラウンド）
+    // ではオフセットも 0 に戻す。オフセットが変わったらホイール
+    // スクロールと同じ形式で標準出力に記録する（観測手段の維持）。
+    if model.follow_playhead {
+        let wrapped = model.playhead_ms < prev_playhead_ms;
+        let win = app.window_rect();
+        let next = model
+            .view_scale
+            .follow_playhead(model.playhead_ms, win.w(), wrapped);
+        if next.offset_ms != model.view_scale.offset_ms {
+            model.view_scale = next;
+            println!("scroll offset: {}", model.view_scale.offset_ms);
+        }
+    }
 
     // プレビューの表示フレームが変わったら観測用に記録する（Issue #10）。
     let current =

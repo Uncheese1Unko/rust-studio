@@ -150,6 +150,42 @@ impl ViewScale {
             ..*self
         }
     }
+
+    /// 表示中の時間幅（ms）＝表示右端 − 左端オフセット。
+    pub fn visible_ms(&self, view_width_px: f32) -> i64 {
+        self.end_ms(view_width_px) - self.offset_ms
+    }
+
+    /// 再生ヘッドへの表示追従（Issue #84）。ページ送り方式：
+    /// 再生ヘッドが表示右端を超えた場合にだけ、表示幅の整数倍だけ
+    /// オフセットを進めて再生ヘッドを表示範囲の左寄りに戻す。
+    /// 範囲内・表示範囲より前（左）にある場合は動かさない（手動
+    /// スクロール直後に追従が表示を奪い返さないため）。
+    /// `wrapped`（終端で先頭へ巻き戻った）のときはオフセットを
+    /// 0 に戻す。
+    pub fn follow_playhead(
+        &self,
+        playhead_ms: i64,
+        view_width_px: f32,
+        wrapped: bool,
+    ) -> ViewScale {
+        if wrapped {
+            return ViewScale {
+                offset_ms: 0,
+                ..*self
+            };
+        }
+        let end = self.end_ms(view_width_px);
+        if playhead_ms <= end {
+            return *self;
+        }
+        let visible = (end - self.offset_ms).max(1);
+        let pages = (playhead_ms - end + visible - 1) / visible;
+        ViewScale {
+            offset_ms: self.offset_ms + pages * visible,
+            ..*self
+        }
+    }
 }
 
 /// フェードの傾斜（Issue #51）。各端点は (x, y) ピクセル。
@@ -463,6 +499,58 @@ mod tests {
             HEADER_WIDTH_PX + 5_000.0 * px_per_ms(960.0)
         );
         assert_eq!(base.px_per_ms(960.0), px_per_ms(960.0));
+    }
+
+    #[test]
+    fn follow_playhead_pages_forward_past_right_edge() {
+        // Issue #84: 再生ヘッドが表示右端を超えたら、表示幅1ページ分
+        // オフセットが進み、再生ヘッドが表示範囲の左寄りに戻る。
+        // 幅 960・倍率1では表示幅は 10,000ms。
+        let base = ViewScale::default();
+        // 右端ちょうど（10,000）はまだ範囲内なので動かない
+        assert_eq!(base.follow_playhead(10_000, 960.0, false).offset_ms, 0);
+        // 超えたら1ページ進む
+        let followed = base.follow_playhead(10_500, 960.0, false);
+        assert_eq!(followed.offset_ms, 10_000);
+        assert_eq!(followed.zoom, base.zoom);
+        // 再生ヘッドが新しい表示範囲内にある
+        assert!(followed.offset_ms <= 10_500 && 10_500 <= followed.end_ms(960.0));
+        // 大きく先にある場合は複数ページ進む
+        assert_eq!(base.follow_playhead(25_000, 960.0, false).offset_ms, 20_000);
+        // ズーム2倍では表示幅 5,000ms なのでページも 5,000ms
+        let zoomed = ViewScale {
+            zoom: 2.0,
+            offset_ms: 0,
+        };
+        assert_eq!(zoomed.follow_playhead(5_500, 960.0, false).offset_ms, 5_000);
+    }
+
+    #[test]
+    fn follow_playhead_keeps_offset_when_playhead_in_view_or_before() {
+        // Issue #84: 範囲内では動かさない。表示範囲より前（左）に
+        // ある場合も、手動スクロール直後に表示を奪い返さないため
+        // 動かさない。
+        let base = ViewScale {
+            zoom: 1.0,
+            offset_ms: 3_000,
+        };
+        assert_eq!(base.follow_playhead(5_000, 960.0, false).offset_ms, 3_000);
+        assert_eq!(base.follow_playhead(13_000, 960.0, false).offset_ms, 3_000);
+        assert_eq!(base.follow_playhead(2_000, 960.0, false).offset_ms, 3_000);
+        assert_eq!(base.follow_playhead(0, 960.0, false).offset_ms, 3_000);
+    }
+
+    #[test]
+    fn follow_playhead_resets_offset_on_wrap() {
+        // Issue #84: ラップアラウンド（終端で先頭へ巻き戻り）時は
+        // オフセットも 0 に戻る。
+        let base = ViewScale {
+            zoom: 1.0,
+            offset_ms: 20_000,
+        };
+        let followed = base.follow_playhead(120, 960.0, true);
+        assert_eq!(followed.offset_ms, 0);
+        assert_eq!(followed.zoom, base.zoom);
     }
 
     #[test]
