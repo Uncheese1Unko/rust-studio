@@ -131,12 +131,27 @@ A（Lua スクリプトエフェクト互換に絞る）／B（独自 Lua API＋
 
 ## 試作（結論の裏付け）
 
-mlua（Lua 5.1、vendored ビルド）で、実際の .anm と同型のスクリプトをモック `obj` に対して実行する使い捨て試作を /tmp で行った。証拠は [evidence/issue-0079/spike-stdout.txt](evidence/issue-0079/spike-stdout.txt) と [spike-main.rs](evidence/issue-0079/spike-main.rs)。
+mlua 0.11.6（Lua 5.1、vendored ビルド。features = `lua51` + `vendored`、依存定義は [evidence/issue-0079/spike-Cargo.toml](evidence/issue-0079/spike-Cargo.toml)）で、実際の .anm と同型のスクリプトをモック `obj` に対して実行する使い捨て試作を /tmp で行った。証拠は [evidence/issue-0079/spike-stdout.txt](evidence/issue-0079/spike-stdout.txt) と [spike-main.rs](evidence/issue-0079/spike-main.rs)。
 
 - パラメータ指令（`--track0`、`--track1`、`--check0`、`--dialog`）を先頭コメント行からパースできた。
 - `obj.load("figure", ...)` → ピクセルループ（`getpixel`／`putpixel` で全画素の R 反転）→ `obj.effect(...)` → `obj.draw(...)` の順でホスト関数が呼ばれ、RGBA バッファ（64×36）に反映された。期待値は先に計算した：全画素が (0x11,0x22,0x33,0xFF) で埋まり R だけ反転するため、画素 (0,0) は (238,34,51,255)、チェックサムは 578×2304＝**1,331,712**。実測は画素・チェックサムとも完全一致した。
 - 効果名は **Shift_JIS のバイト列**（「色調補正」= 90 46 92 B2 95 E2 90 B3）のまま Lua 文字列として渡り、ホスト側でバイト列として受け取れた。ExEdit の名前ベースのディスパッチをバイト列前提で再現できることの裏付けになる。
 - ランタイムは `_VERSION = "Lua 5.1"`。ExEdit の lua51.dll（Lua 5.1.4）と同系であり、意味論の基準として妥当。
+
+## 参照資料
+
+本調査で直接確認した資料。取得日はいずれも 2026-11-23。
+
+| 資料 | 取得元・版 | 確認した内容 |
+|---|---|---|
+| プラグイン SDK `filter.h`（632行） | https://github.com/makiuchi-d/delogo-aviutl（commit `e8fdb24`）同梱の SDK コピー | FILTER_DLL、EXFUNC（関数ポインタ約50項目）、WM_FILTER_*、PIXEL_YC の定義 |
+| プラグイン SDK `input.h`／`license.txt` | https://github.com/oov/aviutl_ffmpeg_input（commit `f259980`）の `src/3rd/aviutl_sdk/` | INPUT_PLUGIN_TABLE の形、SDK の MIT ライセンス文（Copyright (c) 1999-2012 Kenkun） |
+| プラグイン SDK `output.h` | https://github.com/rigaya/NVEnc の `NVEnc/output.h` | OUTPUT_INFO（ホスト側コールバック）と OUTPUT_PLUGIN_TABLE の形 |
+| ExEdit スクリプト仕様（lua.txt の転記） | https://ocraviutl.fandom.com/ja/wiki/Lua および同ページの「Lua/独自関数」（AviUtl 同封の lua.txt と同一内容と明記されている転記） | 状態変数、パラメータ指令、`obj.*` 関数の全量、Lua 5.1.4／LuaJIT 2.0.5 の同梱情報 |
+| スクリプト作成方法の解説 | https://seesaawiki.jp/aviutl-memo/e/edit?id=3454226 | script フォルダ配置、Shift_JIS＋CRLF、`@` 複数登録、指令の書式例 |
+| プラグイン種別一覧 | aviutl_plugin_sdk.txt の引用（https://note.com/sinamu476/n/nc6d920b19b63）と https://ja.wikipedia.org/wiki/AviUtl | .auf／.aui／.auo／.auc／.aul の分類、本体が IA-32 であること |
+| 配布スクリプトの実測対象 | https://github.com/sigma-axis/sigma_aviutl_scripts（commit `79bce10`、MIT） | 集計方法：スクリプト5ファイル（.anm×3、.obj、.scn）と共有ライブラリ4本（.lua）に対し `grep -o 'obj\.[a-z_]*' \| sort \| uniq -c` で使用回数を数え、パラメータ指令はスクリプトファイルの行頭指令を数えた。種別の解説は https://deepwiki.com/sigma-axis/sigma_aviutl_scripts/2.1-script-types も参照 |
+| AviUtl2 世代の位置付け | https://dic.nicovideo.jp/a/aviutl%20exedit2 | 旧版が 32bit アプリケーションで、AviUtl2 は 64bit の別体系であること |
 
 ## 未検証事項
 
