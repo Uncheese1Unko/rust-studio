@@ -78,6 +78,11 @@ struct Model {
     // F キーの押下エッジ追跡。表示状態であり、保存しない。
     follow_playhead: bool,
     prev_f_down: bool,
+    // Issue #85: スクロールバーのドラッグ中は掴み位置のずれ（px）、
+    // 中ボタンパンの最中は前フレームのポインタ x（px）を保持する。
+    // いずれも表示状態であり、保存しない。
+    scrollbar_drag: Option<f32>,
+    pan_drag: Option<f32>,
     // Issue #47: メディアビンの素材一覧と、ダブルクリック判定・
     // 再読み込みキーの前回状態。
     media_items: Vec<media::MediaItem>,
@@ -442,6 +447,8 @@ fn model(app: &App) -> Model {
         view_scale: timeline::ViewScale::default(),
         follow_playhead: true,
         prev_f_down: false,
+        scrollbar_drag: None,
+        pan_drag: None,
         media_items,
         last_bin_click: None,
         bin_reload_key_down: false,
@@ -741,30 +748,40 @@ fn save_project_file(model: &mut Model) {
 /// ホイール操作（Issue #46）: Ctrl+ホイールでマウス位置の時刻を
 /// 中心にズーム、通常のホイールで水平スクロールする。リネーム編集中は
 /// 受け付けない。倍率とオフセットは表示状態で、保存はしない。
+/// Issue #85: スクロール量は表示幅の 1/10 /ノッチ（ズームに比例）、
+/// 横ホイールと Shift+ホイールでもスクロールし、オフセットは
+/// プロジェクト終端でクランプする。
 fn mouse_wheel(app: &App, model: &mut Model, delta: MouseScrollDelta) {
     if model.rename.is_some() {
         return;
     }
-    let lines = match delta {
-        MouseScrollDelta::LineDelta(_, y) => y,
-        MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 50.0,
+    // 横成分（x）も捨てずに拾う。PixelDelta は既存の換算
+    // （50px = 1行）を両成分に適用する。
+    let (x_lines, y_lines) = match delta {
+        MouseScrollDelta::LineDelta(x, y) => (x, y),
+        MouseScrollDelta::PixelDelta(pos) => (pos.x as f32 / 50.0, pos.y as f32 / 50.0),
     };
-    if lines == 0.0 {
+    if x_lines == 0.0 && y_lines == 0.0 {
         return;
     }
     let win = app.window_rect();
     let mx = app.mouse.x + win.w() / 2.0;
-    if ctrl_down(app) {
+    if ctrl_down(app) && y_lines != 0.0 {
         let anchor_ms = model.view_scale.x_to_ms(mx, win.w());
-        let factor = if lines > 0.0 { 1.25 } else { 0.8 };
+        let factor = if y_lines > 0.0 { 1.25 } else { 0.8 };
         model.view_scale = model.view_scale.zoom_at(factor, anchor_ms, mx, win.w());
         println!(
             "zoom: {:.2} offset: {}",
             model.view_scale.zoom, model.view_scale.offset_ms
         );
     } else {
-        model.view_scale = model.view_scale.scroll_by(-(lines * 100.0) as i64);
-        println!("scroll offset: {}", model.view_scale.offset_ms);
+        let delta_ms = model.view_scale.wheel_delta_ms(x_lines, y_lines, win.w());
+        let end = timeline::project_end_ms(model.history.project());
+        let next = model.view_scale.scroll_by_clamped(delta_ms, end, win.w());
+        if next.offset_ms != model.view_scale.offset_ms {
+            model.view_scale = next;
+            println!("scroll offset: {}", model.view_scale.offset_ms);
+        }
     }
 }
 
@@ -1410,6 +1427,22 @@ fn apply_gain_slider(model: &mut Model, lx: f32) {
     }
 }
 
+/// スクロールバーのドラッグを表示オフセットへ反映する（Issue #85）。
+/// 換算とクランプは timeline の純粋関数に寄せる。
+fn apply_scrollbar_drag(model: &mut Model, lx: f32, view_width_px: f32) {
+    let Some(grab_dx) = model.scrollbar_drag else {
+        return;
+    };
+    let end = timeline::project_end_ms(model.history.project());
+    let next = model
+        .view_scale
+        .scrollbar_drag_to(lx - grab_dx, end, view_width_px);
+    if next.offset_ms != model.view_scale.offset_ms {
+        model.view_scale = next;
+        println!("scroll offset: {}", model.view_scale.offset_ms);
+    }
+}
+
 fn handle_pointer(app: &App, model: &mut Model) {
     let win = app.window_rect();
     // nannou の中心原点座標を、レイアウトの左上原点ピクセルへ変換する。
@@ -1417,6 +1450,53 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let ly = win.h() / 2.0 - app.mouse.y;
     let left_down = app.mouse.buttons.left().is_down();
     let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
+
+    // スクロールバー（Issue #85）: 帯での左押下でドラッグ開始し、
+    // 保持中はつまみをポインタに追従させる。帯は他の要素と
+    // 重ならないため、左ボタンの他の処理より先に捌く。
+    if left_down && !model.prev_left_down {
+        let end = timeline::project_end_ms(model.history.project());
+        if let Some(grab_dx) = timeline::scrollbar_grab(
+            &model.view_scale,
+            end,
+            model.history.project().tracks.len(),
+            lx,
+            ly,
+            win.w(),
+        ) {
+            model.scrollbar_drag = Some(grab_dx);
+            apply_scrollbar_drag(model, lx, win.w());
+            model.prev_left_down = left_down;
+            return;
+        }
+    }
+    if left_down && model.scrollbar_drag.is_some() {
+        apply_scrollbar_drag(model, lx, win.w());
+    }
+    if !left_down && model.scrollbar_drag.take().is_some() {
+        println!("scrollbar drag end: offset {}", model.view_scale.offset_ms);
+    }
+    // 中ボタンドラッグでのパン（Issue #85）: 掴んだ内容がポインタに
+    // 追従する向きにする（左へ引くと先の内容が見える）。移動量は
+    // px を現在の倍率で ms に換算し、終端でクランプする。
+    let middle_down = app.mouse.buttons.middle().is_down();
+    if middle_down {
+        if let Some(last_lx) = model.pan_drag {
+            let dx_px = last_lx - lx;
+            if dx_px != 0.0 {
+                let delta_ms = (dx_px / model.view_scale.px_per_ms(win.w())).round() as i64;
+                let end = timeline::project_end_ms(model.history.project());
+                let next = model.view_scale.scroll_by_clamped(delta_ms, end, win.w());
+                if next.offset_ms != model.view_scale.offset_ms {
+                    model.view_scale = next;
+                    println!("scroll offset: {}", model.view_scale.offset_ms);
+                }
+            }
+        }
+        model.pan_drag = Some(lx);
+    } else {
+        model.pan_drag = None;
+    }
 
     if left_down && !model.prev_left_down {
         // ゲインスライダー（Issue #51）: プレビュー下の帯。
@@ -2089,6 +2169,46 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .font_size(11)
             .color(rgb(0.95, 0.75, 0.35));
         }
+    }
+
+    // スクロールバー（Issue #85）: タイムライン領域の下端の帯に、
+    // 現在の表示範囲とプロジェクト全体の割合でつまみを描く。
+    // ヘッダー列（トラック追加エリア）には被せない。
+    {
+        let track_count = model.history.project().tracks.len();
+        let y = timeline::scrollbar_y(track_count);
+        let end = timeline::project_end_ms(model.history.project());
+        let (bx, by) = rect_center(
+            win,
+            timeline::HEADER_WIDTH_PX,
+            y,
+            win.w() - timeline::HEADER_WIDTH_PX,
+            timeline::SCROLLBAR_HEIGHT_PX,
+        );
+        draw.rect()
+            .x_y(bx, by)
+            .w_h(
+                win.w() - timeline::HEADER_WIDTH_PX,
+                timeline::SCROLLBAR_HEIGHT_PX,
+            )
+            .color(rgb(0.13, 0.13, 0.16));
+        let (thumb_x, thumb_w) = model.view_scale.scrollbar_thumb(end, win.w());
+        let (tx, ty) = rect_center(
+            win,
+            thumb_x,
+            y + 2.0,
+            thumb_w,
+            timeline::SCROLLBAR_HEIGHT_PX - 4.0,
+        );
+        let shade = if model.scrollbar_drag.is_some() {
+            0.62
+        } else {
+            0.45
+        };
+        draw.rect()
+            .x_y(tx, ty)
+            .w_h(thumb_w, timeline::SCROLLBAR_HEIGHT_PX - 4.0)
+            .color(rgb(shade, shade, shade + 0.07));
     }
 
     // 再生ヘッド（timeline.playhead）: ルーラー上端から画面下端までの縦線。

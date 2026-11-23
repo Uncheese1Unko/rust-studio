@@ -1,0 +1,235 @@
+project file mode: /tmp/issue85/projectA.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue85 A",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "long-v",
+          "start_ms": 0,
+          "duration_ms": 21000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": []
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "long-a",
+          "start_ms": 0,
+          "duration_ms": 21000,
+          "source": "demo/bgm.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": []
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.track.2, timeline.clip.4, preview, media-bin
+media prepared: demo/opening.mp4 -> 40 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 40
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+preview: source=demo/opening.mp4 playhead=200 source_time=200 frame=2
+preview: source=demo/opening.mp4 playhead=313 source_time=313 frame=3
+preview: source=demo/opening.mp4 playhead=401 source_time=401 frame=4
+preview: source=demo/opening.mp4 playhead=506 source_time=506 frame=5
+preview: source=demo/opening.mp4 playhead=619 source_time=619 frame=6
+preview: source=demo/opening.mp4 playhead=700 source_time=700 frame=7
+preview: source=demo/opening.mp4 playhead=817 source_time=817 frame=8
+preview: source=demo/opening.mp4 playhead=921 source_time=921 frame=9
+preview: source=demo/opening.mp4 playhead=1012 source_time=1012 frame=10
+preview: source=demo/opening.mp4 playhead=1108 source_time=1108 frame=11
+preview: source=demo/opening.mp4 playhead=1227 source_time=1227 frame=12
+preview: source=demo/opening.mp4 playhead=1307 source_time=1307 frame=13
+preview: source=demo/opening.mp4 playhead=1415 source_time=1415 frame=14
+preview: source=demo/opening.mp4 playhead=1509 source_time=1509 frame=15
+preview: source=demo/opening.mp4 playhead=1610 source_time=1610 frame=16
+preview: source=demo/opening.mp4 playhead=1719 source_time=1719 frame=17
+preview: source=demo/opening.mp4 playhead=1823 source_time=1823 frame=18
+preview: source=demo/opening.mp4 playhead=1917 source_time=1917 frame=19
+preview: source=demo/opening.mp4 playhead=2081 source_time=2081 frame=20
+preview: source=demo/opening.mp4 playhead=2113 source_time=2113 frame=21
+preview: source=demo/opening.mp4 playhead=2283 source_time=2283 frame=22
+preview: source=demo/opening.mp4 playhead=2316 source_time=2316 frame=23
+preview: source=demo/opening.mp4 playhead=2416 source_time=2416 frame=24
+preview: source=demo/opening.mp4 playhead=2576 source_time=2576 frame=25
+preview: source=demo/opening.mp4 playhead=2605 source_time=2605 frame=26
+preview: source=demo/opening.mp4 playhead=2712 source_time=2712 frame=27
+preview: source=demo/opening.mp4 playhead=2816 source_time=2816 frame=28
+preview: source=demo/opening.mp4 playhead=2920 source_time=2920 frame=29
+preview: source=demo/opening.mp4 playhead=3021 source_time=3021 frame=30
+preview: source=demo/opening.mp4 playhead=3118 source_time=3118 frame=31
+preview: source=demo/opening.mp4 playhead=3218 source_time=3218 frame=32
+scroll offset: 2625
+preview: source=demo/opening.mp4 playhead=3325 source_time=3325 frame=33
+preview: source=demo/opening.mp4 playhead=3405 source_time=3405 frame=34
+preview: source=demo/opening.mp4 playhead=3506 source_time=3506 frame=35
+preview: source=demo/opening.mp4 playhead=3602 source_time=3602 frame=36
+scroll offset: 5250
+preview: source=demo/opening.mp4 playhead=3726 source_time=3726 frame=37
+preview: source=demo/opening.mp4 playhead=3806 source_time=3806 frame=38
+preview: source=demo/opening.mp4 playhead=3967 source_time=3967 frame=39
+scrollbar drag end: offset 5250
+preview: source=demo/opening.mp4 playhead=4062 source_time=4062 frame=40
+preview: source=demo/opening.mp4 playhead=4162 source_time=4162 frame=41
+preview: source=demo/opening.mp4 playhead=4210 source_time=4210 frame=42
+preview: source=demo/opening.mp4 playhead=4368 source_time=4368 frame=43
+preview: source=demo/opening.mp4 playhead=4464 source_time=4464 frame=44
+preview: source=demo/opening.mp4 playhead=4561 source_time=4561 frame=45
+preview: source=demo/opening.mp4 playhead=4654 source_time=4654 frame=46
+preview: source=demo/opening.mp4 playhead=4753 source_time=4753 frame=47
+preview: source=demo/opening.mp4 playhead=4855 source_time=4855 frame=48
+preview: source=demo/opening.mp4 playhead=4951 source_time=4951 frame=49
+scroll offset: 11000
+preview: source=demo/opening.mp4 playhead=5050 source_time=5050 frame=50
+preview: source=demo/opening.mp4 playhead=5153 source_time=5153 frame=51
+preview: source=demo/opening.mp4 playhead=5258 source_time=5258 frame=52
+preview: source=demo/opening.mp4 playhead=5354 source_time=5354 frame=53
+preview: source=demo/opening.mp4 playhead=5448 source_time=5448 frame=54
+preview: source=demo/opening.mp4 playhead=5545 source_time=5545 frame=55
+preview: source=demo/opening.mp4 playhead=5643 source_time=5643 frame=56
+scrollbar drag end: offset 11000
+preview: source=demo/opening.mp4 playhead=5709 source_time=5709 frame=57
+preview: source=demo/opening.mp4 playhead=5860 source_time=5860 frame=58
+preview: source=demo/opening.mp4 playhead=5940 source_time=5940 frame=59
+preview: source=demo/opening.mp4 playhead=6044 source_time=6044 frame=60
+preview: source=demo/opening.mp4 playhead=6136 source_time=6136 frame=61
+preview: source=demo/opening.mp4 playhead=6239 source_time=6239 frame=62
+preview: source=demo/opening.mp4 playhead=6336 source_time=6336 frame=63
+preview: source=demo/opening.mp4 playhead=6452 source_time=6452 frame=64
+preview: source=demo/opening.mp4 playhead=6534 source_time=6534 frame=65
+preview: source=demo/opening.mp4 playhead=6638 source_time=6638 frame=66
+preview: source=demo/opening.mp4 playhead=6739 source_time=6739 frame=67
+preview: source=demo/opening.mp4 playhead=6830 source_time=6830 frame=68
+preview: source=demo/opening.mp4 playhead=6935 source_time=6935 frame=69
+preview: source=demo/opening.mp4 playhead=7029 source_time=7029 frame=70
+preview: source=demo/opening.mp4 playhead=7135 source_time=7135 frame=71
+preview: source=demo/opening.mp4 playhead=7227 source_time=7227 frame=72
+scroll offset: 10500
+preview: source=demo/opening.mp4 playhead=7342 source_time=7342 frame=73
+preview: source=demo/opening.mp4 playhead=7434 source_time=7434 frame=74
+preview: source=demo/opening.mp4 playhead=7526 source_time=7526 frame=75
+scroll offset: 10000
+preview: source=demo/opening.mp4 playhead=7620 source_time=7620 frame=76
+preview: source=demo/opening.mp4 playhead=7720 source_time=7720 frame=77
+preview: source=demo/opening.mp4 playhead=7826 source_time=7826 frame=78
+preview: source=demo/opening.mp4 playhead=7914 source_time=7914 frame=79
+preview: source=demo/opening.mp4 playhead=8017 source_time=8017 frame=80
+preview: source=demo/opening.mp4 playhead=8117 source_time=8117 frame=81
+preview: source=demo/opening.mp4 playhead=8235 source_time=8235 frame=82
+preview: source=demo/opening.mp4 playhead=8317 source_time=8317 frame=83
+preview: source=demo/opening.mp4 playhead=8415 source_time=8415 frame=84
+preview: source=demo/opening.mp4 playhead=8517 source_time=8517 frame=85
+scroll offset: 11000
+preview: source=demo/opening.mp4 playhead=8614 source_time=8614 frame=86
+preview: source=demo/opening.mp4 playhead=8717 source_time=8717 frame=87
+preview: source=demo/opening.mp4 playhead=8807 source_time=8807 frame=88
+preview: source=demo/opening.mp4 playhead=8908 source_time=8908 frame=89
+preview: source=demo/opening.mp4 playhead=9024 source_time=9024 frame=90
+preview: source=demo/opening.mp4 playhead=9109 source_time=9109 frame=91
+scroll offset: 10000
+scroll offset: 9000
+preview: source=demo/opening.mp4 playhead=9205 source_time=9205 frame=92
+preview: source=demo/opening.mp4 playhead=9300 source_time=9300 frame=93
+preview: source=demo/opening.mp4 playhead=9416 source_time=9416 frame=94
+preview: source=demo/opening.mp4 playhead=9515 source_time=9515 frame=95
+preview: source=demo/opening.mp4 playhead=9605 source_time=9605 frame=96
+preview: source=demo/opening.mp4 playhead=9702 source_time=9702 frame=97
+preview: source=demo/opening.mp4 playhead=9805 source_time=9805 frame=98
+preview: source=demo/opening.mp4 playhead=9900 source_time=9900 frame=99
+scroll offset: 10000
+scroll offset: 11000
+preview: source=demo/opening.mp4 playhead=10032 source_time=10032 frame=100
+preview: source=demo/opening.mp4 playhead=10100 source_time=10100 frame=101
+preview: source=demo/opening.mp4 playhead=10217 source_time=10217 frame=102
+preview: source=demo/opening.mp4 playhead=10320 source_time=10320 frame=103
+preview: source=demo/opening.mp4 playhead=10412 source_time=10412 frame=104
+preview: source=demo/opening.mp4 playhead=10519 source_time=10519 frame=105
+preview: source=demo/opening.mp4 playhead=10610 source_time=10610 frame=106
+preview: source=demo/opening.mp4 playhead=10712 source_time=10712 frame=107
+preview: source=demo/opening.mp4 playhead=10817 source_time=10817 frame=108
+preview: source=demo/opening.mp4 playhead=10908 source_time=10908 frame=109
+scroll offset: 10000
+scroll offset: 9000
+preview: source=demo/opening.mp4 playhead=11020 source_time=11020 frame=110
+preview: source=demo/opening.mp4 playhead=11108 source_time=11108 frame=111
+preview: source=demo/opening.mp4 playhead=11203 source_time=11203 frame=112
+preview: source=demo/opening.mp4 playhead=11302 source_time=11302 frame=113
+preview: source=demo/opening.mp4 playhead=11407 source_time=11407 frame=114
+preview: source=demo/opening.mp4 playhead=11503 source_time=11503 frame=115
+preview: source=demo/opening.mp4 playhead=11603 source_time=11603 frame=116
+scroll offset: 10000
+scroll offset: 11000
+preview: source=demo/opening.mp4 playhead=11720 source_time=11720 frame=117
+preview: source=demo/opening.mp4 playhead=11813 source_time=11813 frame=118
+preview: source=demo/opening.mp4 playhead=11903 source_time=11903 frame=119
+preview: source=demo/opening.mp4 playhead=12068 source_time=12068 frame=120
+preview: source=demo/opening.mp4 playhead=12166 source_time=12166 frame=121
+preview: source=demo/opening.mp4 playhead=12212 source_time=12212 frame=122
+preview: source=demo/opening.mp4 playhead=12301 source_time=12301 frame=123
+preview: source=demo/opening.mp4 playhead=12410 source_time=12410 frame=124
+zoom: 1.25 offset: 11905
+zoom: 1.56 offset: 12629
+preview: source=demo/opening.mp4 playhead=12566 source_time=12566 frame=125
+preview: source=demo/opening.mp4 playhead=12610 source_time=12610 frame=126
+preview: source=demo/opening.mp4 playhead=12764 source_time=12764 frame=127
+preview: source=demo/opening.mp4 playhead=12807 source_time=12807 frame=128
+zoom: 1.95 offset: 13208
+zoom: 2.44 offset: 13671
+preview: source=demo/opening.mp4 playhead=12968 source_time=12968 frame=129
+preview: source=demo/opening.mp4 playhead=13001 source_time=13001 frame=130
+preview: source=demo/opening.mp4 playhead=13106 source_time=13106 frame=131
+preview: source=demo/opening.mp4 playhead=13257 source_time=13257 frame=132
+preview: source=demo/opening.mp4 playhead=13353 source_time=13353 frame=133
+preview: source=demo/opening.mp4 playhead=13453 source_time=13453 frame=134
+preview: source=demo/opening.mp4 playhead=13501 source_time=13501 frame=135
+preview: source=demo/opening.mp4 playhead=13652 source_time=13652 frame=136
+preview: source=demo/opening.mp4 playhead=13751 source_time=13751 frame=137
