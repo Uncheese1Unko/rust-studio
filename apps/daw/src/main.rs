@@ -2210,20 +2210,32 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
         None => instrument,
     };
     let (r, g, b) = theme::TEXT;
-    draw.text(&format!("{} — {}", clip.name, instrument))
+    // タイトルは帯幅に収まるよう切り捨てる（Issue #77: 長い
+    // クリップ名＋音色名＋プラグイン名では中央配置でも両端が
+    // ラベル／ヒントに重なっていた）。draw.text は既定で
+    // 折り返すため、タイトルとヒントは no_line_wrap で1行を
+    // 保証する（折り返すと帯の下へはみ出す。実アプリ駆動で確認）。
+    let (band_left, band_right) = pianoroll::header_title_band(win.w());
+    let title = pianoroll::ellipsize_title(
+        &format!("{} — {}", clip.name, instrument),
+        band_right - band_left,
+    );
+    draw.text(&title)
         .x_y(
             pianoroll::header_title_center_x(win.w()) - win.w() / 2.0,
             win.h() / 2.0 - (timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0),
         )
-        .font_size(12)
+        .font_size(pianoroll::HEADER_TITLE_FONT_SIZE as u32)
+        .no_line_wrap()
         .color(rgb(r, g, b));
     let (r, g, b) = theme::TEXT_SUB;
-    draw.text("click: place · drag: move · Del: delete · Esc: close")
+    draw.text(pianoroll::HEADER_HINT_TEXT)
         .x_y(
-            win.w() / 2.0 - 190.0,
+            win.w() / 2.0 - pianoroll::HEADER_HINT_CENTER_FROM_RIGHT,
             win.h() / 2.0 - (timeline::RULER_HEIGHT_PX + pianoroll::HEADER_HEIGHT_PX / 2.0),
         )
-        .font_size(11)
+        .font_size(pianoroll::HEADER_HINT_FONT_SIZE as u32)
+        .no_line_wrap()
         .color(rgb(r, g, b));
 
     // 行（鍵盤列＋グリッド）: 黒鍵の行は一段沈んだ面にする。

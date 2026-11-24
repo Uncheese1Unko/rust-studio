@@ -25,6 +25,23 @@ pub const HEADER_LABEL_HALF_W: f32 = 48.0;
 pub const HEADER_HINT_CENTER_FROM_RIGHT: f32 = 190.0;
 /// 見出し帯の操作ヒントの半幅（px）。
 pub const HEADER_HINT_HALF_W: f32 = 160.0;
+/// 見出し帯タイトルのフォントサイズ（px、Issue #77）。
+pub const HEADER_TITLE_FONT_SIZE: f32 = 12.0;
+/// 見出し帯ヒントのフォントサイズ（px、Issue #77）。
+pub const HEADER_HINT_FONT_SIZE: f32 = 10.0;
+/// 見出し帯の操作ヒント文（Issue #77）。以前の文
+/// （"click: place · drag: move · Del: delete · Esc: close"、
+/// 11px）はヒント域より広く2行に折り返して帯からはみ出して
+/// いたため、文言を短縮しフォントも 10px に落とした。
+pub const HEADER_HINT_TEXT: &str = "click place · drag move · Del delete · Esc close";
+
+/// 見出し帯のタイトル帯（左端・右端 x、Issue #77）。ラベルの
+/// 右端+12 からヒントの左端-12 まで。
+pub fn header_title_band(win_w: f32) -> (f32, f32) {
+    let left = HEADER_LABEL_CENTER_X + HEADER_LABEL_HALF_W + 12.0;
+    let right = win_w - HEADER_HINT_CENTER_FROM_RIGHT - HEADER_HINT_HALF_W - 12.0;
+    (left, right)
+}
 
 /// 見出し帯のタイトル（クリップ名＋楽器）の中心 x（Issue #74）。
 /// タイトルはラベルとヒントの間の帯の中央に置く。以前は x=120 に
@@ -32,12 +49,56 @@ pub const HEADER_HINT_HALF_W: f32 = 160.0;
 /// ブロックの左端アンカーとしては働かず、タイトルが左へ広がって
 /// ラベルに重なっていた（実測で確認）。
 pub fn header_title_center_x(win_w: f32) -> f32 {
-    let left = HEADER_LABEL_CENTER_X + HEADER_LABEL_HALF_W + 12.0;
-    let right = win_w - HEADER_HINT_CENTER_FROM_RIGHT - HEADER_HINT_HALF_W - 12.0;
+    let (left, right) = header_title_band(win_w);
     if right <= left {
         return left;
     }
     (left + right) / 2.0
+}
+
+/// テキストの推定描画幅（px、Issue #77）。ASCII はフォント
+/// サイズの 0.58 倍、それ以外（全角・記号）は等倍とする
+/// 保守的な見積もり。実測の代替として、切り捨てとヒント域の
+/// 検証に使う。
+pub fn text_width_px(text: &str, font_size: f32) -> f32 {
+    text.chars()
+        .map(|c| {
+            let factor = if !c.is_ascii() {
+                1.0
+            } else if c == ' ' {
+                0.32
+            } else if c.is_ascii_uppercase() || c.is_ascii_digit() {
+                0.70
+            } else if c.is_ascii_lowercase() {
+                0.56
+            } else {
+                0.55
+            };
+            font_size * factor
+        })
+        .sum()
+}
+
+/// タイトルを帯幅に収まるよう切り捨てる（Issue #77）。収まる
+/// 場合はそのまま、溢れる場合は末尾を … に置き換える。帯が
+/// … より狭い場合でも … だけは返す（呼び出し側で中央に置く）。
+pub fn ellipsize_title(text: &str, band_width_px: f32) -> String {
+    if text_width_px(text, HEADER_TITLE_FONT_SIZE) <= band_width_px {
+        return text.to_string();
+    }
+    let ellipsis_w = text_width_px("…", HEADER_TITLE_FONT_SIZE);
+    let mut out = String::new();
+    let mut used = 0.0f32;
+    for c in text.chars() {
+        let w = text_width_px(&c.to_string(), HEADER_TITLE_FONT_SIZE);
+        if used + w + ellipsis_w > band_width_px {
+            break;
+        }
+        out.push(c);
+        used += w;
+    }
+    out.push('…');
+    out
 }
 /// 配置するノートの既定の長さ（ms）。
 pub const DEFAULT_NOTE_MS: i64 = 500;
@@ -327,6 +388,42 @@ mod tests {
         );
         // 狭い窓でもラベルの右から始まる。
         assert!(header_title_center_x(500.0) >= label_right + 12.0);
+    }
+
+    #[test]
+    fn title_band_matches_center_and_hint_fits() {
+        // Issue #77: タイトル帯はラベル右端+12 〜 ヒント左端-12。
+        // 幅 960 では 486px（#74 レビューで指摘された帯幅）。
+        let (left, right) = header_title_band(960.0);
+        assert_eq!(left, 112.0);
+        assert_eq!(right, 598.0);
+        assert_eq!(header_title_center_x(960.0), (left + right) / 2.0);
+        // ヒント文はヒント域（2 * HEADER_HINT_HALF_W）に収まる
+        // 推定幅であること。
+        assert!(
+            text_width_px(HEADER_HINT_TEXT, HEADER_HINT_FONT_SIZE) <= HEADER_HINT_HALF_W * 2.0,
+            "hint too wide: {}",
+            text_width_px(HEADER_HINT_TEXT, HEADER_HINT_FONT_SIZE)
+        );
+    }
+
+    #[test]
+    fn ellipsize_title_truncates_long_titles_to_band() {
+        // Issue #77: 長いタイトルは帯幅に収まるよう末尾を … で
+        // 切り捨てる。短いタイトルはそのまま。
+        let band = 486.0;
+        assert_eq!(ellipsize_title("short clip", band), "short clip");
+        let long = "a".repeat(200);
+        let cut = ellipsize_title(&long, band);
+        assert!(cut.ends_with('…'));
+        assert!(text_width_px(&cut, HEADER_TITLE_FONT_SIZE) <= band);
+        // 日本語（全角）混じりでもパニックせず帯に収まる
+        let jp = "長いクリップ名・テスト".repeat(20);
+        let cut = ellipsize_title(&jp, band);
+        assert!(cut.ends_with('…'));
+        assert!(text_width_px(&cut, HEADER_TITLE_FONT_SIZE) <= band);
+        // 帯が極端に狭い場合は … のみ（幅 0 でも壊れない）
+        assert_eq!(ellipsize_title("abc", 0.0), "…");
     }
 
     pub const W: f32 = 960.0;
