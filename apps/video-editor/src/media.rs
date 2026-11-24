@@ -23,6 +23,112 @@ pub fn media_dir() -> PathBuf {
     std::env::temp_dir().join("rust-studio-video-editor-media")
 }
 
+/// スクリプトの置き場（Issue #81）。スクリプト参照は原則ここで
+/// 解決する。発見・一覧・有効／無効の管理は #82 で足す。
+pub fn scripts_dir() -> PathBuf {
+    media_dir().join("scripts")
+}
+
+/// スクリプト参照を実ファイルに解決する。絶対パスはそのまま、
+/// それ以外はスクリプトディレクトリ内の名前として解決する。
+pub fn resolve_script_in(dir: &Path, reference: &str) -> PathBuf {
+    let as_given = Path::new(reference);
+    if as_given.is_absolute() {
+        return as_given.to_path_buf();
+    }
+    dir.join(reference)
+}
+
+/// クリップのスクリプトエフェクトをベースフレームへ適用し、適用後の
+/// PNG パスを返す（Issue #81）。プレビューと書き出しで共通の規則に
+/// するため、両経路はこの関数を通す。エフェクトが無いクリップでは
+/// ベースをそのまま返す。スクリプトの読み込み・実行に失敗したら
+/// Err（呼び出し側はエフェクトなしとして扱い、エラーを表示する）。
+/// 適用結果は（ベースパス＋スクリプト内容＋パラメータ＋寸法）の
+/// ハッシュでキャッシュする。
+pub fn apply_script_effect(
+    base: &Path,
+    clip: &Clip,
+    at_ms: i64,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
+    apply_script_effect_with_dirs(base, clip, at_ms, &scripts_dir(), out_dir)
+}
+
+/// `apply_script_effect` のディレクトリ明示版（テスト用）。
+pub fn apply_script_effect_with_dirs(
+    base: &Path,
+    clip: &Clip,
+    at_ms: i64,
+    scripts_dir: &Path,
+    out_dir: &Path,
+) -> Result<PathBuf, String> {
+    let Some(effect) = &clip.script_effect else {
+        return Ok(base.to_path_buf());
+    };
+    let script_path = resolve_script_in(scripts_dir, &effect.script);
+    let source = std::fs::read_to_string(&script_path).map_err(|e| {
+        format!(
+            "スクリプト {} が読み込めません（{}）: {e}",
+            effect.script,
+            script_path.display()
+        )
+    })?;
+    let img = image::open(base)
+        .map_err(|e| format!("フレーム {} が開けません: {e}", base.display()))?
+        .to_rgba8();
+    let (width, height) = img.dimensions();
+    // キャッシュキーにはスクリプトが読める入力をすべて含める
+    // （Issue #81 レビュー round 1 Major: クリップ相対時刻・名前・
+    // 長さがキーに無いと、時間依存スクリプトの結果が stale になる）。
+    let key = format!(
+        "{}|{}|{:?}|{}x{}|time={}|name={}|dur={}",
+        base.display(),
+        source,
+        effect.params,
+        width,
+        height,
+        at_ms - clip.start_ms,
+        clip.name,
+        clip.duration_ms
+    );
+    let out = out_dir.join(format!("s{:016x}.png", fnv1a(key.as_bytes())));
+    if out.exists() {
+        return Ok(out);
+    }
+    let params: crate::script::ScriptParams = effect
+        .params
+        .iter()
+        .map(|(k, v)| {
+            let value = match v {
+                studio_core::EffectParam::Number(n) => crate::script::ScriptParam::Number(*n),
+                studio_core::EffectParam::Bool(b) => crate::script::ScriptParam::Bool(*b),
+                studio_core::EffectParam::Text(t) => crate::script::ScriptParam::Text(t.clone()),
+            };
+            (k.clone(), value)
+        })
+        .collect();
+    let info = crate::script::ClipInfo {
+        name: clip.name.clone(),
+        duration_ms: clip.duration_ms,
+        source: Some(clip.source.clone()),
+        time_ms: at_ms - clip.start_ms,
+    };
+    let mut pixels = img.into_raw();
+    crate::script::ScriptEngine::new()
+        .run_frame_effect(&source, &info, &params, width, height, &mut pixels)
+        .map_err(|e| format!("スクリプト {} の実行エラー: {}", effect.script, e.message))?;
+    let img = image::RgbaImage::from_raw(width, height, pixels)
+        .ok_or_else(|| "エフェクト後のフレーム再構成に失敗しました".to_string())?;
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("エフェクト出力先が作れません: {e}"))?;
+    }
+    img.save(&out)
+        .map_err(|e| format!("エフェクト後フレームが保存できません: {e}"))?;
+    Ok(out)
+}
+
 /// ソース参照を実ファイルに解決する。そのままのパスが存在すればそれを、
 /// なければメディアディレクトリ内の同名ファイルを使う。
 pub fn resolve_source(dir: &Path, source: &str) -> PathBuf {
@@ -811,7 +917,7 @@ fn compose_export_frame(
     work: &Path,
     black: &Path,
 ) -> PathBuf {
-    match export_frame_at(project, t_ms) {
+    let composed = match export_frame_at(project, t_ms) {
         ExportFrame::Black => black.to_path_buf(),
         ExportFrame::Clip {
             source,
@@ -820,27 +926,30 @@ fn compose_export_frame(
             .frame_path(&source, source_time_ms)
             .map_or_else(|| black.to_path_buf(), Path::to_path_buf),
         ExportFrame::Blend(b) => {
-            let (Some(prev), Some(next)) = (
+            let pair = (
                 store.frame_path(&b.prev_source, b.prev_source_time_ms),
                 store.frame_path(&b.next_source, b.next_source_time_ms),
-            ) else {
-                return black.to_path_buf();
-            };
-            let alpha_q = (b.alpha * 20.0).round() / 20.0;
-            let hash = fnv1a(
-                format!(
-                    "{}|{}|{}|{}",
-                    prev.display(),
-                    next.display(),
-                    (alpha_q * 100.0) as i32,
-                    settings.width
-                )
-                .as_bytes(),
             );
-            let out = work.join("blend").join(format!("b{hash:016x}.png"));
-            match blend_frame_files(prev, next, b.alpha, &out) {
-                Ok(()) => out,
-                Err(_) => black.to_path_buf(),
+            match pair {
+                (Some(prev), Some(next)) => {
+                    let alpha_q = (b.alpha * 20.0).round() / 20.0;
+                    let hash = fnv1a(
+                        format!(
+                            "{}|{}|{}|{}",
+                            prev.display(),
+                            next.display(),
+                            (alpha_q * 100.0) as i32,
+                            settings.width
+                        )
+                        .as_bytes(),
+                    );
+                    let out = work.join("blend").join(format!("b{hash:016x}.png"));
+                    match blend_frame_files(prev, next, b.alpha, &out) {
+                        Ok(()) => out,
+                        Err(_) => black.to_path_buf(),
+                    }
+                }
+                _ => black.to_path_buf(),
             }
         }
         ExportFrame::Cutout {
@@ -860,38 +969,57 @@ fn compose_export_frame(
                     .frame_path(&source, source_time_ms)
                     .map(Path::to_path_buf)
             };
-            let Some(base) = base else {
-                return black.to_path_buf();
-            };
-            let out = work.join("cutout").join(format!(
-                "c{:016x}.png",
-                fnv1a(base.to_string_lossy().as_bytes())
-            ));
-            if !out.exists() {
-                if let Some(parent) = out.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                let resized = image::open(&base).and_then(|img| {
-                    img.resize_exact(
-                        settings.width,
-                        settings.height,
-                        image::imageops::FilterType::Triangle,
-                    )
-                    .save(&out)
-                });
-                if resized.is_err() {
-                    // Issue #54 レビュー round 2 残件: 失敗時に
-                    // プレビュー解像度（320x180）のファイルを返すと
-                    // 書き出し列に寸法が混在する。書き出し解像度の
-                    // 素フレーム（無ければ黒）で代替する。
-                    return store
-                        .frame_path(&source, source_time_ms)
-                        .map_or_else(|| black.to_path_buf(), Path::to_path_buf);
+            match base {
+                None => black.to_path_buf(),
+                Some(base) => {
+                    let out = work.join("cutout").join(format!(
+                        "c{:016x}.png",
+                        fnv1a(base.to_string_lossy().as_bytes())
+                    ));
+                    let mut result = out.clone();
+                    if !out.exists() {
+                        if let Some(parent) = out.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let resized = image::open(&base).and_then(|img| {
+                            img.resize_exact(
+                                settings.width,
+                                settings.height,
+                                image::imageops::FilterType::Triangle,
+                            )
+                            .save(&out)
+                        });
+                        if resized.is_err() {
+                            // Issue #54 レビュー round 2 残件: 失敗時に
+                            // プレビュー解像度（320x180）のファイルを返すと
+                            // 書き出し列に寸法が混在する。書き出し解像度の
+                            // 素フレーム（無ければ黒）で代替する。
+                            result = store
+                                .frame_path(&source, source_time_ms)
+                                .map_or_else(|| black.to_path_buf(), Path::to_path_buf);
+                        }
+                    }
+                    result
                 }
             }
-            out
+        }
+    };
+    // スクリプトエフェクト（Issue #81）: プレビューと同じ規則で、
+    // アクティブなクリップのエフェクトを合成済みフレームへ適用する。
+    // 失敗したらエフェクトなしのフレームで書き出しを続ける。
+    // 黒フォールバック（フレーム欠落時）には適用しない: プレビューは
+    // ベースが無いと何も描かないため（レビュー round 1 Minor）。
+    if composed.as_path() != black {
+        if let Some(clip) = active_video_clip(project, t_ms) {
+            if clip.script_effect.is_some() {
+                match apply_script_effect(&composed, clip, t_ms, &work.join("scriptfx")) {
+                    Ok(path) => return path,
+                    Err(e) => println!("export script effect failed: {e}"),
+                }
+            }
         }
     }
+    composed
 }
 
 /// 書き出し結果。
@@ -1472,6 +1600,287 @@ mod tests {
         assert_eq!(remaining.len(), 5, "残ったフレーム: {remaining:?}");
         std::fs::remove_dir_all(&work).ok();
         std::fs::remove_file(&out).ok();
+    }
+    // ---- スクリプトエフェクト（Issue #81） ----
+
+    fn fx_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("studio-media-fx-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn clip_with_effect(script: &str) -> Clip {
+        let mut p = project();
+        let clip_id = p.tracks[0].clips[0].id;
+        apply(
+            &mut p,
+            &Command::SetClipScriptEffect {
+                clip_id,
+                effect: Some(studio_core::ScriptEffect {
+                    script: script.to_string(),
+                    params: Default::default(),
+                }),
+            },
+        )
+        .unwrap();
+        p.tracks[0].clips[0].clone()
+    }
+
+    #[test]
+    fn script_effect_applies_to_frame_pixels() {
+        let dir = fx_dir("apply");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("invert.lua"),
+            "for x = 0, frame.width - 1 do
+                 local r, g, b, a = frame.get(x, 0)
+                 frame.set(x, 0, 255 - r, 255 - g, 255 - b, a)
+             end",
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(2, 1, vec![10, 20, 30, 255, 200, 150, 100, 255])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let clip = clip_with_effect("invert.lua");
+        let out_dir = dir.join("out");
+        let derived = apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &out_dir).unwrap();
+        assert_ne!(derived, base);
+        let img = image::open(&derived).unwrap().to_rgba8();
+        assert_eq!(img.as_raw(), &vec![245, 235, 225, 255, 55, 105, 155, 255]);
+        // 2回目はキャッシュ（同じパス）が返る
+        let again = apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &out_dir).unwrap();
+        assert_eq!(again, derived);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn script_effect_missing_script_is_error() {
+        let dir = fx_dir("missing");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(1, 1, vec![0, 0, 0, 255])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let clip = clip_with_effect("nope.lua");
+        let err =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap_err();
+        assert!(err.contains("nope.lua"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn script_effect_broken_script_is_error() {
+        let dir = fx_dir("broken");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(scripts.join("bad.lua"), "error('bad fx')").unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(1, 1, vec![0, 0, 0, 255])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let clip = clip_with_effect("bad.lua");
+        let err =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap_err();
+        assert!(err.contains("bad fx"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn script_effect_absent_returns_base() {
+        let p = project();
+        let clip = &p.tracks[0].clips[0];
+        let base = PathBuf::from("some/base.png");
+        let derived = apply_script_effect_with_dirs(
+            &base,
+            clip,
+            0,
+            Path::new("no-scripts"),
+            Path::new("no-out"),
+        )
+        .unwrap();
+        assert_eq!(derived, base);
+    }
+
+    #[test]
+    fn script_effect_cache_key_includes_clip_time() {
+        // Issue #81 レビュー round 1 (Major): clip.time_ms に依存する
+        // スクリプトは、同じベースフレームでも時刻が違えば違う結果を
+        // 返さなければならない（キャッシュキーが時刻を含む）。
+        let dir = fx_dir("timekey");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("bytime.lua"),
+            "local v = math.floor(clip.time_ms / 10) % 256
+             frame.fill_rect(0, 0, frame.width, frame.height, v, 0, 0)",
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(2, 1, vec![0, 0, 0, 255, 0, 0, 0, 255])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let clip = clip_with_effect("bytime.lua");
+        let out_dir = dir.join("out");
+        let at0 = apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &out_dir).unwrap();
+        let at500 = apply_script_effect_with_dirs(&base, &clip, 500, &scripts, &out_dir).unwrap();
+        assert_ne!(at0, at500, "時刻が違えばキャッシュも別になる");
+        let img500 = image::open(&at500).unwrap().to_rgba8();
+        assert_eq!(img500.get_pixel(0, 0), &image::Rgba([50, 0, 0, 255]));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn compose_export_frame_skips_effect_on_black_fallback() {
+        // Issue #81 レビュー round 1 (Minor): フレームが無い場合の
+        // 黒フォールバックにはエフェクトを適用しない（プレビューは
+        // ベースが無いと何も描かないので、書き出しも合わせる）。
+        let dir = fx_dir("blackskip");
+        let scripts = scripts_dir();
+        std::fs::create_dir_all(&scripts).unwrap();
+        let script_name = format!("fillall-{}.lua", std::process::id());
+        std::fs::write(
+            scripts.join(&script_name),
+            "frame.fill_rect(0, 0, frame.width, frame.height, 255, 0, 0)",
+        )
+        .unwrap();
+        let mut p = project();
+        let clip_id = p.tracks[0].clips[0].id;
+        apply(
+            &mut p,
+            &Command::SetClipScriptEffect {
+                clip_id,
+                effect: Some(studio_core::ScriptEffect {
+                    script: script_name.clone(),
+                    params: Default::default(),
+                }),
+            },
+        )
+        .unwrap();
+        // フレームが 1 枚も無いストア → compose は黒に落ちる
+        let store = FrameStore::from_frames(10, BTreeMap::new());
+        let preview_store = FrameStore::from_frames(10, BTreeMap::new());
+        let black = dir.join("black.png");
+        image::RgbaImage::from_raw(2, 1, vec![0, 0, 0, 255, 0, 0, 0, 255])
+            .unwrap()
+            .save(&black)
+            .unwrap();
+        let out = compose_export_frame(
+            &p,
+            &store,
+            &preview_store,
+            0,
+            &ExportSettings::default(),
+            &dir.join("work"),
+            &black,
+        );
+        assert_eq!(out, black, "黒フォールバックにはエフェクトを適用しない");
+        let _ = std::fs::remove_file(scripts.join(&script_name));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn compose_export_frame_applies_script_effect() {
+        // Issue #81: 書き出しでもプレビューと同じスクリプトエフェクトが
+        // 同じ意味で反映される。同一ベースフレームに対する結果が
+        // プレビュー経路（apply_script_effect）とピクセル一致する。
+        let dir = fx_dir("export");
+        let scripts = scripts_dir();
+        std::fs::create_dir_all(&scripts).unwrap();
+        let script_name = format!("invert-export-{}.lua", std::process::id());
+        std::fs::write(
+            scripts.join(&script_name),
+            "for x = 0, frame.width - 1 do
+                 local r, g, b, a = frame.get(x, 0)
+                 frame.set(x, 0, 255 - r, 255 - g, 255 - b, a)
+             end",
+        )
+        .unwrap();
+        let mut p = project();
+        let clip_id = p.tracks[0].clips[0].id;
+        apply(
+            &mut p,
+            &Command::SetClipScriptEffect {
+                clip_id,
+                effect: Some(studio_core::ScriptEffect {
+                    script: script_name.clone(),
+                    params: Default::default(),
+                }),
+            },
+        )
+        .unwrap();
+        let frame = dir.join("f000.png");
+        image::RgbaImage::from_raw(2, 1, vec![10, 20, 30, 255, 200, 150, 100, 255])
+            .unwrap()
+            .save(&frame)
+            .unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("demo/opening.mp4".to_string(), vec![frame.clone()]);
+        let store = FrameStore::from_frames(10, map);
+        let preview_store = FrameStore::from_frames(10, BTreeMap::new());
+        let black = dir.join("black.png");
+        image::RgbaImage::from_raw(2, 1, vec![0, 0, 0, 255, 0, 0, 0, 255])
+            .unwrap()
+            .save(&black)
+            .unwrap();
+        let out = compose_export_frame(
+            &p,
+            &store,
+            &preview_store,
+            0,
+            &ExportSettings::default(),
+            &dir.join("work"),
+            &black,
+        );
+        let exported = image::open(&out).unwrap().to_rgba8();
+        assert_eq!(
+            exported.as_raw(),
+            &vec![245, 235, 225, 255, 55, 105, 155, 255],
+            "書き出しフレームにエフェクトが反映される"
+        );
+        // プレビュー経路とピクセル一致
+        let clip = &p.tracks[0].clips[0];
+        let preview_out = apply_script_effect(&frame, clip, 0, &dir.join("pv")).unwrap();
+        let preview = image::open(&preview_out).unwrap().to_rgba8();
+        assert_eq!(preview.as_raw(), exported.as_raw());
+        let _ = std::fs::remove_file(scripts.join(&script_name));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn script_effect_params_reach_script() {
+        let dir = fx_dir("params");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("level.lua"),
+            "frame.set(0, 0, params.level, 0, 0, 255)",
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(1, 1, vec![0, 0, 0, 255])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let mut clip = clip_with_effect("level.lua");
+        clip.script_effect
+            .as_mut()
+            .unwrap()
+            .params
+            .insert("level".to_string(), studio_core::EffectParam::Number(9.0));
+        let derived =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap();
+        let img = image::open(&derived).unwrap().to_rgba8();
+        assert_eq!(img.as_raw(), &vec![9, 0, 0, 255]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
 

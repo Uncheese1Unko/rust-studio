@@ -973,6 +973,101 @@ impl TitleSession {
     }
 }
 
+/// テキスト確定セッションの結果（Issue #81）。コマンド化は呼び出し
+/// 側が文脈（既存のエフェクト等）と合わせて行うため、ここでは
+/// テキストそのものを返す。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextAction {
+    Continue,
+    Cancel,
+    Commit(String),
+}
+
+fn text_session_handle(text: &mut String, input: RenameInput, extra_chars: &[char]) -> TextAction {
+    match input {
+        RenameInput::Char(c)
+            if c.is_ascii_alphanumeric()
+                || matches!(c, ' ' | '-' | '_' | '.' | '/')
+                || extra_chars.contains(&c) =>
+        {
+            text.push(c);
+            TextAction::Continue
+        }
+        RenameInput::Char(_) => TextAction::Continue,
+        RenameInput::Backspace => {
+            text.pop();
+            TextAction::Continue
+        }
+        RenameInput::Enter => TextAction::Commit(text.clone()),
+        RenameInput::Escape => TextAction::Cancel,
+    }
+}
+
+/// スクリプトエフェクト名の編集セッション（Issue #81）。L キーで
+/// 再生位置のクリップに対して始める。空テキストで確定すると
+/// エフェクトの解除になる（呼び出し側の意味論）。
+pub struct ScriptNameSession {
+    pub clip_id: u64,
+    pub text: String,
+}
+
+impl ScriptNameSession {
+    pub fn begin(clip_id: u64, current_script: &str) -> Self {
+        ScriptNameSession {
+            clip_id,
+            text: current_script.to_string(),
+        }
+    }
+    pub fn handle(&mut self, input: RenameInput) -> TextAction {
+        text_session_handle(&mut self.text, input, &[])
+    }
+}
+
+/// スクリプトパラメータの編集セッション（Issue #81）。P キーで
+/// エフェクトを持つクリップに対して始める。入力形式は
+/// `key=value`（`parse_param_entry`）。
+pub struct ScriptParamSession {
+    pub clip_id: u64,
+    pub text: String,
+}
+
+impl ScriptParamSession {
+    pub fn begin(clip_id: u64) -> Self {
+        ScriptParamSession {
+            clip_id,
+            text: String::new(),
+        }
+    }
+    pub fn handle(&mut self, input: RenameInput) -> TextAction {
+        text_session_handle(&mut self.text, input, &['='])
+    }
+}
+
+/// `key=value` 形式のパラメータ入力を解釈する（Issue #81）。
+/// 値の解釈は 数値（f64）> 真偽（true/false）> 文字列。
+/// `key=`（値が空）はそのキーの削除を表す。解釈できなければ None。
+pub fn parse_param_entry(text: &str) -> Option<(String, Option<studio_core::EffectParam>)> {
+    let (key, value) = text.trim().split_once('=')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let value = value.trim();
+    if value.is_empty() {
+        return Some((key.to_string(), None));
+    }
+    let parsed = if let Ok(n) = value.parse::<f64>() {
+        studio_core::EffectParam::Number(n)
+    } else if value == "true" {
+        studio_core::EffectParam::Bool(true)
+    } else if value == "false" {
+        studio_core::EffectParam::Bool(false)
+    } else {
+        studio_core::EffectParam::Text(value.to_string())
+    };
+    Some((key.to_string(), Some(parsed)))
+}
+
 /// 空き場所への配置コマンドを作る。トラックが無ければ None。
 pub fn place_clip_command(project: &Project, track_index: usize, at_ms: i64) -> Option<Command> {
     let track = project.tracks.get(track_index)?;
@@ -1329,6 +1424,61 @@ mod tests {
         let mut session = TitleSession::begin(clip_id, "old");
         session.handle(RenameInput::Char('X'));
         assert_eq!(session.handle(RenameInput::Escape), RenameAction::Cancel);
+    }
+    #[test]
+    fn script_sessions_commit_text_and_cancel() {
+        // Issue #81: スクリプト名セッションはファイル名に使う文字
+        // （. _ - /）を受け付け、Enter でテキストを返し、Esc で中止。
+        let p = sample_project();
+        let clip_id = p.tracks[0].clips[0].id;
+        let mut session = ScriptNameSession::begin(clip_id, "");
+        for c in "fx/invert-1.lua".chars() {
+            assert_eq!(session.handle(RenameInput::Char(c)), TextAction::Continue);
+        }
+        assert_eq!(session.text, "fx/invert-1.lua");
+        session.handle(RenameInput::Char('あ'));
+        assert_eq!(session.text, "fx/invert-1.lua");
+        assert_eq!(
+            session.handle(RenameInput::Enter),
+            TextAction::Commit("fx/invert-1.lua".into())
+        );
+        let mut session = ScriptNameSession::begin(clip_id, "old.lua");
+        assert_eq!(session.handle(RenameInput::Escape), TextAction::Cancel);
+        // パラメータセッションは '=' も受け付ける
+        let mut session = ScriptParamSession::begin(clip_id);
+        for c in "level=0.5".chars() {
+            session.handle(RenameInput::Char(c));
+        }
+        assert_eq!(
+            session.handle(RenameInput::Enter),
+            TextAction::Commit("level=0.5".into())
+        );
+    }
+    #[test]
+    fn parse_param_entry_reads_scalars() {
+        // Issue #81: key=value の値の解釈は 数値 > 真偽 > 文字列。
+        // key= はパラメータの削除。
+        use studio_core::EffectParam;
+        assert_eq!(
+            parse_param_entry("level=0.5"),
+            Some(("level".into(), Some(EffectParam::Number(0.5))))
+        );
+        assert_eq!(
+            parse_param_entry("count = -3"),
+            Some(("count".into(), Some(EffectParam::Number(-3.0))))
+        );
+        assert_eq!(
+            parse_param_entry("flip=true"),
+            Some(("flip".into(), Some(EffectParam::Bool(true))))
+        );
+        assert_eq!(
+            parse_param_entry("mode=soft light"),
+            Some(("mode".into(), Some(EffectParam::Text("soft light".into()))))
+        );
+        assert_eq!(parse_param_entry("level="), Some(("level".into(), None)));
+        assert_eq!(parse_param_entry("noequals"), None);
+        assert_eq!(parse_param_entry("=1"), None);
+        assert_eq!(parse_param_entry(""), None);
     }
     #[test]
     fn ctrl_z_restores_state_before_last_edit() {

@@ -6,7 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Clip, ColorTag, Instrument, Note, Project, Track, TrackKind, TransitionKind};
+use crate::model::{
+    Clip, ColorTag, Instrument, Note, Project, ScriptEffect, Track, TrackKind, TransitionKind,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -71,6 +73,12 @@ pub enum Command {
     SetClipTitle {
         clip_id: u64,
         title: String,
+    },
+    /// クリップの Lua スクリプトエフェクトを設定する（Issue #81）。
+    /// None は解除。スクリプト参照が空白のみの場合は受け付けない。
+    SetClipScriptEffect {
+        clip_id: u64,
+        effect: Option<ScriptEffect>,
     },
     /// クリップの先頭境界のトランジションを設定する
     /// （Issue #49、ADR-0014）。検証は種類で分ける:
@@ -344,6 +352,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                     transition_in_kind: TransitionKind::None,
                     transition_in_ms: 0,
                     notes: Vec::new(),
+                    script_effect: None,
                 });
             Ok(Some(id))
         }
@@ -476,6 +485,10 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 transition_in_kind: TransitionKind::None,
                 transition_in_ms: 0,
                 notes: right_notes,
+                // スクリプトエフェクトはクリップの内容への効果
+                // なので、ゲインや切り抜きと同じく右側にも引き継ぐ
+                // （Issue #81）。
+                script_effect: clip.script_effect.clone(),
             };
             let track = &mut project.tracks[track_idx];
             // 左クリップはフェードインを外側の端として引き継ぎ、
@@ -546,6 +559,38 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 .find(|c| c.id == *clip_id)
                 .expect("checked above");
             clip.title_text = title.clone();
+            Ok(None)
+        }
+        Command::SetClipScriptEffect { clip_id, effect } => {
+            if let Some(effect) = effect {
+                if effect.script.trim().is_empty() {
+                    return Err(CommandError::InvalidRange("script must not be empty"));
+                }
+                // 非有限の数値パラメータは JSON で null になり、無タグ
+                // enum の復元に失敗してプロジェクト全体が再読込不能に
+                // なる。BPM・ピッチの前例どおり有限値だけを許す
+                // （Issue #81 レビュー round 2 Major）。
+                for value in effect.params.values() {
+                    if let crate::model::EffectParam::Number(n) = value {
+                        if !n.is_finite() {
+                            return Err(CommandError::InvalidRange(
+                                "script param numbers must be finite",
+                            ));
+                        }
+                    }
+                }
+            }
+            let track = project
+                .tracks
+                .iter_mut()
+                .find(|t| t.clips.iter().any(|c| c.id == *clip_id))
+                .ok_or(CommandError::ClipNotFound(*clip_id))?;
+            let clip = track
+                .clips
+                .iter_mut()
+                .find(|c| c.id == *clip_id)
+                .expect("checked above");
+            clip.script_effect = effect.clone();
             Ok(None)
         }
         Command::SetClipTransition {

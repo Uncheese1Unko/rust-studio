@@ -1,6 +1,8 @@
 //! プロジェクトのモデル。時刻はすべてミリ秒（`i64`）。
 //! 重いメディア実体は持たず、素材への参照（`source`）とパラメータだけを持つ。
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +94,29 @@ pub enum Instrument {
     },
 }
 
+/// スクリプトエフェクトのパラメータ値（Issue #81）。JSON では
+/// 素のスカラーとして読み書きする（untagged）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum EffectParam {
+    Number(f64),
+    Bool(bool),
+    Text(String),
+}
+
+/// クリップに適用する Lua スクリプトエフェクト（Issue #81）。
+/// スクリプト本体は埋め込まず参照（名前または相対パス）で持つ。
+/// 実行と描画はアプリ側（video-editor）が担い、コアは参照と
+/// パラメータだけを持つ。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScriptEffect {
+    /// スクリプト参照（名前または相対パス）。
+    pub script: String,
+    /// パラメータ（名前 → 値）。旧形式では空。
+    #[serde(default)]
+    pub params: BTreeMap<String, EffectParam>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub id: u64,
@@ -146,6 +171,11 @@ pub struct Clip {
     /// 旧形式の JSON では空。
     #[serde(default)]
     pub notes: Vec<Note>,
+    /// Lua スクリプトエフェクト（Issue #81）。None = エフェクト
+    /// なし。フェード（#34）・トランジション（#49）と同じく
+    /// クリップの属性として持つ。旧形式の JSON では None。
+    #[serde(default)]
+    pub script_effect: Option<ScriptEffect>,
 }
 
 impl Clip {

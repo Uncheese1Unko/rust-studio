@@ -12,8 +12,9 @@ mod cutout;
 mod edit;
 mod media;
 mod palette;
-// Issue #80: Lua 実行基盤。利用側（エフェクト適用 #81、互換層 #83）が
-// 後続 PBI のため、現時点ではテストからのみ使う。
+// Issue #80: Lua 実行基盤。#81 でフレームエフェクトとして利用。
+// run_source / run_file は基盤 API（#82 / #83 が利用予定）で、
+// 現時点ではテストからのみ使う。
 #[allow(dead_code)]
 mod script;
 mod timeline;
@@ -43,6 +44,15 @@ struct Model {
     // Issue #50: タイトル編集セッションと T キーの前回状態。
     title_input: Option<edit::TitleSession>,
     prev_t_down: bool,
+    // Issue #81: スクリプトエフェクトの名前／パラメータ編集
+    // セッションと L / P キーの前回状態。エフェクト適用済み
+    // フレームと直近のスクリプトエラー（いずれも表示状態）。
+    script_input: Option<edit::ScriptNameSession>,
+    script_param_input: Option<edit::ScriptParamSession>,
+    prev_l_down: bool,
+    prev_p_down: bool,
+    script_frame: Option<std::path::PathBuf>,
+    script_error: Option<String>,
     // Issue #43: S キー（分割）の前回状態。
     prev_s_down: bool,
     // Issue #51: ゲインスライダーのドラッグ中かどうか。
@@ -427,6 +437,12 @@ fn model(app: &App) -> Model {
         header_clicks: edit::ClickTracker::new(),
         rename: None,
         title_input: None,
+        script_input: None,
+        script_param_input: None,
+        prev_l_down: false,
+        prev_p_down: false,
+        script_frame: None,
+        script_error: None,
         prev_t_down: false,
         prev_s_down: false,
         prev_x_down: false,
@@ -812,7 +828,11 @@ fn event(app: &App, model: &mut Model, event: Event) {
         handle_drop(app, model, path);
         return;
     }
-    if model.rename.is_none() && model.title_input.is_none() {
+    if model.rename.is_none()
+        && model.title_input.is_none()
+        && model.script_input.is_none()
+        && model.script_param_input.is_none()
+    {
         return;
     }
     let Event::WindowEvent {
@@ -829,6 +849,104 @@ fn event(app: &App, model: &mut Model, event: Event) {
         WindowEvent::KeyPressed(Key::Escape) => edit::RenameInput::Escape,
         _ => return,
     };
+    // スクリプト名編集中（Issue #81）はそちらへ先に流す。確定時は
+    // 既存パラメータを引き継いで SetClipScriptEffect にする。
+    // 空テキストはエフェクトの解除。
+    if let Some(session) = model.script_input.as_mut() {
+        let action = session.handle(input);
+        match action {
+            edit::TextAction::Continue => {}
+            edit::TextAction::Cancel => {
+                model.script_input = None;
+                println!("script input cancelled");
+            }
+            edit::TextAction::Commit(text) => {
+                let clip_id = session.clip_id;
+                let params = model
+                    .history
+                    .project()
+                    .clip(clip_id)
+                    .and_then(|(_, c)| c.script_effect.as_ref().map(|e| e.params.clone()))
+                    .unwrap_or_default();
+                let name = text.trim().to_string();
+                let effect = if name.is_empty() {
+                    None
+                } else {
+                    Some(studio_core::ScriptEffect {
+                        script: name,
+                        params,
+                    })
+                };
+                let cmd = studio_core::Command::SetClipScriptEffect { clip_id, effect };
+                match model.history.apply(&cmd) {
+                    Ok(_) => {
+                        model.script_input = None;
+                        println!("after script: {}", model.history.project().dump_json());
+                        save_project_file(model);
+                    }
+                    Err(e) => println!("script rejected: {e}"),
+                }
+            }
+        }
+        return;
+    }
+    // スクリプトパラメータ編集中（Issue #81）。`key=value` を解釈し、
+    // 既存のパラメータ集合へマージして設定し直す。
+    if let Some(session) = model.script_param_input.as_mut() {
+        let action = session.handle(input);
+        match action {
+            edit::TextAction::Continue => {}
+            edit::TextAction::Cancel => {
+                model.script_param_input = None;
+                println!("script param input cancelled");
+            }
+            edit::TextAction::Commit(text) => {
+                let clip_id = session.clip_id;
+                match edit::parse_param_entry(&text) {
+                    Some((key, value)) => {
+                        let current = model
+                            .history
+                            .project()
+                            .clip(clip_id)
+                            .and_then(|(_, c)| c.script_effect.clone());
+                        match current {
+                            Some(mut effect) => {
+                                match value {
+                                    Some(v) => {
+                                        effect.params.insert(key, v);
+                                    }
+                                    None => {
+                                        effect.params.remove(&key);
+                                    }
+                                }
+                                let cmd = studio_core::Command::SetClipScriptEffect {
+                                    clip_id,
+                                    effect: Some(effect),
+                                };
+                                match model.history.apply(&cmd) {
+                                    Ok(_) => {
+                                        model.script_param_input = None;
+                                        println!(
+                                            "after script param: {}",
+                                            model.history.project().dump_json()
+                                        );
+                                        save_project_file(model);
+                                    }
+                                    Err(e) => println!("script param rejected: {e}"),
+                                }
+                            }
+                            None => {
+                                model.script_param_input = None;
+                                println!("script param: no effect on clip");
+                            }
+                        }
+                    }
+                    None => println!("script param rejected: bad entry '{text}'"),
+                }
+            }
+        }
+        return;
+    }
     // タイトル編集中（Issue #50）はそちらへ先に流す（リネームとは
     // 同時に始まらない）。
     if let Some(session) = model.title_input.as_mut() {
@@ -883,7 +1001,11 @@ fn update(app: &App, model: &mut Model, update: Update) {
             }
         }
     }
-    if model.rename.is_some() || model.title_input.is_some() {
+    if model.rename.is_some()
+        || model.title_input.is_some()
+        || model.script_input.is_some()
+        || model.script_param_input.is_some()
+    {
         // リネーム／タイトル編集中はポインタ操作と切り抜きキーを受け
         // 付けない（Issue #57 / #50）。再生ヘッドとプレビューは進み続ける。
         model.prev_left_down = app.mouse.buttons.left().is_down();
@@ -901,6 +1023,8 @@ fn update(app: &App, model: &mut Model, update: Update) {
         );
         model.bin_reload_key_down = app.keys.down.contains(&Key::R);
         model.prev_t_down = app.keys.down.contains(&Key::T);
+        model.prev_l_down = app.keys.down.contains(&Key::L);
+        model.prev_p_down = app.keys.down.contains(&Key::P);
         model.prev_s_down = app.keys.down.contains(&Key::S);
         model.prev_x_down = app.keys.down.contains(&Key::X);
         model.prev_f_down = app.keys.down.contains(&Key::F);
@@ -943,6 +1067,65 @@ fn update(app: &App, model: &mut Model, update: Update) {
             }
         }
         model.prev_t_down = t_down;
+        // スクリプトエフェクト名の編集開始（Issue #81）: L キーの
+        // 離しエッジ（T と同じ理由）。対象は選択中トラックの
+        // 再生ヘッド位置にあるクリップ。
+        let l_down = app.keys.down.contains(&Key::L);
+        if !l_down && model.prev_l_down {
+            let target = model.selected_track.and_then(|track_id| {
+                model
+                    .history
+                    .project()
+                    .track(track_id)?
+                    .clips
+                    .iter()
+                    .find(|c| model.playhead_ms >= c.start_ms && model.playhead_ms < c.end_ms())
+                    .map(|c| {
+                        (
+                            c.id,
+                            c.script_effect
+                                .as_ref()
+                                .map(|e| e.script.clone())
+                                .unwrap_or_default(),
+                        )
+                    })
+            });
+            match target {
+                Some((clip_id, current)) => {
+                    model.script_input = Some(edit::ScriptNameSession::begin(clip_id, &current));
+                    println!("script input begin: clip {clip_id}");
+                }
+                None => println!("script input: no clip at playhead on selected track"),
+            }
+        }
+        model.prev_l_down = l_down;
+        // スクリプトパラメータの編集開始（Issue #81）: P キーの
+        // 押下エッジ。エフェクトを持つクリップだけが対象。
+        let p_down = app.keys.down.contains(&Key::P);
+        if p_down && !model.prev_p_down {
+            let target = model.selected_track.and_then(|track_id| {
+                model
+                    .history
+                    .project()
+                    .track(track_id)?
+                    .clips
+                    .iter()
+                    .find(|c| {
+                        model.playhead_ms >= c.start_ms
+                            && model.playhead_ms < c.end_ms()
+                            && c.script_effect.is_some()
+                    })
+                    .map(|c| c.id)
+            });
+            match target {
+                Some(clip_id) => {
+                    model.script_param_input = Some(edit::ScriptParamSession::begin(clip_id));
+                    println!("script param input begin: clip {clip_id}");
+                }
+                None => println!("script param input: no effected clip at playhead"),
+            }
+        }
+        model.prev_p_down = p_down;
         // 分割（Issue #43）: S キーの押下エッジ。対象は選択中
         // トラックで再生ヘッドが内側（両端を除く）にあるクリップ。
         let s_down = app.keys.down.contains(&Key::S);
@@ -1047,6 +1230,77 @@ fn update(app: &App, model: &mut Model, update: Update) {
             }
         }
         None => model.blend_frame = None,
+    }
+
+    // スクリプトエフェクト（Issue #81）: アクティブなクリップに
+    // エフェクトがあれば、表示ベースフレームへ適用した画像を
+    // 用意する。失敗したらエフェクトなしで表示し、エラーを記録
+    // する（アプリは止めない）。
+    update_script_frame(app, model);
+}
+
+/// スクリプトエフェクトのプレビュー適用（Issue #81）。
+/// ベースフレームの優先順位は view と同じ: 切り抜き合成 >
+/// トランジションのブレンド > 素フレーム。
+fn update_script_frame(app: &App, model: &mut Model) {
+    let clip = media::active_video_clip(model.history.project(), model.playhead_ms)
+        .filter(|c| c.script_effect.is_some())
+        .cloned();
+    let Some(clip) = clip else {
+        model.script_frame = None;
+        model.script_error = None;
+        return;
+    };
+    let source_time = media::source_time_ms(&clip, model.playhead_ms).unwrap_or(0);
+    let composite = if clip.cutout {
+        let dir = media::media_dir().join(cutout::composite_dir_name(&clip.source));
+        let frame = media::frame_index(source_time, media::FRAME_FPS);
+        let path = dir.join(format!("f{frame:03}.png"));
+        path.exists().then_some(path)
+    } else {
+        None
+    };
+    let base = composite.or_else(|| model.blend_frame.clone()).or_else(|| {
+        model
+            .frames
+            .frame_path(&clip.source, source_time)
+            .map(|p| p.to_path_buf())
+    });
+    let Some(base) = base else {
+        model.script_frame = None;
+        return;
+    };
+    let out_dir = media::media_dir().join("scriptfx");
+    match media::apply_script_effect(&base, &clip, model.playhead_ms, &out_dir) {
+        Ok(path) => {
+            model.script_error = None;
+            if !model.textures.contains_key(&path) {
+                if let Ok(texture) = wgpu::Texture::from_path(app, &path) {
+                    model.textures.insert(path.clone(), texture);
+                }
+            }
+            if model.script_frame.as_deref() != Some(path.as_path()) {
+                let script = clip
+                    .script_effect
+                    .as_ref()
+                    .map(|e| e.script.as_str())
+                    .unwrap_or("");
+                println!(
+                    "script effect: clip={} script={} frame={}",
+                    clip.name,
+                    script,
+                    path.display()
+                );
+                model.script_frame = Some(path);
+            }
+        }
+        Err(e) => {
+            model.script_frame = None;
+            if model.script_error.as_deref() != Some(e.as_str()) {
+                println!("script error: {e}");
+                model.script_error = Some(e);
+            }
+        }
     }
 }
 
@@ -2003,9 +2257,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
             } else {
                 None
             };
-            let texture = composite_path
+            let texture = model
+                .script_frame
                 .as_ref()
                 .and_then(|p| model.textures.get(p))
+                .or_else(|| composite_path.as_ref().and_then(|p| model.textures.get(p)))
                 .or_else(|| {
                     // トランジション中はブレンド済みフレームを優先
                     // する（Issue #49）。update が現在の再生ヘッドに
@@ -2026,8 +2282,15 @@ fn view(app: &App, model: &Model, frame: Frame) {
                     .x_y(pvx, pvy)
                     .w_h(PREVIEW_W, PREVIEW_H);
             }
-            let label = if clip.cutout {
+            let label = if let Some(err) = &model.script_error {
+                format!("{} @ {}ms (script error: {err})", clip.name, source_time)
+            } else if clip.cutout {
                 format!("{} @ {}ms (cutout)", clip.name, source_time)
+            } else if let Some(effect) = &clip.script_effect {
+                format!(
+                    "{} @ {}ms (script: {})",
+                    clip.name, source_time, effect.script
+                )
             } else {
                 format!("{} @ {}ms", clip.name, source_time)
             };
@@ -2156,6 +2419,23 @@ fn view(app: &App, model: &Model, frame: Frame) {
     if let Some(session) = &model.title_input {
         let (tx, ty) = rect_center(win, PREVIEW_X, PREVIEW_Y - 24.0, PREVIEW_W, 18.0);
         draw.text(&format!("TITLE: {}_", session.text))
+            .x_y(tx, ty)
+            .font_size(13)
+            .color(rgb(0.95, 0.85, 0.40));
+    }
+
+    // スクリプト名／パラメータ編集中も入力バッファを表示する
+    // （Issue #81）。確定は Enter、中止は Esc（event 側）。
+    if let Some(session) = &model.script_input {
+        let (tx, ty) = rect_center(win, PREVIEW_X, PREVIEW_Y - 24.0, PREVIEW_W, 18.0);
+        draw.text(&format!("SCRIPT: {}_", session.text))
+            .x_y(tx, ty)
+            .font_size(13)
+            .color(rgb(0.95, 0.85, 0.40));
+    }
+    if let Some(session) = &model.script_param_input {
+        let (tx, ty) = rect_center(win, PREVIEW_X, PREVIEW_Y - 24.0, PREVIEW_W, 18.0);
+        draw.text(&format!("PARAM: {}_", session.text))
             .x_y(tx, ty)
             .font_size(13)
             .color(rgb(0.95, 0.85, 0.40));

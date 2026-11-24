@@ -572,6 +572,25 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "set_clip_script_effect",
+            "description": "クリップの Lua スクリプトエフェクトを設定する（effect は {script, params}、null で解除、Issue #81）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "clip_id": id_prop("クリップ ID"),
+                    "effect": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "script": {"type": "string"},
+                            "params": {"type": "object"},
+                        },
+                        "required": ["script"],
+                    },
+                },
+                "required": ["clip_id", "effect"],
+            },
+        },
+        {
             "name": "set_clip_transition",
             "description": "クリップの先頭境界のトランジションを設定する（kind: none / cross_dissolve、none は duration_ms=0 で解除、Issue #49）",
             "inputSchema": {

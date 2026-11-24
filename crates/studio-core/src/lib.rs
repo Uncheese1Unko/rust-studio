@@ -15,6 +15,6 @@ pub use midi_import::{
     import_midi, parse_midi, ImportSummary, ImportedTrack, MidiImport, MidiImportError,
 };
 pub use model::{
-    Clip, ColorTag, Instrument, Note, PersistenceError, PluginFormat, Project, Tone, Track,
-    TrackKind, TransitionKind,
+    Clip, ColorTag, EffectParam, Instrument, Note, PersistenceError, PluginFormat, Project,
+    ScriptEffect, Tone, Track, TrackKind, TransitionKind,
 };

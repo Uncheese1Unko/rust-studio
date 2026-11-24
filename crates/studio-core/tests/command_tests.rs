@@ -1,4 +1,4 @@
-use studio_core::{apply, Command, CommandError, Project, TrackKind};
+use studio_core::{apply, Command, CommandError, EffectParam, Project, ScriptEffect, TrackKind};
 
 fn project_with_clip() -> (Project, u64, u64) {
     let mut p = Project::new("test");
@@ -2109,4 +2109,136 @@ fn tones_and_assignment_survive_project_json_roundtrip() {
     assert_eq!(back, p);
     assert_eq!(back.tones.len(), 1);
     assert_eq!(back.track(track_id).unwrap().tone_id, Some(tone_id));
+}
+
+#[test]
+fn set_clip_script_effect_round_trips_through_json() {
+    // Issue #81: SetClipScriptEffect で設定したスクリプトエフェクト
+    // （参照＋パラメータ）が、JSON 保存→読込で一致する。None で解除。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.script_effect, None, "初期値はエフェクトなし");
+
+    let mut params = std::collections::BTreeMap::new();
+    params.insert("gain".to_string(), EffectParam::Number(1.5));
+    params.insert("enabled".to_string(), EffectParam::Bool(true));
+    params.insert("label".to_string(), EffectParam::Text("hi".to_string()));
+    let effect = ScriptEffect {
+        script: "invert.lua".to_string(),
+        params,
+    };
+    apply(
+        &mut p,
+        &Command::SetClipScriptEffect {
+            clip_id,
+            effect: Some(effect.clone()),
+        },
+    )
+    .unwrap();
+    let json = p.dump_json();
+    assert!(json.contains("\"script_effect\""), "{json}");
+    let loaded: Project = serde_json::from_str(&json).unwrap();
+    let (_, clip) = loaded.clip(clip_id).unwrap();
+    assert_eq!(clip.script_effect, Some(effect));
+
+    // 旧形式（script_effect フィールドなし）も None で読める
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value["tracks"][0]["clips"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("script_effect");
+    let old: Project = serde_json::from_value(value).unwrap();
+    let (_, clip) = old.clip(clip_id).unwrap();
+    assert_eq!(clip.script_effect, None);
+
+    // None で解除できる
+    apply(
+        &mut p,
+        &Command::SetClipScriptEffect {
+            clip_id,
+            effect: None,
+        },
+    )
+    .unwrap();
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.script_effect, None);
+}
+
+#[test]
+fn set_clip_script_effect_rejects_non_finite_params() {
+    // Issue #81 レビュー round 2 (Major): NaN / ±inf の数値パラメータは
+    // JSON で null になり、プロジェクト全体が再読込不能になる。
+    // BPM・ピッチの前例どおりコマンド層で弾く。
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut params = std::collections::BTreeMap::new();
+        params.insert("level".to_string(), EffectParam::Number(bad));
+        let before = p.dump_json();
+        let err = apply(
+            &mut p,
+            &Command::SetClipScriptEffect {
+                clip_id,
+                effect: Some(ScriptEffect {
+                    script: "invert.lua".into(),
+                    params,
+                }),
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CommandError::InvalidRange(_)),
+            "bad={bad}: {err}"
+        );
+        assert_eq!(p.dump_json(), before, "失敗時は状態不変");
+    }
+    // 有限値は通り、保存→再読込が往復する
+    let mut params = std::collections::BTreeMap::new();
+    params.insert("level".to_string(), EffectParam::Number(1.5));
+    apply(
+        &mut p,
+        &Command::SetClipScriptEffect {
+            clip_id,
+            effect: Some(ScriptEffect {
+                script: "invert.lua".into(),
+                params,
+            }),
+        },
+    )
+    .unwrap();
+    let reloaded: Project = serde_json::from_str(&p.dump_json()).unwrap();
+    assert_eq!(reloaded.dump_json(), p.dump_json());
+}
+
+#[test]
+fn set_clip_script_effect_rejects_unknown_clip_and_empty_script() {
+    let (mut p, _track_id, clip_id) = project_with_clip();
+    let effect = ScriptEffect {
+        script: "invert.lua".to_string(),
+        params: Default::default(),
+    };
+    let err = apply(
+        &mut p,
+        &Command::SetClipScriptEffect {
+            clip_id: 9999,
+            effect: Some(effect),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err, CommandError::ClipNotFound(9999));
+
+    let err = apply(
+        &mut p,
+        &Command::SetClipScriptEffect {
+            clip_id,
+            effect: Some(ScriptEffect {
+                script: "  ".to_string(),
+                params: Default::default(),
+            }),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(err, CommandError::InvalidRange(_)), "{err}");
+    // 失敗したコマンドは状態を変えない
+    let (_, clip) = p.clip(clip_id).unwrap();
+    assert_eq!(clip.script_effect, None);
 }

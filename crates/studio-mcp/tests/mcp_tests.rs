@@ -55,6 +55,7 @@ fn tools_list_exposes_all_commands() {
         "remove_clip",
         "set_clip_gain",
         "set_clip_title",
+        "set_clip_script_effect",
         "set_clip_transition",
         "set_track_volume",
         "set_track_pan",
@@ -1266,4 +1267,75 @@ fn tone_tools_create_assign_and_observe_via_dump() {
     let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
     assert!(project.tones.is_empty());
     assert_eq!(project.tracks[0].tone_id, None);
+}
+
+#[test]
+fn set_clip_script_effect_tool_applies_via_tools_call() {
+    // Issue #81: set_clip_script_effect が tools/call 経由で適用でき、
+    // ダンプで script_effect が観測できる。effect: null で解除。
+    // 存在しないクリップ・空白のスクリプト名はエラーで状態不変。
+    let server = McpServer::new();
+    let res = call_tool(
+        &server,
+        90,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        91,
+        "add_clip",
+        json!({"track_id": 1, "name": "opening", "start_ms": 0, "duration_ms": 4000, "source": "opening.mp4"}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let res = call_tool(
+        &server,
+        92,
+        "set_clip_script_effect",
+        json!({"clip_id": 2, "effect": {"script": "invert.lua", "params": {"gain": 1.5, "enabled": true, "label": "hi"}}}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    let effect = project.tracks[0].clips[0].script_effect.clone().unwrap();
+    assert_eq!(effect.script, "invert.lua");
+    assert_eq!(effect.params["gain"], studio_core::EffectParam::Number(1.5));
+    assert_eq!(
+        effect.params["enabled"],
+        studio_core::EffectParam::Bool(true)
+    );
+    assert_eq!(
+        effect.params["label"],
+        studio_core::EffectParam::Text("hi".to_string())
+    );
+    // 存在しないクリップはエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        93,
+        "set_clip_script_effect",
+        json!({"clip_id": 999, "effect": {"script": "x.lua", "params": {}}}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    // 空白のスクリプト名はエラーで状態が変わらない
+    let res = call_tool(
+        &server,
+        94,
+        "set_clip_script_effect",
+        json!({"clip_id": 2, "effect": {"script": " ", "params": {}}}),
+    );
+    assert_eq!(res["result"]["isError"], true, "{res}");
+    assert_eq!(project_dump_via_tool(&server), dump);
+    // effect: null で解除できる
+    let res = call_tool(
+        &server,
+        95,
+        "set_clip_script_effect",
+        json!({"clip_id": 2, "effect": null}),
+    );
+    assert_eq!(res["result"]["isError"], false);
+    let dump = project_dump_via_tool(&server);
+    let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
+    assert_eq!(project.tracks[0].clips[0].script_effect, None);
 }

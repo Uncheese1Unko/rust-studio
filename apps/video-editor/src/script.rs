@@ -31,6 +31,8 @@ pub struct ClipInfo {
     pub name: String,
     pub duration_ms: i64,
     pub source: Option<String>,
+    /// クリップ内の現在時刻（ミリ秒）。フレームエフェクト用（#81）。
+    pub time_ms: i64,
 }
 
 /// パラメータ値（数値・真偽・文字列）。
@@ -125,6 +127,40 @@ impl ScriptEngine {
         clip: &ClipInfo,
         params: &ScriptParams,
     ) -> Result<ScriptValue, ScriptError> {
+        let (lua, exceeded) = self.build_lua(clip, params)?;
+        let result = lua.load(source).eval::<LuaValue>();
+        lua.remove_hook();
+        self.check_limit(&exceeded)?;
+        match result {
+            Ok(value) => convert_value(value),
+            Err(e) => Err(classify_error(e)),
+        }
+    }
+
+    /// 上限超過なら打ち切りエラーにする。超過は成否にかかわらず
+    /// 打ち切りとして返す（捕捉手段を外してあるため通常は Err で
+    /// 届くが、二重に保証する）。
+    fn check_limit(&self, exceeded: &AtomicBool) -> Result<(), ScriptError> {
+        if exceeded.load(Ordering::Relaxed) {
+            Err(ScriptError {
+                kind: ScriptErrorKind::InstructionLimit,
+                message: format!(
+                    "命令数上限（{}）を超えたため打ち切りました",
+                    self.instruction_limit
+                ),
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// サンドボックス済みの Lua 状態を作り、最小 API（clip / params）
+    /// と命令数フックを入れて返す。超過フラグもあわせて返す。
+    fn build_lua(
+        &self,
+        clip: &ClipInfo,
+        params: &ScriptParams,
+    ) -> Result<(Lua, Arc<AtomicBool>), ScriptError> {
         // サンドボックス: 標準ライブラリは安全な最小集合だけを読み込む。
         // mlua の ALL_SAFE は io/os を含むため使わない。ベースライブラリは
         // 常に読み込まれるので、到達経路になる関数は個別に落とす。
@@ -167,6 +203,9 @@ impl ScriptEngine {
             .map_err(|e| runtime_error(e.to_string()))?;
         clip_table
             .set("duration_ms", clip.duration_ms)
+            .map_err(|e| runtime_error(e.to_string()))?;
+        clip_table
+            .set("time_ms", clip.time_ms)
             .map_err(|e| runtime_error(e.to_string()))?;
         match &clip.source {
             Some(source) => clip_table
@@ -218,25 +257,118 @@ impl ScriptEngine {
             },
         )
         .map_err(|e| runtime_error(e.to_string()))?;
+        Ok((lua, exceeded))
+    }
 
-        let result = lua.load(source).eval::<LuaValue>();
-        lua.remove_hook();
-        // 上限超過は成否にかかわらず打ち切りとして返す（捕捉手段を
-        // 外してあるため通常は Err で届くが、二重に保証する）。
-        if exceeded.load(Ordering::Relaxed) {
-            return Err(ScriptError {
-                kind: ScriptErrorKind::InstructionLimit,
-                message: format!(
-                    "命令数上限（{}）を超えたため打ち切りました",
-                    self.instruction_limit
-                ),
-            });
+    /// フレーム（RGBA8 ピクセル列）へスクリプトエフェクトを適用する
+    /// （Issue #81）。スクリプトは `frame` グローバル経由でピクセルを
+    /// 読み書きする（内部 API で、AviUtl の `obj.*` ではない。互換
+    /// 形状は #83）。戻り値は使わない。
+    pub fn run_frame_effect(
+        &self,
+        source: &str,
+        clip: &ClipInfo,
+        params: &ScriptParams,
+        width: u32,
+        height: u32,
+        pixels: &mut [u8],
+    ) -> Result<(), ScriptError> {
+        let expected = (width as usize) * (height as usize) * 4;
+        if pixels.len() != expected {
+            return Err(runtime_error(format!(
+                "フレームバッファの長さが寸法と一致しません: {}x{} には {expected} バイト必要ですが {} バイトです",
+                width,
+                height,
+                pixels.len()
+            )));
         }
+        let (lua, exceeded) = self.build_lua(clip, params)?;
+
+        // frame グローバル: ピクセル読み書きはスコープ付き関数で
+        // バッファを借りる（Lua 状態は実行ごとに捨てる）。
+        let cell = std::cell::RefCell::new(pixels);
+        let result = lua.scope(|scope| {
+            let frame = lua.create_table()?;
+            frame.set("width", width)?;
+            frame.set("height", height)?;
+            let get = scope.create_function(|_, (x, y): (f64, f64)| {
+                let buf = cell.borrow();
+                let idx = frame_pixel_index(width, height, coord(x), coord(y))?;
+                Ok((
+                    buf[idx] as i64,
+                    buf[idx + 1] as i64,
+                    buf[idx + 2] as i64,
+                    buf[idx + 3] as i64,
+                ))
+            })?;
+            frame.set("get", get)?;
+            let set = scope.create_function(
+                |_, (x, y, r, g, b, a): (f64, f64, f64, f64, f64, Option<f64>)| {
+                    let mut buf = cell.borrow_mut();
+                    let idx = frame_pixel_index(width, height, coord(x), coord(y))?;
+                    buf[idx] = channel(r);
+                    buf[idx + 1] = channel(g);
+                    buf[idx + 2] = channel(b);
+                    buf[idx + 3] = channel(a.unwrap_or(255.0));
+                    Ok(())
+                },
+            )?;
+            frame.set("set", set)?;
+            let fill_rect = scope.create_function(
+                |_, (x, y, w, h, r, g, b, a): (f64, f64, f64, f64, f64, f64, f64, Option<f64>)| {
+                    let mut buf = cell.borrow_mut();
+                    let (x, y, w, h) = (coord(x), coord(y), coord(w), coord(h));
+                    // 描画プリミティブはフレーム範囲でクリップする。
+                    let x0 = x.max(0);
+                    let y0 = y.max(0);
+                    let x1 = (x + w).min(width as i64);
+                    let y1 = (y + h).min(height as i64);
+                    let rgba = [
+                        channel(r),
+                        channel(g),
+                        channel(b),
+                        channel(a.unwrap_or(255.0)),
+                    ];
+                    for yy in y0..y1 {
+                        for xx in x0..x1 {
+                            let idx = ((yy * width as i64 + xx) * 4) as usize;
+                            buf[idx..idx + 4].copy_from_slice(&rgba);
+                        }
+                    }
+                    Ok(())
+                },
+            )?;
+            frame.set("fill_rect", fill_rect)?;
+            lua.globals().set("frame", frame)?;
+            lua.load(source).eval::<LuaValue>()
+        });
+        lua.remove_hook();
+        self.check_limit(&exceeded)?;
         match result {
-            Ok(value) => convert_value(value),
+            Ok(_) => Ok(()),
             Err(e) => Err(classify_error(e)),
         }
     }
+}
+
+/// Lua の数値をピクセル座標へ寄せる。
+fn coord(value: f64) -> i64 {
+    value.round() as i64
+}
+
+/// Lua の数値を色チャンネル（0〜255）へ寄せる。
+fn channel(value: f64) -> u8 {
+    value.round().clamp(0.0, 255.0) as u8
+}
+
+/// フレーム内のピクセル先頭インデックス。範囲外は実行時エラー。
+fn frame_pixel_index(width: u32, height: u32, x: i64, y: i64) -> mlua::Result<usize> {
+    if x < 0 || y < 0 || x >= width as i64 || y >= height as i64 {
+        return Err(mlua::Error::runtime(format!(
+            "frame coordinate out of bounds: ({x}, {y}) for {width}x{height}"
+        )));
+    }
+    Ok(((y * width as i64 + x) * 4) as usize)
 }
 
 fn runtime_error(message: String) -> ScriptError {
@@ -281,6 +413,7 @@ mod tests {
             name: "clip-a".to_string(),
             duration_ms: 5000,
             source: Some("media/a.mp4".to_string()),
+            time_ms: 0,
         }
     }
 
@@ -485,6 +618,128 @@ mod tests {
                 "for i = 1, 100000000 do end return 42",
                 &clip(),
                 &no_params(),
+            )
+            .unwrap_err();
+        assert_eq!(err.kind, ScriptErrorKind::InstructionLimit);
+    }
+
+    // ---- フレームエフェクト（Issue #81） ----
+
+    #[test]
+    fn clip_time_is_exposed() {
+        let engine = ScriptEngine::new();
+        let mut c = clip();
+        c.time_ms = 1500;
+        assert_eq!(
+            engine.run_source("return clip.time_ms", &c, &no_params()),
+            Ok(ScriptValue::Number(1500.0))
+        );
+    }
+
+    #[test]
+    fn frame_effect_inverts_pixels() {
+        let engine = ScriptEngine::new();
+        // 2x1 の RGBA: (10,20,30,255) (200,150,100,255)
+        let mut pixels = vec![10, 20, 30, 255, 200, 150, 100, 255];
+        engine
+            .run_frame_effect(
+                "for x = 0, frame.width - 1 do
+                     local r, g, b, a = frame.get(x, 0)
+                     frame.set(x, 0, 255 - r, 255 - g, 255 - b, a)
+                 end",
+                &clip(),
+                &no_params(),
+                2,
+                1,
+                &mut pixels,
+            )
+            .unwrap();
+        assert_eq!(pixels, vec![245, 235, 225, 255, 55, 105, 155, 255]);
+    }
+
+    #[test]
+    fn frame_effect_fill_rect_draws_and_clips() {
+        let engine = ScriptEngine::new();
+        let mut pixels = vec![0u8; 4 * 4 * 4];
+        engine
+            .run_frame_effect(
+                // 範囲をはみ出す矩形はクリップされる
+                "frame.fill_rect(2, 2, 10, 10, 255, 0, 0, 255)",
+                &clip(),
+                &no_params(),
+                4,
+                4,
+                &mut pixels,
+            )
+            .unwrap();
+        let px = |x: usize, y: usize| &pixels[(y * 4 + x) * 4..(y * 4 + x) * 4 + 4];
+        assert_eq!(px(0, 0), &[0, 0, 0, 0]);
+        assert_eq!(px(2, 2), &[255, 0, 0, 255]);
+        assert_eq!(px(3, 3), &[255, 0, 0, 255]);
+        assert_eq!(px(1, 3), &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn frame_effect_uses_params_and_clip_time() {
+        let engine = ScriptEngine::new();
+        let mut c = clip();
+        c.time_ms = 1500;
+        let mut params = ScriptParams::new();
+        params.insert("level".to_string(), ScriptParam::Number(7.0));
+        let mut pixels = vec![0u8; 4];
+        engine
+            .run_frame_effect(
+                "frame.set(0, 0, clip.time_ms / 100, params.level, 0, 255)",
+                &c,
+                &params,
+                1,
+                1,
+                &mut pixels,
+            )
+            .unwrap();
+        assert_eq!(pixels, vec![15, 7, 0, 255]);
+    }
+
+    #[test]
+    fn frame_effect_error_is_structured() {
+        let engine = ScriptEngine::new();
+        let mut pixels = vec![0u8; 4];
+        let err = engine
+            .run_frame_effect("error('fx boom')", &clip(), &no_params(), 1, 1, &mut pixels)
+            .unwrap_err();
+        assert_eq!(err.kind, ScriptErrorKind::Runtime);
+        assert!(err.message.contains("fx boom"), "{}", err.message);
+    }
+
+    #[test]
+    fn frame_effect_out_of_bounds_is_error() {
+        let engine = ScriptEngine::new();
+        let mut pixels = vec![0u8; 4];
+        let err = engine
+            .run_frame_effect(
+                "frame.set(3, 0, 1, 2, 3, 255)",
+                &clip(),
+                &no_params(),
+                1,
+                1,
+                &mut pixels,
+            )
+            .unwrap_err();
+        assert_eq!(err.kind, ScriptErrorKind::Runtime);
+    }
+
+    #[test]
+    fn frame_effect_infinite_loop_is_interrupted() {
+        let engine = ScriptEngine::with_instruction_limit(20_000);
+        let mut pixels = vec![0u8; 4];
+        let err = engine
+            .run_frame_effect(
+                "while true do end",
+                &clip(),
+                &no_params(),
+                1,
+                1,
+                &mut pixels,
             )
             .unwrap_err();
         assert_eq!(err.kind, ScriptErrorKind::InstructionLimit);

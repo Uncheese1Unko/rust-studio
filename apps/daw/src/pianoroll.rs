@@ -447,6 +447,7 @@ mod tests {
             fade_out_ms: 0,
             color: None,
             notes,
+            script_effect: None,
         }
     }
 
