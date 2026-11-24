@@ -2939,17 +2939,37 @@ mod tests {
         // 色は setfont の col1 のまま、speed*time 文字だけ出る。
         // （speed は 10.5 と小数で書く。整数リテラルだと旧実装の
         // 色上書きが発火しないため、回帰を確実に捕まえる形にする）
+        let count_red = |out: &[u8]| {
+            out.as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|px| px[0] > 150 && px[1] < 100 && px[2] < 100)
+                .count()
+        };
+        // 比較基準: speed 指定なしの "AB" 全体（同じ環境・同じ
+        // フォントで描いた絶対量。ピクセル数の絶対閾値は環境の
+        // フォント差で境界落ちしたため、相対比較にする）。
+        let full_src =
+            "@t\nobj.setfont(\"g\", 40, 0, 0xff0000)\nobj.load(\"text\", \"AB\")\nobj.draw()\n";
+        let full = run_sample(
+            full_src,
+            None,
+            false,
+            ScriptParams::new(),
+            100,
+            [0, 0, 0, 255],
+        )
+        .unwrap();
+        let full_red = count_red(&full);
         let src = "@t\nobj.setfont(\"g\", 40, 0, 0xff0000)\nobj.load(\"text\", \"AB\", 10.5, 0.15)\nobj.draw()\n";
         let out = run_sample(src, None, false, ScriptParams::new(), 100, [0, 0, 0, 255]).unwrap();
-        let red = out
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .filter(|px| px[0] > 150 && px[1] < 100 && px[2] < 100)
-            .count();
+        let red = count_red(&out);
         assert!(red > 20, "setfont の赤で描かれるはず: red={red}");
-        // 2文字分（"AB" で約200）より少なく、1文字分だけのはず。
-        assert!(red < 160, "speed*time で1文字に制限されるはず: red={red}");
+        // 2文字分の 3/4 未満 = 1文字分だけのはず。
+        assert!(
+            red * 4 < full_red * 3,
+            "speed*time で1文字に制限されるはず: red={red} full={full_red}"
+        );
     }
 
     #[test]
