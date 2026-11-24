@@ -72,6 +72,7 @@ fn tools_list_exposes_all_commands() {
         "remove_note",
         "import_midi",
         "get_project",
+        "list_scripts",
         "undo",
         "redo",
     ] {
@@ -1338,4 +1339,49 @@ fn set_clip_script_effect_tool_applies_via_tools_call() {
     let dump = project_dump_via_tool(&server);
     let project: studio_core::Project = serde_json::from_str(&dump).unwrap();
     assert_eq!(project.tracks[0].clips[0].script_effect, None);
+}
+
+#[test]
+fn list_scripts_tool_reports_scripts_dir() {
+    // Issue #82: スクリプト一覧が MCP でも観測できる。dir 引数で
+    // 対象フォルダを指定でき、無効リスト（disabled-scripts.txt）が
+    // enabled に反映される。構文状態の判定はアプリ側の責務のため
+    // ここでは名前と有効／無効だけを返す。
+    let server = McpServer::new();
+    let dir = std::env::temp_dir().join(format!("studio-mcp-scripts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.lua"), "return 1").unwrap();
+    std::fs::write(dir.join("b.lua"), "return 2").unwrap();
+    std::fs::write(dir.join("note.txt"), "not a script").unwrap();
+    std::fs::write(dir.join("disabled-scripts.txt"), "b.lua\n").unwrap();
+
+    let res = call_tool(
+        &server,
+        10,
+        "list_scripts",
+        json!({"dir": dir.to_string_lossy()}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let text = res["result"]["content"][0]["text"].as_str().unwrap();
+    let payload: Value = serde_json::from_str(text).unwrap();
+    let scripts = payload["scripts"].as_array().unwrap();
+    assert_eq!(scripts.len(), 2, "{payload}");
+    assert_eq!(scripts[0]["name"], "a.lua");
+    assert_eq!(scripts[0]["enabled"], true);
+    assert_eq!(scripts[1]["name"], "b.lua");
+    assert_eq!(scripts[1]["enabled"], false);
+
+    // フォルダが無ければ空の一覧（エラーにしない）
+    let res = call_tool(
+        &server,
+        11,
+        "list_scripts",
+        json!({"dir": dir.join("missing").to_string_lossy()}),
+    );
+    assert_eq!(res["result"]["isError"], false, "{res}");
+    let text = res["result"]["content"][0]["text"].as_str().unwrap();
+    let payload: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(payload["scripts"].as_array().unwrap().len(), 0);
+    std::fs::remove_dir_all(&dir).unwrap();
 }

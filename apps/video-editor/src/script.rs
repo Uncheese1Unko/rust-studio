@@ -260,6 +260,20 @@ impl ScriptEngine {
         Ok((lua, exceeded))
     }
 
+    /// ソースをコンパイルだけして構文を検証する（実行はしない）。
+    /// 一覧での「壊れたスクリプト」の区別に使う（Issue #82）。
+    pub fn check_syntax(&self, source: &str) -> Result<(), ScriptError> {
+        let lua = Lua::new_with(
+            StdLib::TABLE | StdLib::STRING | StdLib::MATH,
+            LuaOptions::default(),
+        )
+        .map_err(|e| runtime_error(e.to_string()))?;
+        match lua.load(source).into_function() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(classify_error(e)),
+        }
+    }
+
     /// フレーム（RGBA8 ピクセル列）へスクリプトエフェクトを適用する
     /// （Issue #81）。スクリプトは `frame` グローバル経由でピクセルを
     /// 読み書きする（内部 API で、AviUtl の `obj.*` ではない。互換
@@ -743,5 +757,29 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err.kind, ScriptErrorKind::InstructionLimit);
+    }
+
+    // ---- 構文検証（Issue #82） ----
+
+    #[test]
+    fn check_syntax_accepts_valid_source() {
+        let engine = ScriptEngine::new();
+        assert_eq!(engine.check_syntax("return 1 + 2"), Ok(()));
+    }
+
+    #[test]
+    fn check_syntax_rejects_broken_source_as_syntax() {
+        let engine = ScriptEngine::new();
+        let err = engine.check_syntax("return 1 +").unwrap_err();
+        assert_eq!(err.kind, ScriptErrorKind::Syntax);
+    }
+
+    #[test]
+    fn check_syntax_does_not_execute() {
+        // コンパイルのみ: 実行時エラーや無限ループを含むソースでも
+        // 構文が正しければ即座に Ok を返す。
+        let engine = ScriptEngine::new();
+        assert_eq!(engine.check_syntax("error('boom')"), Ok(()));
+        assert_eq!(engine.check_syntax("while true do end"), Ok(()));
     }
 }

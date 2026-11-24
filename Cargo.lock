@@ -2902,6 +2902,7 @@ dependencies = [
  "nannou",
  "ndarray",
  "ort",
+ "serde_json",
  "studio-core",
 ]
 

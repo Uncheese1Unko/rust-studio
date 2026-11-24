@@ -24,7 +24,7 @@ pub fn media_dir() -> PathBuf {
 }
 
 /// スクリプトの置き場（Issue #81）。スクリプト参照は原則ここで
-/// 解決する。発見・一覧・有効／無効の管理は #82 で足す。
+/// 解決する。発見・一覧・有効／無効の管理は `extensions`（#82）。
 pub fn scripts_dir() -> PathBuf {
     media_dir().join("scripts")
 }
@@ -67,6 +67,19 @@ pub fn apply_script_effect_with_dirs(
         return Ok(base.to_path_buf());
     };
     let script_path = resolve_script_in(scripts_dir, &effect.script);
+    // Issue #82: 無効化したスクリプトは適用できない。適用済み
+    // クリップでは呼び出し側がこのエラーを表示し、無効であることが
+    // 観測できる。無効リストはファイル名で効く（一覧の管理単位）。
+    let script_file_name = script_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if !crate::extensions::is_enabled(scripts_dir, &script_file_name) {
+        return Err(format!(
+            "スクリプト {} は無効化されているため適用できません",
+            effect.script
+        ));
+    }
     let source = std::fs::read_to_string(&script_path).map_err(|e| {
         format!(
             "スクリプト {} が読み込めません（{}）: {e}",
@@ -1655,6 +1668,37 @@ mod tests {
         // 2回目はキャッシュ（同じパス）が返る
         let again = apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &out_dir).unwrap();
         assert_eq!(again, derived);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn script_effect_disabled_script_is_not_applied() {
+        // Issue #82: 無効化したスクリプトは、適用済みクリップでも
+        // エフェクトとして適用できない（無効である旨が返る）。
+        let dir = fx_dir("disabled");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("invert.lua"),
+            "local r, g, b, a = frame.get(0, 0)\n             frame.set(0, 0, 255 - r, 255 - g, 255 - b, a)",
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(1, 1, vec![10, 20, 30, 255])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let clip = clip_with_effect("invert.lua");
+        crate::extensions::set_enabled(&scripts, "invert.lua", false).unwrap();
+        let err =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap_err();
+        assert!(err.contains("無効"), "{err}");
+        // 有効に戻せば適用できる
+        crate::extensions::set_enabled(&scripts, "invert.lua", true).unwrap();
+        let derived =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap();
+        let img = image::open(&derived).unwrap().to_rgba8();
+        assert_eq!(img.as_raw(), &vec![245, 235, 225, 255]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

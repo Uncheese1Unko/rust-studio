@@ -10,6 +10,7 @@
 
 mod cutout;
 mod edit;
+mod extensions;
 mod media;
 mod palette;
 // Issue #80: Lua 実行基盤。#81 でフレームエフェクトとして利用。
@@ -102,6 +103,12 @@ struct Model {
     media_items: Vec<media::MediaItem>,
     last_bin_click: Option<(f32, usize)>,
     bin_reload_key_down: bool,
+    // Issue #82: スクリプト一覧（フォルダ走査の結果）とプロジェクト
+    // 参照の状態、行ダブルクリック（有効／無効切替）の判定状態。
+    // いずれも表示・管理状態で、プロジェクトには含めない。
+    script_entries: Vec<extensions::ScriptEntry>,
+    script_references: Vec<extensions::ScriptReference>,
+    last_script_click: Option<(f32, usize)>,
 }
 
 /// プレビュー領域（左上原点ピクセル）。要素識別子は `preview`。
@@ -164,6 +171,39 @@ fn bin_row_at(model: &Model, lx: f32, ly: f32) -> Option<usize> {
 fn bin_header_at(model: &Model, lx: f32, ly: f32) -> bool {
     let top = bin_top(model);
     (BIN_X..BIN_X + BIN_W).contains(&lx) && (top..top + BIN_HEADER_H).contains(&ly)
+}
+
+/// スクリプト一覧パネル（Issue #82）。要素識別子は `script-list`。
+/// メディアビンの下に置く。寸法はビンと共通（BIN_*）。
+const SCRIPT_LIST_ID: &str = "script-list";
+
+/// スクリプトパネルの上端 y（メディアビンの下）。
+fn scripts_top(model: &Model) -> f32 {
+    bin_top(model) + bin_panel_h(model.media_items.len()) + BIN_GAP_PX
+}
+
+/// スクリプトパネルの表示行（一覧＋欠落参照）。
+fn script_rows(model: &Model) -> Vec<extensions::ScriptRow> {
+    extensions::display_rows(&model.script_entries, &model.script_references)
+}
+
+/// スクリプトパネルの高さ（ヘッダー＋行数＋下余白）。
+fn scripts_panel_h(row_count: usize) -> f32 {
+    BIN_HEADER_H + row_count as f32 * BIN_ROW_H + 8.0
+}
+
+/// 座標がスクリプトパネルの何行目か（ヘッダー・パネル外は None）。
+fn script_row_at(model: &Model, lx: f32, ly: f32) -> Option<usize> {
+    let top = scripts_top(model);
+    if lx < BIN_X || lx >= BIN_X + BIN_W || ly < top + BIN_HEADER_H {
+        return None;
+    }
+    let idx = ((ly - top - BIN_HEADER_H) / BIN_ROW_H) as usize;
+    if idx < script_rows(model).len() {
+        Some(idx)
+    } else {
+        None
+    }
 }
 
 fn main() {
@@ -400,7 +440,7 @@ fn model(app: &App) -> Model {
     println!("video-editor (issue #8: timeline UI)");
     println!("{}", project.dump_json());
     println!(
-        "elements: {}, {PREVIEW_ID}, {MEDIA_BIN_ID}",
+        "elements: {}, {PREVIEW_ID}, {MEDIA_BIN_ID}, {SCRIPT_LIST_ID}",
         timeline::element_ids(&project).join(", ")
     );
     // メディア層（Issue #10）: フレーム列を準備し、テクスチャを読み込む。
@@ -415,6 +455,11 @@ fn model(app: &App) -> Model {
             .collect::<Vec<_>>()
             .join(", ")
     );
+    // スクリプト管理（Issue #82）: フォルダを走査し、プロジェクト
+    // 参照の状態（欠落を含む）を観測用に出す。
+    let script_entries = extensions::scan_scripts(&media::scripts_dir());
+    let script_references = extensions::reference_statuses(&project, &media::scripts_dir());
+    print_script_dump(&script_entries, &script_references);
     let window = app
         .new_window()
         .size(960, 540)
@@ -472,6 +517,9 @@ fn model(app: &App) -> Model {
         media_items,
         last_bin_click: None,
         bin_reload_key_down: false,
+        script_entries,
+        script_references,
+        last_script_click: None,
     }
 }
 
@@ -520,6 +568,9 @@ fn watch_project_file(app: &App, model: &mut Model) {
                 model.textures = load_textures(app, model.history.project(), &model.frames);
             }
             println!("project reloaded: {}", model.history.project().dump_json());
+            // 参照先スクリプトの状態も新しいプロジェクトで取り直す
+            // （Issue #82: 欠落の明示）。
+            reload_scripts(model);
         }
         Err(e) => {
             println!("warning: project reload failed: {e}");
@@ -684,6 +735,65 @@ fn split_at_playhead(app: &App, model: &mut Model) {
     }
 }
 
+/// スクリプト一覧と参照状態を観測用に出す（Issue #82）。
+/// 欠落参照があれば、その旨を別行でも明示する。
+fn print_script_dump(
+    entries: &[extensions::ScriptEntry],
+    references: &[extensions::ScriptReference],
+) {
+    println!("scripts: {}", extensions::dump_json(entries, references));
+    let missing: Vec<&str> = references
+        .iter()
+        .filter(|r| r.status == extensions::ReferenceStatus::Missing)
+        .map(|r| r.script.as_str())
+        .collect();
+    if !missing.is_empty() {
+        println!("missing scripts: {}", missing.join(", "));
+    }
+}
+
+/// スクリプト一覧の再読み込み（Issue #82）。フォルダの増減と
+/// プロジェクト参照の状態を取り直し、観測用に出す。メディアビンの
+/// 再読み込み（R キー／ヘッダークリック）とプロジェクト再読込から呼ぶ。
+fn reload_scripts(model: &mut Model) {
+    model.script_entries = extensions::scan_scripts(&media::scripts_dir());
+    model.script_references =
+        extensions::reference_statuses(model.history.project(), &media::scripts_dir());
+    model.last_script_click = None;
+    print_script_dump(&model.script_entries, &model.script_references);
+}
+
+/// スクリプト行のダブルクリック（Issue #82）: エントリ行は
+/// 有効／無効を切り替えて保持し、欠落行は何もしない（表示のみ）。
+fn toggle_script_row(model: &mut Model, idx: usize) {
+    let Some(row) = script_rows(model).get(idx).cloned() else {
+        return;
+    };
+    if row.kind == extensions::ScriptRowKind::Missing {
+        println!("script missing (cannot toggle): {}", row.name);
+        return;
+    }
+    let Some(entry) = model
+        .script_entries
+        .iter()
+        .find(|e| e.name == row.name)
+        .cloned()
+    else {
+        return;
+    };
+    match extensions::set_enabled(&media::scripts_dir(), &entry.name, !entry.enabled) {
+        Ok(()) => {
+            println!(
+                "script toggled: {} -> {}",
+                entry.name,
+                if entry.enabled { "disabled" } else { "enabled" }
+            );
+            reload_scripts(model);
+        }
+        Err(e) => println!("script toggle failed: {e}"),
+    }
+}
+
 /// メディアビンの再読み込み（Issue #47）。素材の増減を再起動なしで
 /// 反映する。R キーとパネルヘッダーのクリックから呼ぶ。
 fn reload_media_bin(model: &mut Model) {
@@ -698,6 +808,8 @@ fn reload_media_bin(model: &mut Model) {
             .collect::<Vec<_>>()
             .join(", ")
     );
+    // スクリプト一覧も同じ再読み込みの合図で取り直す（Issue #82）。
+    reload_scripts(model);
 }
 
 /// ビンの素材を選択中トラックの再生ヘッド位置に配置する
@@ -883,6 +995,9 @@ fn event(app: &App, model: &mut Model, event: Event) {
                         model.script_input = None;
                         println!("after script: {}", model.history.project().dump_json());
                         save_project_file(model);
+                        // 参照が変わったのでスクリプト参照状態も
+                        // 取り直す（Issue #82）。
+                        reload_scripts(model);
                     }
                     Err(e) => println!("script rejected: {e}"),
                 }
@@ -1795,6 +1910,24 @@ fn handle_pointer(app: &App, model: &mut Model) {
             model.prev_left_down = left_down;
             return;
         }
+        // スクリプト一覧（Issue #82）: 行のダブルクリックで
+        // 有効／無効を切り替える。欠落行は表示のみ。
+        if let Some(idx) = script_row_at(model, lx, ly) {
+            let now = app.time;
+            let is_double =
+                matches!(model.last_script_click, Some((t, i)) if i == idx && now - t < 0.6);
+            if is_double {
+                model.last_script_click = None;
+                toggle_script_row(model, idx);
+            } else {
+                model.last_script_click = Some((now, idx));
+                if let Some(row) = script_rows(model).get(idx) {
+                    println!("script selected: {} ({:?})", row.name, row.kind);
+                }
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
         // 色選択パネル（Issue #59）: トラック追加エリアの下のパネル。
         // 他の領域とは重ならない。
         if let Some((target, color)) =
@@ -2181,6 +2314,44 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .x_y(tx, ty)
                 .font_size(11)
                 .color(rgb(0.85, 0.85, 0.88));
+        }
+    }
+
+    // スクリプト一覧（script-list、Issue #82）: メディアビンの下。
+    // 状態を接頭辞で区別する（[on] / [off] / [error] / [missing]）。
+    // 行のダブルクリックで有効／無効を切り替える。
+    {
+        let rows = script_rows(model);
+        let top = scripts_top(model);
+        let h = scripts_panel_h(rows.len());
+        let (bx, by) = rect_center(win, BIN_X, top, BIN_W, h);
+        draw.rect()
+            .x_y(bx, by)
+            .w_h(BIN_W, h)
+            .color(rgb(0.13, 0.13, 0.16));
+        let (hx, hy) = rect_center(win, BIN_X + 8.0, top, 300.0, BIN_HEADER_H);
+        draw.text("SCRIPTS (DOUBLE-CLICK: ON/OFF)")
+            .x_y(hx, hy)
+            .font_size(10)
+            .color(rgb(0.65, 0.65, 0.70));
+        for (i, row) in rows.iter().enumerate() {
+            let (label, color) = match row.kind {
+                extensions::ScriptRowKind::Ready => {
+                    (format!("[on] {}", row.name), rgb(0.85, 0.85, 0.88))
+                }
+                extensions::ScriptRowKind::Disabled => {
+                    (format!("[off] {}", row.name), rgb(0.45, 0.45, 0.50))
+                }
+                extensions::ScriptRowKind::Error => {
+                    (format!("[error] {}", row.name), rgb(0.95, 0.45, 0.40))
+                }
+                extensions::ScriptRowKind::Missing => {
+                    (format!("[missing] {}", row.name), rgb(0.95, 0.45, 0.40))
+                }
+            };
+            let row_y = top + BIN_HEADER_H + i as f32 * BIN_ROW_H;
+            let (tx, ty) = rect_center(win, BIN_X + 8.0, row_y, 300.0, BIN_ROW_H);
+            draw.text(&label).x_y(tx, ty).font_size(11).color(color);
         }
     }
 

@@ -1,0 +1,135 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue82/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue82 drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 4000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": {
+            "script": "invert.lua",
+            "params": {}
+          }
+        },
+        {
+          "id": 4,
+          "name": "later",
+          "start_ms": 4000,
+          "duration_ms": 4000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": {
+            "script": "ghost.lua",
+            "params": {}
+          }
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 6
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, timeline.clip.4, preview, media-bin, script-list
+media prepared: demo/opening.mp4 -> 40 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+scripts: {"references":[{"script":"ghost.lua","status":"missing"},{"script":"invert.lua","status":"ready"}],"scripts":[{"enabled":true,"name":"broken.lua","status":{"error":"apps/video-editor/src/script.rs:271:2: unexpected symbol near '<eof>'"}},{"enabled":true,"name":"invert.lua","status":"ready"},{"enabled":false,"name":"off.lua","status":"ready"}]}
+missing scripts: ghost.lua
+preview textures loaded: 40
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa8d0dcf73edd6354.png
+preview: source=demo/opening.mp4 playhead=312 source_time=312 frame=3
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s79e8632e41746e27.png
+preview: source=demo/opening.mp4 playhead=499 source_time=499 frame=4
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s7fd0c1364da2b442.png
+preview: source=demo/opening.mp4 playhead=692 source_time=692 frame=6
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s45128500fd516cab.png
+preview: source=demo/opening.mp4 playhead=893 source_time=893 frame=8
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s52f885e89a91960c.png
+preview: source=demo/opening.mp4 playhead=1071 source_time=1071 frame=10
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sb0c639eda2f07798.png
+preview: source=demo/opening.mp4 playhead=1250 source_time=1250 frame=12
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sb55cd189bd902535.png
+preview: source=demo/opening.mp4 playhead=1430 source_time=1430 frame=14
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3d722e124b042e53.png
+preview: source=demo/opening.mp4 playhead=1625 source_time=1625 frame=16
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s9a70a6dcb8e3afb9.png
+preview: source=demo/opening.mp4 playhead=1815 source_time=1815 frame=18
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s61a2a3de9fe33ee6.png
+preview: source=demo/opening.mp4 playhead=2027 source_time=2027 frame=20
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s5b4745a71e44101b.png
+preview: source=demo/opening.mp4 playhead=2277 source_time=2277 frame=22
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s0bb158a58560aece.png
+script selected: off.lua (Disabled)
+preview: source=demo/opening.mp4 playhead=2484 source_time=2484 frame=24
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sdb627d7642e8aff8.png
+preview: source=demo/opening.mp4 playhead=2655 source_time=2655 frame=26
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sfc3deee3444de0d6.png
+script toggled: off.lua -> enabled
+scripts: {"references":[{"script":"ghost.lua","status":"missing"},{"script":"invert.lua","status":"ready"}],"scripts":[{"enabled":true,"name":"broken.lua","status":{"error":"apps/video-editor/src/script.rs:271:2: unexpected symbol near '<eof>'"}},{"enabled":true,"name":"invert.lua","status":"ready"},{"enabled":true,"name":"off.lua","status":"ready"}]}
+missing scripts: ghost.lua
+preview: source=demo/opening.mp4 playhead=2823 source_time=2823 frame=28
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s263f1aa883cbd3af.png
+preview: source=demo/opening.mp4 playhead=3022 source_time=3022 frame=30
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s7ec85c35ea9d1398.png
+preview: source=demo/opening.mp4 playhead=3217 source_time=3217 frame=32
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa9b2f64531a4c180.png
+preview: source=demo/opening.mp4 playhead=3406 source_time=3406 frame=34
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sb2ec7516e9757b6e.png
+script selected: invert.lua (Ready)
+preview: source=demo/opening.mp4 playhead=3616 source_time=3616 frame=36
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3e29998633037c7f.png
+preview: source=demo/opening.mp4 playhead=3787 source_time=3787 frame=37
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sae7040e4fecabf0b.png
+script toggled: invert.lua -> disabled
+scripts: {"references":[{"script":"ghost.lua","status":"missing"},{"script":"invert.lua","status":"disabled"}],"scripts":[{"enabled":true,"name":"broken.lua","status":{"error":"apps/video-editor/src/script.rs:271:2: unexpected symbol near '<eof>'"}},{"enabled":false,"name":"invert.lua","status":"ready"},{"enabled":true,"name":"off.lua","status":"ready"}]}
+missing scripts: ghost.lua
+preview: source=demo/opening.mp4 playhead=3960 source_time=3960 frame=39
+script error: スクリプト invert.lua は無効化されているため適用できません
+preview: source=demo/opening.mp4 playhead=4071 source_time=71 frame=0
+script error: スクリプト ghost.lua が読み込めません（/tmp/rust-studio-video-editor-media/scripts/ghost.lua）: No such file or directory (os error 2)
+preview: source=demo/opening.mp4 playhead=4116 source_time=116 frame=1
+preview: source=demo/opening.mp4 playhead=4204 source_time=204 frame=2
+preview: source=demo/opening.mp4 playhead=4366 source_time=366 frame=3
+preview: source=demo/opening.mp4 playhead=4454 source_time=454 frame=4
+preview: source=demo/opening.mp4 playhead=4576 source_time=576 frame=5
+preview: source=demo/opening.mp4 playhead=4667 source_time=667 frame=6

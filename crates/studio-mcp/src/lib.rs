@@ -151,6 +151,20 @@ impl McpServer {
             let history = self.history.lock().unwrap();
             return Ok(history.project().dump_json());
         }
+        if name == "list_scripts" {
+            // Issue #82: video-editor のスクリプト一覧（読み取り専用）。
+            // 置き場所の規約はアプリ側 media::scripts_dir と同じ
+            // （temp_dir/rust-studio-video-editor-media/scripts）。
+            // dir 引数で上書きできる。構文エラーの判定は mlua を
+            // 持つアプリ側の責務（ADR-0008: このクレートは serde
+            // のみ）で、ここでは名前と有効／無効だけを返す。
+            let dir = arguments
+                .get("dir")
+                .and_then(|v| v.as_str())
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_scripts_dir);
+            return Ok(list_scripts_json(&dir));
+        }
         if name == "undo" || name == "redo" {
             // Issue #29: 履歴操作。履歴が空でもエラーにせず、実施できたか
             // どうかを bool で返す（何も起きない結果）。
@@ -225,6 +239,61 @@ impl McpServer {
     }
 }
 
+/// video-editor のスクリプトフォルダの既定位置。アプリ側
+/// `media::media_dir` / `media::scripts_dir` と同じ規約（Issue #82）。
+fn default_scripts_dir() -> std::path::PathBuf {
+    std::env::temp_dir()
+        .join("rust-studio-video-editor-media")
+        .join("scripts")
+}
+
+/// スクリプトフォルダを走査し、`{dir, scripts: [{name, enabled}]}`
+/// の JSON 文字列を作る。無効リストはフォルダ内の
+/// `disabled-scripts.txt`（アプリ側 extensions と同じ規約）。
+/// フォルダが無ければ空の一覧。
+fn list_scripts_json(dir: &std::path::Path) -> String {
+    let mut disabled = std::collections::BTreeSet::new();
+    if let Ok(text) = std::fs::read_to_string(dir.join("disabled-scripts.txt")) {
+        for line in text.lines() {
+            let name = line.trim();
+            if !name.is_empty() {
+                disabled.insert(name.to_string());
+            }
+        }
+    }
+    let mut names: Vec<String> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase());
+            if ext.as_deref() != Some("lua") {
+                continue;
+            }
+            if let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) {
+                names.push(name);
+            }
+        }
+    }
+    names.sort();
+    let scripts: Vec<Value> = names
+        .iter()
+        .map(|name| {
+            json!({
+                "name": name,
+                "enabled": !disabled.contains(name),
+            })
+        })
+        .collect();
+    serde_json::to_string(&json!({
+        "dir": dir.to_string_lossy(),
+        "scripts": scripts,
+    }))
+    .unwrap()
+}
+
 fn tool_result(text: String, is_error: bool) -> Value {
     json!({
         "content": [{"type": "text", "text": text}],
@@ -241,7 +310,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド26種＋MIDI 取り込み＋状態ダンプ取得＋undo/redo。
+/// tools/list で公開する定義。コマンド26種＋MIDI 取り込み＋状態ダンプ取得＋スクリプト一覧＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -666,6 +735,16 @@ fn tool_definitions() -> Value {
             "name": "get_project",
             "description": "プロジェクトの状態ダンプ（JSON）を返す",
             "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "list_scripts",
+            "description": "video-editor のスクリプトフォルダにある Lua スクリプトの一覧（名前と有効／無効）を返す。読み取り専用（Issue #82）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "dir": {"type": "string", "description": "スクリプトフォルダ（省略時はアプリの既定フォルダ）"},
+                },
+            },
         },
         {
             "name": "undo",
