@@ -12,6 +12,10 @@ mod cutout;
 mod edit;
 mod media;
 mod palette;
+// Issue #80: Lua 実行基盤。利用側（エフェクト適用 #81、互換層 #83）が
+// 後続 PBI のため、現時点ではテストからのみ使う。
+#[allow(dead_code)]
+mod script;
 mod timeline;
 
 use nannou::prelude::*;
