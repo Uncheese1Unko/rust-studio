@@ -197,6 +197,114 @@ impl ViewScale {
             ..*self
         }
     }
+
+    /// ホイール1ノッチ分のスクロール量（ms、Issue #87）。表示幅の
+    /// 1/10 を1ノッチ（1行）とし、ズームによらず「画面の何割か」で
+    /// 一定にする。符号は縦ホイール上（y+）＝戻る、縦ホイール下
+    /// （y−）＝進む、横ホイール右（x+）＝進む。横成分と縦成分は
+    /// 合算する（Shift+ホイールは環境により x か y のどちらかで
+    /// 届くため、どちらでも効く）。
+    pub fn wheel_delta_ms(&self, x_lines: f32, y_lines: f32, view_width_px: f32) -> i64 {
+        let lines = x_lines - y_lines;
+        (lines * self.visible_ms(view_width_px) as f32 / 10.0).round() as i64
+    }
+
+    /// オフセットの上限（Issue #87）: プロジェクト終端から表示幅を
+    /// 引いた位置。これより先は見せるものがない。
+    pub fn max_offset_ms(&self, project_end_ms: i64, view_width_px: f32) -> i64 {
+        (project_end_ms - self.visible_ms(view_width_px)).max(0)
+    }
+
+    /// 上限クランプ付きの水平スクロール（Issue #87）。下限 0、
+    /// 上限は `max_offset_ms`。スクロールの入口（ホイール、パン、
+    /// スクロールバー）からはこれを使う。`zoom_at` のアンカー
+    /// 保持には適用しない（イシューの方針）。
+    pub fn scroll_by_clamped(
+        &self,
+        delta_ms: i64,
+        project_end_ms: i64,
+        view_width_px: f32,
+    ) -> ViewScale {
+        let scrolled = self.scroll_by(delta_ms);
+        let max = self.max_offset_ms(project_end_ms, view_width_px);
+        ViewScale {
+            offset_ms: scrolled.offset_ms.min(max),
+            ..*self
+        }
+    }
+
+    /// スクロールバーのつまみ矩形（左端 x と幅 px、Issue #87）。
+    /// トラックはヘッダー右端から画面右端まで。つまみの幅は
+    /// 表示幅／全体、位置はオフセット／全体の割合で決まる。
+    /// 全部見えている場合はトラック全幅。最小幅は 20px。
+    pub fn scrollbar_thumb(&self, project_end_ms: i64, view_width_px: f32) -> (f32, f32) {
+        let track_w = (view_width_px - HEADER_WIDTH_PX).max(0.0);
+        let visible = self.visible_ms(view_width_px);
+        if project_end_ms <= visible || project_end_ms <= 0 {
+            return (HEADER_WIDTH_PX, track_w);
+        }
+        let total = project_end_ms as f32;
+        let w = (track_w * visible as f32 / total).clamp(20.0, track_w);
+        let x = HEADER_WIDTH_PX + track_w * self.offset_ms as f32 / total;
+        (x.min(HEADER_WIDTH_PX + track_w - w), w)
+    }
+
+    /// つまみの左端 x（px）からオフセットを逆算する（Issue #87）。
+    /// `scrollbar_thumb` の逆換算で、[0, 上限] にクランプする。
+    pub fn scrollbar_drag_to(
+        &self,
+        thumb_x: f32,
+        project_end_ms: i64,
+        view_width_px: f32,
+    ) -> ViewScale {
+        let track_w = (view_width_px - HEADER_WIDTH_PX).max(0.0);
+        if track_w <= 0.0 || project_end_ms <= self.visible_ms(view_width_px) {
+            return ViewScale {
+                offset_ms: 0,
+                ..*self
+            };
+        }
+        let ratio = (thumb_x - HEADER_WIDTH_PX) / track_w;
+        let raw = (ratio * project_end_ms as f32).round() as i64;
+        ViewScale {
+            offset_ms: raw.clamp(0, self.max_offset_ms(project_end_ms, view_width_px)),
+            ..*self
+        }
+    }
+}
+
+/// スクロールバーの帯の高さ（px、Issue #87）。タイムライン領域の
+/// 下端＝最終トラック行の直下に置く。
+pub const SCROLLBAR_HEIGHT_PX: f32 = 12.0;
+
+/// スクロールバーの帯の上端 y（最終トラック行の直下）。
+pub fn scrollbar_y(track_count: usize) -> f32 {
+    RULER_HEIGHT_PX + track_count as f32 * TRACK_HEIGHT_PX
+}
+
+/// スクロールバーの帯での押下がドラッグ開始かどうかと、掴み位置の
+/// ずれ（ポインタ x − つまみ左端 x）を返す（Issue #87）。
+/// つまみの中ならそのままのずれ、つまみの外（帯の中）なら
+/// つまみ中心で掴む（中心がポインタへ寄る）。帯の外・ヘッダー列は
+/// None。
+pub fn scrollbar_grab(
+    scale: &ViewScale,
+    project_end_ms: i64,
+    track_count: usize,
+    lx: f32,
+    ly: f32,
+    view_width_px: f32,
+) -> Option<f32> {
+    let y = scrollbar_y(track_count);
+    if ly < y || ly >= y + SCROLLBAR_HEIGHT_PX || lx < HEADER_WIDTH_PX || lx >= view_width_px {
+        return None;
+    }
+    let (thumb_x, thumb_w) = scale.scrollbar_thumb(project_end_ms, view_width_px);
+    if lx >= thumb_x && lx < thumb_x + thumb_w {
+        Some(lx - thumb_x)
+    } else {
+        Some(thumb_w / 2.0)
+    }
 }
 
 /// 1ミリ秒あたりのピクセル数（倍率1の基準値）。
@@ -535,6 +643,122 @@ mod tests {
             offset_ms: 10_000,
         };
         assert_eq!(paged.follow_playhead(12_000, 960.0, true).offset_ms, 10_000);
+    }
+
+    #[test]
+    fn wheel_delta_is_proportional_to_visible_width() {
+        // Issue #87: ホイール1ノッチで表示幅の 1/10 が動く。符号は
+        // 「上（y+）＝戻る、下（y−）＝進む、右（x+）＝進む」。
+        // 幅 960・倍率1では表示幅 10,000ms なので 1ノッチ = 1,000ms。
+        let base = ViewScale::default();
+        assert_eq!(base.wheel_delta_ms(0.0, -1.0, 960.0), 1_000);
+        assert_eq!(base.wheel_delta_ms(0.0, 1.0, 960.0), -1_000);
+        assert_eq!(base.wheel_delta_ms(1.0, 0.0, 960.0), 1_000);
+        assert_eq!(base.wheel_delta_ms(-1.0, 0.0, 960.0), -1_000);
+        assert_eq!(base.wheel_delta_ms(0.0, -2.0, 960.0), 2_000);
+        assert_eq!(base.wheel_delta_ms(0.0, 0.0, 960.0), 0);
+        // ズーム2倍では表示幅 5,000ms なので 1ノッチ = 500ms
+        // （ズームによらず「画面の 1/10」で一定）。
+        let zoomed = ViewScale {
+            zoom: 2.0,
+            offset_ms: 0,
+        };
+        assert_eq!(zoomed.wheel_delta_ms(0.0, -1.0, 960.0), 500);
+    }
+
+    #[test]
+    fn scroll_by_clamped_stops_at_project_end() {
+        // Issue #87: オフセットの上限は max(0, 終端 − 表示幅)。
+        let base = ViewScale::default(); // 表示幅 10,000ms（幅 960）
+        assert_eq!(base.max_offset_ms(25_000, 960.0), 15_000);
+        assert_eq!(base.max_offset_ms(10_000, 960.0), 0);
+        assert_eq!(base.max_offset_ms(5_000, 960.0), 0);
+        assert_eq!(
+            base.scroll_by_clamped(20_000, 25_000, 960.0).offset_ms,
+            15_000
+        );
+        assert_eq!(
+            base.scroll_by_clamped(3_000, 25_000, 960.0).offset_ms,
+            3_000
+        );
+        assert_eq!(base.scroll_by_clamped(-500, 25_000, 960.0).offset_ms, 0);
+        // 終端が表示幅未満なら一切スクロールできない
+        assert_eq!(base.scroll_by_clamped(1_000, 5_000, 960.0).offset_ms, 0);
+    }
+
+    #[test]
+    fn scrollbar_thumb_reflects_offset_and_visible_ratio() {
+        // Issue #87: つまみはトラック（ヘッダー右端〜画面右端）のうち
+        // 「オフセット／全体」と「表示幅／全体」の割合で決まる。
+        // 幅 960 → トラック幅 840。全体 20,000ms・表示幅 10,000ms。
+        let base = ViewScale::default();
+        let (x, w) = base.scrollbar_thumb(20_000, 960.0);
+        assert!((x - HEADER_WIDTH_PX).abs() < 0.01);
+        assert!((w - 420.0).abs() < 0.01);
+        // 上限までスクロールするとつまみの右端がトラック右端に一致する
+        let at_max = ViewScale {
+            zoom: 1.0,
+            offset_ms: 10_000,
+        };
+        let (x, w) = at_max.scrollbar_thumb(20_000, 960.0);
+        assert!((x + w - 960.0).abs() < 0.01);
+        // 全部見えている場合はトラック全幅
+        let (_, w) = base.scrollbar_thumb(8_000, 960.0);
+        assert!((w - 840.0).abs() < 0.01);
+        // 巨大なプロジェクトでもつまみは最小幅を保つ
+        let (_, w) = base.scrollbar_thumb(10_000_000, 960.0);
+        assert!(w >= 20.0, "w={w}");
+    }
+
+    #[test]
+    fn scrollbar_drag_to_round_trips_and_clamps() {
+        // Issue #87: つまみ位置（px）→ オフセット（ms）の換算は
+        // scrollbar_thumb の逆で、両端でクランプされる。
+        let base = ViewScale::default(); // 全体 20,000・表示幅 10,000
+                                         // つまみ左端がトラック左端 → オフセット 0
+        assert_eq!(
+            base.scrollbar_drag_to(HEADER_WIDTH_PX, 20_000, 960.0)
+                .offset_ms,
+            0
+        );
+        // つまみをトラックの半分まで → オフセット 10,000（＝上限）
+        let half = HEADER_WIDTH_PX + 420.0;
+        assert_eq!(
+            base.scrollbar_drag_to(half, 20_000, 960.0).offset_ms,
+            10_000
+        );
+        // さらに先へ引いても上限で止まる
+        assert_eq!(
+            base.scrollbar_drag_to(900.0, 20_000, 960.0).offset_ms,
+            10_000
+        );
+        // 左へ戻しすぎても 0 で止まる
+        assert_eq!(base.scrollbar_drag_to(0.0, 20_000, 960.0).offset_ms, 0);
+        // 全部見えている場合は常に 0
+        assert_eq!(base.scrollbar_drag_to(500.0, 8_000, 960.0).offset_ms, 0);
+    }
+
+    #[test]
+    fn scrollbar_grab_detects_band_and_thumb() {
+        // Issue #87: スクロールバーの帯（最終トラック行の直下）での
+        // 押下だけがドラッグ開始になる。つまみ内なら掴み位置のずれ、
+        // つまみ外ならつまみ中心で掴む（中心がポインタへ寄る）。
+        let base = ViewScale::default(); // 全体 20,000、つまみ x=120..540
+        let y = scrollbar_y(2) + 1.0; // トラック2行のプロジェクト
+                                      // つまみの中（x=200）→ ずれは 200 − 120 = 80
+        assert_eq!(
+            scrollbar_grab(&base, 20_000, 2, 200.0, y, 960.0),
+            Some(80.0)
+        );
+        // つまみの外（x=700）→ 中心で掴むので ずれ = つまみ幅/2 = 210
+        assert_eq!(
+            scrollbar_grab(&base, 20_000, 2, 700.0, y, 960.0),
+            Some(210.0)
+        );
+        // 帯より上（トラック行の中）は対象外
+        assert_eq!(scrollbar_grab(&base, 20_000, 2, 200.0, 30.0, 960.0), None);
+        // ヘッダー列は対象外
+        assert_eq!(scrollbar_grab(&base, 20_000, 2, 60.0, y, 960.0), None);
     }
 
     #[test]
