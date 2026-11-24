@@ -1,0 +1,458 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+project file mode: /tmp/issue81/project.json
+video-editor (issue #8: timeline UI)
+{
+  "name": "issue81 drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 4000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.3, preview, media-bin
+media prepared: demo/opening.mp4 -> 40 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+preview textures loaded: 40
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+preview: source=demo/opening.mp4 playhead=143 source_time=143 frame=1
+preview: source=demo/opening.mp4 playhead=242 source_time=242 frame=2
+preview: source=demo/opening.mp4 playhead=333 source_time=333 frame=3
+preview: source=demo/opening.mp4 playhead=445 source_time=445 frame=4
+preview: source=demo/opening.mp4 playhead=533 source_time=533 frame=5
+preview: source=demo/opening.mp4 playhead=627 source_time=627 frame=6
+preview: source=demo/opening.mp4 playhead=731 source_time=731 frame=7
+preview: source=demo/opening.mp4 playhead=831 source_time=831 frame=8
+preview: source=demo/opening.mp4 playhead=928 source_time=928 frame=9
+preview: source=demo/opening.mp4 playhead=1026 source_time=1026 frame=10
+preview: source=demo/opening.mp4 playhead=1124 source_time=1124 frame=11
+preview: source=demo/opening.mp4 playhead=1202 source_time=1202 frame=12
+preview: source=demo/opening.mp4 playhead=1320 source_time=1320 frame=13
+preview: source=demo/opening.mp4 playhead=1417 source_time=1417 frame=14
+preview: source=demo/opening.mp4 playhead=1514 source_time=1514 frame=15
+preview: source=demo/opening.mp4 playhead=1611 source_time=1611 frame=16
+preview: source=demo/opening.mp4 playhead=1739 source_time=1739 frame=17
+preview: source=demo/opening.mp4 playhead=1824 source_time=1824 frame=18
+preview: source=demo/opening.mp4 playhead=1905 source_time=1905 frame=19
+preview: source=demo/opening.mp4 playhead=2006 source_time=2006 frame=20
+preview: source=demo/opening.mp4 playhead=2113 source_time=2113 frame=21
+preview: source=demo/opening.mp4 playhead=2217 source_time=2217 frame=22
+preview: source=demo/opening.mp4 playhead=2312 source_time=2312 frame=23
+preview: source=demo/opening.mp4 playhead=2405 source_time=2405 frame=24
+preview: source=demo/opening.mp4 playhead=2521 source_time=2521 frame=25
+preview: source=demo/opening.mp4 playhead=2624 source_time=2624 frame=26
+preview: source=demo/opening.mp4 playhead=2701 source_time=2701 frame=27
+preview: source=demo/opening.mp4 playhead=2820 source_time=2820 frame=28
+preview: source=demo/opening.mp4 playhead=2905 source_time=2905 frame=29
+preview: source=demo/opening.mp4 playhead=3015 source_time=3015 frame=30
+script input begin: clip 3
+preview: source=demo/opening.mp4 playhead=3108 source_time=3108 frame=31
+preview: source=demo/opening.mp4 playhead=3215 source_time=3215 frame=32
+preview: source=demo/opening.mp4 playhead=3318 source_time=3318 frame=33
+preview: source=demo/opening.mp4 playhead=3415 source_time=3415 frame=34
+preview: source=demo/opening.mp4 playhead=3502 source_time=3502 frame=35
+preview: source=demo/opening.mp4 playhead=3611 source_time=3611 frame=36
+preview: source=demo/opening.mp4 playhead=3729 source_time=3729 frame=37
+preview: source=demo/opening.mp4 playhead=3812 source_time=3812 frame=38
+preview: source=demo/opening.mp4 playhead=3931 source_time=3931 frame=39
+preview: source=demo/opening.mp4 playhead=20 source_time=20 frame=0
+preview: source=demo/opening.mp4 playhead=104 source_time=104 frame=1
+preview: source=demo/opening.mp4 playhead=219 source_time=219 frame=2
+preview: source=demo/opening.mp4 playhead=321 source_time=321 frame=3
+preview: source=demo/opening.mp4 playhead=408 source_time=408 frame=4
+preview: source=demo/opening.mp4 playhead=504 source_time=504 frame=5
+preview: source=demo/opening.mp4 playhead=618 source_time=618 frame=6
+preview: source=demo/opening.mp4 playhead=711 source_time=711 frame=7
+preview: source=demo/opening.mp4 playhead=817 source_time=817 frame=8
+preview: source=demo/opening.mp4 playhead=920 source_time=920 frame=9
+preview: source=demo/opening.mp4 playhead=1002 source_time=1002 frame=10
+preview: source=demo/opening.mp4 playhead=1110 source_time=1110 frame=11
+preview: source=demo/opening.mp4 playhead=1211 source_time=1211 frame=12
+preview: source=demo/opening.mp4 playhead=1305 source_time=1305 frame=13
+preview: source=demo/opening.mp4 playhead=1406 source_time=1406 frame=14
+preview: source=demo/opening.mp4 playhead=1518 source_time=1518 frame=15
+preview: source=demo/opening.mp4 playhead=1606 source_time=1606 frame=16
+preview: source=demo/opening.mp4 playhead=1716 source_time=1716 frame=17
+preview: source=demo/opening.mp4 playhead=1800 source_time=1800 frame=18
+preview: source=demo/opening.mp4 playhead=1907 source_time=1907 frame=19
+preview: source=demo/opening.mp4 playhead=2008 source_time=2008 frame=20
+preview: source=demo/opening.mp4 playhead=2167 source_time=2167 frame=21
+preview: source=demo/opening.mp4 playhead=2256 source_time=2256 frame=22
+preview: source=demo/opening.mp4 playhead=2356 source_time=2356 frame=23
+after script: {
+  "name": "issue81 drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 4000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": {
+            "script": "invert.lua",
+            "params": {}
+          }
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=demo/opening.mp4 playhead=2457 source_time=2457 frame=24
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s4125ebf17c1106d6.png
+preview: source=demo/opening.mp4 playhead=2625 source_time=2625 frame=26
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s7a4bfb20bc2620f4.png
+preview: source=demo/opening.mp4 playhead=2798 source_time=2798 frame=27
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3714f8cae5031695.png
+preview: source=demo/opening.mp4 playhead=2988 source_time=2988 frame=29
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s02ef02bcb5de53a8.png
+preview: source=demo/opening.mp4 playhead=3161 source_time=3161 frame=31
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s275da5452d408b6a.png
+preview: source=demo/opening.mp4 playhead=3332 source_time=3332 frame=33
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s552ad05ba7f7c8e4.png
+preview: source=demo/opening.mp4 playhead=3515 source_time=3515 frame=35
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s55782bd44757c206.png
+preview: source=demo/opening.mp4 playhead=3698 source_time=3698 frame=36
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/scaf935e942566c09.png
+preview: source=demo/opening.mp4 playhead=3901 source_time=3901 frame=39
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s82aa838284ac4297.png
+preview: source=demo/opening.mp4 playhead=96 source_time=96 frame=0
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s86d7375c0be13350.png
+preview: source=demo/opening.mp4 playhead=283 source_time=283 frame=2
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s016bdc514dcb0552.png
+preview: source=demo/opening.mp4 playhead=481 source_time=481 frame=4
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3cfcec1417ef756c.png
+preview: source=demo/opening.mp4 playhead=749 source_time=749 frame=7
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/see3242f9ad8a948b.png
+preview: source=demo/opening.mp4 playhead=1074 source_time=1074 frame=10
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s9053a3e0f3b55869.png
+script param input begin: clip 3
+preview: source=demo/opening.mp4 playhead=1275 source_time=1275 frame=12
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sddda93063e067517.png
+preview: source=demo/opening.mp4 playhead=1480 source_time=1480 frame=14
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa9250bb4b3480fed.png
+preview: source=demo/opening.mp4 playhead=1666 source_time=1666 frame=16
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sadf9cd1d02e8363b.png
+preview: source=demo/opening.mp4 playhead=1848 source_time=1848 frame=18
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s6dcc7594de568dc1.png
+preview: source=demo/opening.mp4 playhead=2042 source_time=2042 frame=20
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sc5d6646e49700eba.png
+preview: source=demo/opening.mp4 playhead=2218 source_time=2218 frame=22
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s8d2d20b45dbd5d38.png
+preview: source=demo/opening.mp4 playhead=2427 source_time=2427 frame=24
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s4125ebf17c1106d6.png
+preview: source=demo/opening.mp4 playhead=2548 source_time=2548 frame=25
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s0abf6166537eb807.png
+preview: source=demo/opening.mp4 playhead=2727 source_time=2727 frame=27
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3714f8cae5031695.png
+preview: source=demo/opening.mp4 playhead=2848 source_time=2848 frame=28
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sd3bea2247fc63af2.png
+preview: source=demo/opening.mp4 playhead=3022 source_time=3022 frame=30
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s4c4314211b72dc5b.png
+preview: source=demo/opening.mp4 playhead=3192 source_time=3192 frame=31
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s275da5452d408b6a.png
+preview: source=demo/opening.mp4 playhead=3246 source_time=3246 frame=32
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s1daf1d963b78278d.png
+preview: source=demo/opening.mp4 playhead=3408 source_time=3408 frame=34
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s9d74c3c27f107fb7.png
+after script param: {
+  "name": "issue81 drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 4000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": {
+            "script": "invert.lua",
+            "params": {
+              "level": 3.0
+            }
+          }
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 5
+}
+preview: source=demo/opening.mp4 playhead=3570 source_time=3570 frame=35
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s8e8c49e3d3761a41.png
+preview: source=demo/opening.mp4 playhead=3739 source_time=3739 frame=37
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s35b4db90551efd4f.png
+preview: source=demo/opening.mp4 playhead=3911 source_time=3911 frame=39
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s35959c47d2453aa4.png
+preview: source=demo/opening.mp4 playhead=76 source_time=76 frame=0
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sb66c478d892ab33f.png
+preview: source=demo/opening.mp4 playhead=242 source_time=242 frame=2
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s7c2eadbe8a00ab7d.png
+preview: source=demo/opening.mp4 playhead=415 source_time=415 frame=4
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa447c673a43e469b.png
+preview: source=demo/opening.mp4 playhead=582 source_time=582 frame=5
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa944aa8074719582.png
+script input begin: clip 3
+preview: source=demo/opening.mp4 playhead=761 source_time=761 frame=7
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s9a60ee6b35fb47a8.png
+preview: source=demo/opening.mp4 playhead=935 source_time=935 frame=9
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s6a2fb95c837ce161.png
+preview: source=demo/opening.mp4 playhead=1104 source_time=1104 frame=11
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sc3b83ae073ad1a53.png
+preview: source=demo/opening.mp4 playhead=1277 source_time=1277 frame=12
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s4bdf04f946147524.png
+preview: source=demo/opening.mp4 playhead=1452 source_time=1452 frame=14
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s5b7e3b666484762e.png
+preview: source=demo/opening.mp4 playhead=1643 source_time=1643 frame=16
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s884640e425b39998.png
+preview: source=demo/opening.mp4 playhead=1854 source_time=1854 frame=18
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s02281ca4841f6af2.png
+preview: source=demo/opening.mp4 playhead=2058 source_time=2058 frame=20
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s1e08929c5ca791c5.png
+preview: source=demo/opening.mp4 playhead=2254 source_time=2254 frame=22
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s517d2e9a228a5de7.png
+preview: source=demo/opening.mp4 playhead=2430 source_time=2430 frame=24
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s59945b35d999f851.png
+preview: source=demo/opening.mp4 playhead=2625 source_time=2625 frame=26
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s2b85e601c62b1a83.png
+preview: source=demo/opening.mp4 playhead=2830 source_time=2830 frame=28
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s54cdd1045b8fd4dd.png
+preview: source=demo/opening.mp4 playhead=3002 source_time=3002 frame=30
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sda28be8e162377f8.png
+preview: source=demo/opening.mp4 playhead=3188 source_time=3188 frame=31
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sd03ff0bdde016675.png
+preview: source=demo/opening.mp4 playhead=3386 source_time=3386 frame=33
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s9d9e5dd84469c833.png
+preview: source=demo/opening.mp4 playhead=3578 source_time=3578 frame=35
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s8e8c49e3d3761a41.png
+preview: source=demo/opening.mp4 playhead=3610 source_time=3610 frame=36
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3eef3b19197692da.png
+preview: source=demo/opening.mp4 playhead=3781 source_time=3781 frame=37
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s35b4db90551efd4f.png
+preview: source=demo/opening.mp4 playhead=3823 source_time=3823 frame=38
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s90cb320732737970.png
+preview: source=demo/opening.mp4 playhead=27 source_time=27 frame=0
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sb66c478d892ab33f.png
+preview: source=demo/opening.mp4 playhead=121 source_time=121 frame=1
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sce4f87658f7cbb36.png
+preview: source=demo/opening.mp4 playhead=288 source_time=288 frame=2
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s7c2eadbe8a00ab7d.png
+preview: source=demo/opening.mp4 playhead=331 source_time=331 frame=3
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s39d709ce1cda56cc.png
+preview: source=demo/opening.mp4 playhead=493 source_time=493 frame=4
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa447c673a43e469b.png
+preview: source=demo/opening.mp4 playhead=527 source_time=527 frame=5
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa944aa8074719582.png
+preview: source=demo/opening.mp4 playhead=620 source_time=620 frame=6
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s95aa20fe038b4b29.png
+preview: source=demo/opening.mp4 playhead=819 source_time=819 frame=8
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s5373ba448e053807.png
+preview: source=demo/opening.mp4 playhead=988 source_time=988 frame=9
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s6a2fb95c837ce161.png
+preview: source=demo/opening.mp4 playhead=1036 source_time=1036 frame=10
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s93d098905e8958fa.png
+preview: source=demo/opening.mp4 playhead=1205 source_time=1205 frame=12
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s4bdf04f946147524.png
+preview: source=demo/opening.mp4 playhead=1316 source_time=1316 frame=13
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sd70926a8ea660b95.png
+preview: source=demo/opening.mp4 playhead=1484 source_time=1484 frame=14
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s5b7e3b666484762e.png
+preview: source=demo/opening.mp4 playhead=1515 source_time=1515 frame=15
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sf7fdd96974b8df37.png
+preview: source=demo/opening.mp4 playhead=1682 source_time=1682 frame=16
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s884640e425b39998.png
+preview: source=demo/opening.mp4 playhead=1716 source_time=1716 frame=17
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sfc6b3b9bdda07d59.png
+preview: source=demo/opening.mp4 playhead=1893 source_time=1893 frame=18
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s02281ca4841f6af2.png
+preview: source=demo/opening.mp4 playhead=1941 source_time=1941 frame=19
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sc6ba9b89a4d69f1e.png
+preview: source=demo/opening.mp4 playhead=2144 source_time=2144 frame=21
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s6aa158eb62bb5408.png
+preview: source=demo/opening.mp4 playhead=2323 source_time=2323 frame=23
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sd0f96a429d10ceaa.png
+preview: source=demo/opening.mp4 playhead=2507 source_time=2507 frame=25
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3c7e2b289918b814.png
+preview: source=demo/opening.mp4 playhead=2702 source_time=2702 frame=27
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s8923d381a7a69196.png
+preview: source=demo/opening.mp4 playhead=2945 source_time=2945 frame=29
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sa87a502369d21417.png
+preview: source=demo/opening.mp4 playhead=3124 source_time=3124 frame=31
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sd03ff0bdde016675.png
+preview: source=demo/opening.mp4 playhead=3210 source_time=3210 frame=32
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/scd37ef076da3070e.png
+preview: source=demo/opening.mp4 playhead=3388 source_time=3388 frame=33
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s9d9e5dd84469c833.png
+preview: source=demo/opening.mp4 playhead=3422 source_time=3422 frame=34
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s0dd4c6e399b28884.png
+preview: source=demo/opening.mp4 playhead=3606 source_time=3606 frame=36
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s3eef3b19197692da.png
+preview: source=demo/opening.mp4 playhead=3723 source_time=3723 frame=37
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s35b4db90551efd4f.png
+preview: source=demo/opening.mp4 playhead=3813 source_time=3813 frame=38
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s90cb320732737970.png
+preview: source=demo/opening.mp4 playhead=3921 source_time=3921 frame=39
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s35959c47d2453aa4.png
+preview: source=demo/opening.mp4 playhead=11 source_time=11 frame=0
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sb66c478d892ab33f.png
+preview: source=demo/opening.mp4 playhead=116 source_time=116 frame=1
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/sce4f87658f7cbb36.png
+preview: source=demo/opening.mp4 playhead=205 source_time=205 frame=2
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s7c2eadbe8a00ab7d.png
+preview: source=demo/opening.mp4 playhead=301 source_time=301 frame=3
+script effect: clip=opening script=invert.lua frame=/tmp/rust-studio-video-editor-media/scriptfx/s39d709ce1cda56cc.png
+after script: {
+  "name": "issue81 drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 3,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 4000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": {
+            "script": "bad.lua",
+            "params": {
+              "level": 3.0
+            }
+          }
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 5
+}
+script error: スクリプト bad.lua の実行エラー: runtime error: apps/video-editor/src/script.rs:348:1: drive bad script
+stack traceback:
+	[C]: in ?
+	[C]: in function 'error'
+	apps/video-editor/src/script.rs:348:1: in main chunk
+preview: source=demo/opening.mp4 playhead=436 source_time=436 frame=4
+preview: source=demo/opening.mp4 playhead=506 source_time=506 frame=5
+preview: source=demo/opening.mp4 playhead=605 source_time=605 frame=6
+preview: source=demo/opening.mp4 playhead=709 source_time=709 frame=7
+preview: source=demo/opening.mp4 playhead=835 source_time=835 frame=8
+preview: source=demo/opening.mp4 playhead=932 source_time=932 frame=9
+preview: source=demo/opening.mp4 playhead=1030 source_time=1030 frame=10
+preview: source=demo/opening.mp4 playhead=1137 source_time=1137 frame=11
+preview: source=demo/opening.mp4 playhead=1204 source_time=1204 frame=12
+preview: source=demo/opening.mp4 playhead=1331 source_time=1331 frame=13
+preview: source=demo/opening.mp4 playhead=1433 source_time=1433 frame=14
+preview: source=demo/opening.mp4 playhead=1511 source_time=1511 frame=15
+preview: source=demo/opening.mp4 playhead=1610 source_time=1610 frame=16
+preview: source=demo/opening.mp4 playhead=1730 source_time=1730 frame=17
+preview: source=demo/opening.mp4 playhead=1801 source_time=1801 frame=18
+preview: source=demo/opening.mp4 playhead=1901 source_time=1901 frame=19
+preview: source=demo/opening.mp4 playhead=2005 source_time=2005 frame=20
+preview: source=demo/opening.mp4 playhead=2182 source_time=2182 frame=21
+preview: source=demo/opening.mp4 playhead=2220 source_time=2220 frame=22
+preview: source=demo/opening.mp4 playhead=2315 source_time=2315 frame=23
+preview: source=demo/opening.mp4 playhead=2419 source_time=2419 frame=24
+preview: source=demo/opening.mp4 playhead=2500 source_time=2500 frame=25
