@@ -80,3 +80,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-24 | #75 プラグイン事前レンダリングの効率・堅牢性フォローアップ（#72 レビュー由来） | [issue-0075-plugin-prerender-followup.md](issue-0075-plugin-prerender-followup.md) |
 | 2026-11-24 | #76 音色パネルの横溢れと GUI 操作の拡張（#73 レビュー由来） | [issue-0076-tones-panel-overflow-and-gui-ops.md](issue-0076-tones-panel-overflow-and-gui-ops.md) |
 | 2026-11-24 | #80 Lua 実行基盤を組み込む（サンドボックス付きでスクリプトを実行できる） | [issue-0080-lua-script-engine.md](issue-0080-lua-script-engine.md) |
+| 2026-11-24 | #77 ピアノロール見出し帯の残件（#74 レビュー由来） | [issue-0077-piano-roll-header-followup.md](issue-0077-piano-roll-header-followup.md) |
