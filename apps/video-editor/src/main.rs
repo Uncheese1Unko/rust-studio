@@ -10,18 +10,15 @@
 
 mod cutout;
 mod edit;
-mod extensions;
 mod media;
 mod palette;
-// Issue #80: Lua 実行基盤。#81 でフレームエフェクトとして利用。
-// run_source / run_file は基盤 API（#82 / #83 が利用予定）で、
-// 現時点ではテストからのみ使う。
-#[allow(dead_code)]
-mod script;
 mod timeline;
 
 use nannou::prelude::*;
 use studio_core::{apply, Command, History, Project, TrackKind};
+// Issue #82: スクリプトカタログは共有クレート studio-scripts の
+// catalog（studio-mcp と同じ実装を使うためアプリ外へ移設した）。
+use studio_scripts::catalog as extensions;
 
 struct Model {
     _window: WindowId,

@@ -1343,18 +1343,39 @@ fn set_clip_script_effect_tool_applies_via_tools_call() {
 
 #[test]
 fn list_scripts_tool_reports_scripts_dir() {
-    // Issue #82: スクリプト一覧が MCP でも観測できる。dir 引数で
-    // 対象フォルダを指定でき、無効リスト（disabled-scripts.txt）が
-    // enabled に反映される。構文状態の判定はアプリ側の責務のため
-    // ここでは名前と有効／無効だけを返す。
+    // Issue #82: スクリプト一覧が MCP でも観測できる。GUI のダンプと
+    // 同じ形（共有クレート studio-scripts の単一実装）で、名前・
+    // 有効／無効・構文状態に加え、プロジェクトの参照状態（欠落）
+    // まで返る。dir 引数で対象フォルダを指定できる。
     let server = McpServer::new();
     let dir = std::env::temp_dir().join(format!("studio-mcp-scripts-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("a.lua"), "return 1").unwrap();
     std::fs::write(dir.join("b.lua"), "return 2").unwrap();
+    std::fs::write(dir.join("broken.lua"), "return 1 +").unwrap();
     std::fs::write(dir.join("note.txt"), "not a script").unwrap();
     std::fs::write(dir.join("disabled-scripts.txt"), "b.lua\n").unwrap();
+
+    // 参照状態の判定用に、実在しない ghost.lua を参照するクリップを作る
+    call_tool(
+        &server,
+        1,
+        "add_track",
+        json!({"name": "V1", "kind": "video"}),
+    );
+    call_tool(
+        &server,
+        2,
+        "add_clip",
+        json!({"track_id": 1, "name": "c", "start_ms": 0, "duration_ms": 1000, "source": "demo/opening.mp4"}),
+    );
+    call_tool(
+        &server,
+        3,
+        "set_clip_script_effect",
+        json!({"clip_id": 2, "effect": {"script": "ghost.lua", "params": {}}}),
+    );
 
     let res = call_tool(
         &server,
@@ -1366,11 +1387,21 @@ fn list_scripts_tool_reports_scripts_dir() {
     let text = res["result"]["content"][0]["text"].as_str().unwrap();
     let payload: Value = serde_json::from_str(text).unwrap();
     let scripts = payload["scripts"].as_array().unwrap();
-    assert_eq!(scripts.len(), 2, "{payload}");
+    assert_eq!(scripts.len(), 3, "{payload}");
     assert_eq!(scripts[0]["name"], "a.lua");
     assert_eq!(scripts[0]["enabled"], true);
+    assert_eq!(scripts[0]["status"], "ready");
     assert_eq!(scripts[1]["name"], "b.lua");
     assert_eq!(scripts[1]["enabled"], false);
+    assert_eq!(scripts[2]["name"], "broken.lua");
+    assert!(
+        scripts[2]["status"]["error"].is_string(),
+        "壊れたスクリプトがエラーとして区別できる: {payload}"
+    );
+    let references = payload["references"].as_array().unwrap();
+    assert_eq!(references.len(), 1, "{payload}");
+    assert_eq!(references[0]["script"], "ghost.lua");
+    assert_eq!(references[0]["status"], "missing");
 
     // フォルダが無ければ空の一覧（エラーにしない）
     let res = call_tool(

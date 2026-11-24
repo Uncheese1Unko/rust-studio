@@ -1,6 +1,10 @@
 //! スクリプト／拡張のインストールと管理（Issue #82）。
 //!
-//! スクリプトは所定フォルダ（`media::scripts_dir`）への配置で認識する。
+//! このモジュールは studio-scripts クレートにあり、video-editor と
+//! studio-mcp が共有する（一覧の形が経路でずれないため。#82
+//! レビュー round 1 指摘への対応としてアプリ内モジュールから移設）。
+//!
+//! スクリプトは所定フォルダ（アプリ側の `scripts_dir`）への配置で認識する。
 //! 本体はプロジェクトに埋め込まず、クリップは名前（または相対パス）で
 //! 参照するだけ（#81）。ここではフォルダの走査・一覧化、壊れた
 //! スクリプトの隔離表示、有効／無効の管理、プロジェクト参照の
@@ -17,7 +21,7 @@ use std::path::Path;
 
 use studio_core::Project;
 
-use crate::script::ScriptEngine;
+use crate::engine::ScriptEngine;
 
 /// 無効化したスクリプト名を保持するファイル（スクリプトフォルダ内）。
 pub const DISABLED_FILE_NAME: &str = "disabled-scripts.txt";
@@ -72,6 +76,17 @@ pub enum ScriptRowKind {
 pub struct ScriptRow {
     pub name: String,
     pub kind: ScriptRowKind,
+}
+
+/// スクリプト参照を実ファイルに解決する。絶対パスはそのまま、
+/// それ以外はスクリプトフォルダ内の名前として解決する。
+/// 適用経路（アプリ側 media）と参照状態の判定で同じ規則を使う。
+pub fn resolve_script_in(dir: &Path, reference: &str) -> std::path::PathBuf {
+    let as_given = Path::new(reference);
+    if as_given.is_absolute() {
+        return as_given.to_path_buf();
+    }
+    dir.join(reference)
 }
 
 /// スクリプトフォルダを走査して一覧を作る。フォルダが無ければ空。
@@ -174,7 +189,7 @@ pub fn reference_statuses(project: &Project, dir: &Path) -> Vec<ScriptReference>
 /// 参照1件の状態を決める。解決は `media::resolve_script_in` と同じ
 /// 規則（絶対パスはそのまま、それ以外はフォルダ内の名前）。
 fn reference_status(reference: &str, dir: &Path, entries: &[ScriptEntry]) -> ReferenceStatus {
-    let resolved = crate::media::resolve_script_in(dir, reference);
+    let resolved = resolve_script_in(dir, reference);
     if !resolved.is_file() {
         return ReferenceStatus::Missing;
     }
@@ -212,10 +227,13 @@ pub fn display_rows(entries: &[ScriptEntry], references: &[ScriptReference]) -> 
         .iter()
         .map(|e| ScriptRow {
             name: e.name.clone(),
-            kind: if !e.enabled {
-                ScriptRowKind::Disabled
-            } else if matches!(e.status, ScriptStatus::Error(_)) {
+            // 壊れていることは無効化より優先して区別する
+            // （無効＋エラーの併存でエラーが見えなくならないため。
+            // #82 レビュー round 1 Minor 指摘）。
+            kind: if matches!(e.status, ScriptStatus::Error(_)) {
                 ScriptRowKind::Error
+            } else if !e.enabled {
+                ScriptRowKind::Disabled
             } else {
                 ScriptRowKind::Ready
             },
@@ -456,6 +474,23 @@ mod tests {
                     kind: ScriptRowKind::Missing
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn display_rows_prioritize_error_over_disabled() {
+        let entries = vec![ScriptEntry {
+            name: "bad.lua".to_string(),
+            enabled: false,
+            status: ScriptStatus::Error("syntax".to_string()),
+        }];
+        let rows = display_rows(&entries, &[]);
+        assert_eq!(
+            rows,
+            vec![ScriptRow {
+                name: "bad.lua".to_string(),
+                kind: ScriptRowKind::Error
+            }]
         );
     }
 

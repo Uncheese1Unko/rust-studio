@@ -29,15 +29,9 @@ pub fn scripts_dir() -> PathBuf {
     media_dir().join("scripts")
 }
 
-/// スクリプト参照を実ファイルに解決する。絶対パスはそのまま、
-/// それ以外はスクリプトディレクトリ内の名前として解決する。
-pub fn resolve_script_in(dir: &Path, reference: &str) -> PathBuf {
-    let as_given = Path::new(reference);
-    if as_given.is_absolute() {
-        return as_given.to_path_buf();
-    }
-    dir.join(reference)
-}
+/// スクリプト参照の解決は共有クレート側の単一実装を使う
+/// （Issue #82 レビュー対応で `studio_scripts::catalog` へ移設）。
+pub use studio_scripts::resolve_script_in;
 
 /// クリップのスクリプトエフェクトをベースフレームへ適用し、適用後の
 /// PNG パスを返す（Issue #81）。プレビューと書き出しで共通の規則に
@@ -74,7 +68,7 @@ pub fn apply_script_effect_with_dirs(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    if !crate::extensions::is_enabled(scripts_dir, &script_file_name) {
+    if !studio_scripts::is_enabled(scripts_dir, &script_file_name) {
         return Err(format!(
             "スクリプト {} は無効化されているため適用できません",
             effect.script
@@ -109,26 +103,26 @@ pub fn apply_script_effect_with_dirs(
     if out.exists() {
         return Ok(out);
     }
-    let params: crate::script::ScriptParams = effect
+    let params: studio_scripts::ScriptParams = effect
         .params
         .iter()
         .map(|(k, v)| {
             let value = match v {
-                studio_core::EffectParam::Number(n) => crate::script::ScriptParam::Number(*n),
-                studio_core::EffectParam::Bool(b) => crate::script::ScriptParam::Bool(*b),
-                studio_core::EffectParam::Text(t) => crate::script::ScriptParam::Text(t.clone()),
+                studio_core::EffectParam::Number(n) => studio_scripts::ScriptParam::Number(*n),
+                studio_core::EffectParam::Bool(b) => studio_scripts::ScriptParam::Bool(*b),
+                studio_core::EffectParam::Text(t) => studio_scripts::ScriptParam::Text(t.clone()),
             };
             (k.clone(), value)
         })
         .collect();
-    let info = crate::script::ClipInfo {
+    let info = studio_scripts::ClipInfo {
         name: clip.name.clone(),
         duration_ms: clip.duration_ms,
         source: Some(clip.source.clone()),
         time_ms: at_ms - clip.start_ms,
     };
     let mut pixels = img.into_raw();
-    crate::script::ScriptEngine::new()
+    studio_scripts::ScriptEngine::new()
         .run_frame_effect(&source, &info, &params, width, height, &mut pixels)
         .map_err(|e| format!("スクリプト {} の実行エラー: {}", effect.script, e.message))?;
     let img = image::RgbaImage::from_raw(width, height, pixels)
@@ -1689,12 +1683,12 @@ mod tests {
             .save(&base)
             .unwrap();
         let clip = clip_with_effect("invert.lua");
-        crate::extensions::set_enabled(&scripts, "invert.lua", false).unwrap();
+        studio_scripts::set_enabled(&scripts, "invert.lua", false).unwrap();
         let err =
             apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap_err();
         assert!(err.contains("無効"), "{err}");
         // 有効に戻せば適用できる
-        crate::extensions::set_enabled(&scripts, "invert.lua", true).unwrap();
+        studio_scripts::set_enabled(&scripts, "invert.lua", true).unwrap();
         let derived =
             apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap();
         let img = image::open(&derived).unwrap().to_rgba8();

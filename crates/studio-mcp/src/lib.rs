@@ -3,7 +3,10 @@
 //! stdio 上の JSON-RPC 2.0（改行区切り）で MCP の最小サブセットを話す
 //! 薄いラッパー。状態の変更はすべてコマンド層（履歴経由、Issue #29）
 //! で、このクレートからプロジェクトを直接変更することはない。
-//! 依存は serde / serde_json のみ（ADR-0008 の方針）。
+//! 依存は serde / serde_json と自前クレート（studio-core、
+//! studio-scripts）のみ（ADR-0008 の方針）。スクリプト一覧のような
+//! 読み取りも studio-scripts の共有実装に委ね、ラッパー側に
+//! ロジックを複製しない（Issue #82）。
 
 use std::io::{BufRead, Write};
 use std::sync::Mutex;
@@ -153,17 +156,23 @@ impl McpServer {
         }
         if name == "list_scripts" {
             // Issue #82: video-editor のスクリプト一覧（読み取り専用）。
-            // 置き場所の規約はアプリ側 media::scripts_dir と同じ
-            // （temp_dir/rust-studio-video-editor-media/scripts）。
-            // dir 引数で上書きできる。構文エラーの判定は mlua を
-            // 持つアプリ側の責務（ADR-0008: このクレートは serde
-            // のみ）で、ここでは名前と有効／無効だけを返す。
+            // 走査・状態・参照の判定は共有クレート studio-scripts の
+            // 単一実装を使い、GUI のダンプとまったく同じ形で返す
+            // （#82 レビュー round 1 指摘: ラッパー側に走査ロジックを
+            // 複製しない）。置き場所の規約だけはプロセスをまたぐため
+            // アプリ側 media::scripts_dir と同じ既定値をここにも持つ。
+            // 参照状態は、このサーバーが保持するプロジェクトから
+            // 判定する（プロジェクトファイル backing 時は GUI と
+            // 同じプロジェクトを見る）。
             let dir = arguments
                 .get("dir")
                 .and_then(|v| v.as_str())
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(default_scripts_dir);
-            return Ok(list_scripts_json(&dir));
+            let entries = studio_scripts::scan_scripts(&dir);
+            let history = self.history.lock().unwrap();
+            let references = studio_scripts::reference_statuses(history.project(), &dir);
+            return Ok(studio_scripts::dump_json(&entries, &references));
         }
         if name == "undo" || name == "redo" {
             // Issue #29: 履歴操作。履歴が空でもエラーにせず、実施できたか
@@ -241,57 +250,11 @@ impl McpServer {
 
 /// video-editor のスクリプトフォルダの既定位置。アプリ側
 /// `media::media_dir` / `media::scripts_dir` と同じ規約（Issue #82）。
+/// 走査そのものは studio-scripts の共有実装が行う。
 fn default_scripts_dir() -> std::path::PathBuf {
     std::env::temp_dir()
         .join("rust-studio-video-editor-media")
         .join("scripts")
-}
-
-/// スクリプトフォルダを走査し、`{dir, scripts: [{name, enabled}]}`
-/// の JSON 文字列を作る。無効リストはフォルダ内の
-/// `disabled-scripts.txt`（アプリ側 extensions と同じ規約）。
-/// フォルダが無ければ空の一覧。
-fn list_scripts_json(dir: &std::path::Path) -> String {
-    let mut disabled = std::collections::BTreeSet::new();
-    if let Ok(text) = std::fs::read_to_string(dir.join("disabled-scripts.txt")) {
-        for line in text.lines() {
-            let name = line.trim();
-            if !name.is_empty() {
-                disabled.insert(name.to_string());
-            }
-        }
-    }
-    let mut names: Vec<String> = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase());
-            if ext.as_deref() != Some("lua") {
-                continue;
-            }
-            if let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) {
-                names.push(name);
-            }
-        }
-    }
-    names.sort();
-    let scripts: Vec<Value> = names
-        .iter()
-        .map(|name| {
-            json!({
-                "name": name,
-                "enabled": !disabled.contains(name),
-            })
-        })
-        .collect();
-    serde_json::to_string(&json!({
-        "dir": dir.to_string_lossy(),
-        "scripts": scripts,
-    }))
-    .unwrap()
 }
 
 fn tool_result(text: String, is_error: bool) -> Value {
@@ -738,7 +701,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "list_scripts",
-            "description": "video-editor のスクリプトフォルダにある Lua スクリプトの一覧（名前と有効／無効）を返す。読み取り専用（Issue #82）",
+            "description": "video-editor のスクリプトフォルダにあるスクリプトの一覧（名前・有効／無効・構文状態）と、プロジェクトの参照状態（欠落を含む）を返す。GUI のダンプと同じ形。読み取り専用（Issue #82）",
             "inputSchema": {
                 "type": "object",
                 "properties": {

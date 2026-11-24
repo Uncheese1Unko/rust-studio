@@ -106,11 +106,18 @@ dblclick() {
   xdotool mousedown 1; sleep 0.2; xdotool mouseup 1; sleep 0.15
   xdotool mousedown 1; sleep 0.2; xdotool mouseup 1; sleep 0.4
 }
+# ダブルクリックがログに現れるまで最大3回試す（駆動の揺らぎ対策）。
+dblclick_until() {
+  local y=$1 pattern=$2 i
+  for i in 1 2 3; do
+    dblclick "$y"
+    for j in $(seq 1 10); do grep -q "$pattern" "$OUT/app.log" && return 0; sleep 0.5; done
+  done
+  return 1
+}
 
 # --- off.lua 行のダブルクリック: 無効 → 有効 ---
-dblclick "$(row_y 2)"
-for i in $(seq 1 20); do grep -q "script toggled: off.lua -> enabled" "$OUT/app.log" && break; sleep 0.5; done
-grep -q "script toggled: off.lua -> enabled" "$OUT/app.log" || { echo "FAIL: off.lua was not toggled on"; exit 1; }
+dblclick_until "$(row_y 2)" "script toggled: off.lua -> enabled" || { echo "FAIL: off.lua was not toggled on"; exit 1; }
 echo "OK double-click toggled off.lua to enabled"
 grep "^scripts:" "$OUT/app.log" | tail -1 | python3 -c "
 import json, sys
@@ -123,9 +130,7 @@ print('OK dump shows off.lua enabled')
 # --- invert.lua 行のダブルクリック: 有効 → 無効。
 # 再生ヘッドのクリップが参照しているため、適用が止まり
 # 「無効化されているため適用できません」が観測できる ---
-dblclick "$(row_y 1)"
-for i in $(seq 1 20); do grep -q "script toggled: invert.lua -> disabled" "$OUT/app.log" && break; sleep 0.5; done
-grep -q "script toggled: invert.lua -> disabled" "$OUT/app.log" || { echo "FAIL: invert.lua was not toggled off"; exit 1; }
+dblclick_until "$(row_y 1)" "script toggled: invert.lua -> disabled" || { echo "FAIL: invert.lua was not toggled off"; exit 1; }
 echo "OK double-click toggled invert.lua to disabled"
 for i in $(seq 1 20); do grep -q "無効化されているため適用できません" "$OUT/app.log" && break; sleep 0.5; done
 grep -q "script error: スクリプト invert.lua は無効化されているため適用できません" "$OUT/app.log" || { echo "FAIL: disabled script was still applied or not reported"; exit 1; }

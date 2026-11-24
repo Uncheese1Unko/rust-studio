@@ -2683,6 +2683,16 @@ dependencies = [
  "serde",
  "serde_json",
  "studio-core",
+ "studio-scripts",
+]
+
+[[package]]
+name = "studio-scripts"
+version = "0.1.0"
+dependencies = [
+ "mlua",
+ "serde_json",
+ "studio-core",
 ]
 
 [[package]]
@@ -2898,12 +2908,11 @@ version = "0.1.0"
 dependencies = [
  "hound",
  "image 0.25.10",
- "mlua",
  "nannou",
  "ndarray",
  "ort",
- "serde_json",
  "studio-core",
+ "studio-scripts",
 ]
 
 [[package]]

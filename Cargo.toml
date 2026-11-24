@@ -4,6 +4,7 @@ members = [
     "crates/studio-core",
     "crates/studio-api",
     "crates/studio-mcp",
+    "crates/studio-scripts",
     "apps/video-editor",
     "apps/daw",
     "fixtures/clap-test-synth",
