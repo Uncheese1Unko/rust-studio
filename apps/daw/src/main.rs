@@ -127,6 +127,12 @@ struct Model {
     /// プロジェクト状態には含めない（#25 の選択状態と同じ扱い）。
     header_clicks: edit::ClickTracker,
     rename: Option<edit::RenameSession>,
+    /// 音色操作（Issue #76）: チップのダブルクリック判定と改名
+    /// セッション、右ボタンの押下エッジ追跡。どれも GUI の
+    /// 表示状態で、プロジェクト状態には含めない。
+    tone_clicks: edit::ClickTracker,
+    tone_rename: Option<tones::ToneRenameSession>,
+    prev_right_down: bool,
     /// ソースごとの波形ピーク（全体を WAVEFORM_COLUMNS 本で事前計算）。
     waveforms: HashMap<String, Vec<f32>>,
     /// ソースごとの長さ（ms）。波形の切り出しに使う。
@@ -431,6 +437,9 @@ fn model(app: &App) -> Model {
         clicks: edit::ClickTracker::new(),
         header_clicks: edit::ClickTracker::new(),
         rename: None,
+        tone_clicks: edit::ClickTracker::new(),
+        tone_rename: None,
+        prev_right_down: false,
         waveforms,
         source_durations,
         dropped_source: dropped,
@@ -661,6 +670,7 @@ fn watch_project_file(app: &App, model: &mut Model) {
             // たびに拒否され続け、残っていても外部変更後の名前を編集中
             // テキストで黙って上書きしてしまうため）。
             model.rename = None;
+            model.tone_rename = None;
             // ソース集合の比較はプロジェクトのクリップ同士で行い、
             // 再計算では配置用素材の波形を保持する（Issue #16 レビュー指摘）。
             let changed = sources_changed(model.history.project(), &new_project);
@@ -824,7 +834,7 @@ fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
 /// 横ホイールと Shift+ホイールでもスクロールし、オフセットは
 /// プロジェクト終端でクランプする。
 fn mouse_wheel(app: &App, model: &mut Model, delta: MouseScrollDelta) {
-    if model.rename.is_some() || model.bpm_edit.is_some() {
+    if model.rename.is_some() || model.bpm_edit.is_some() || model.tone_rename.is_some() {
         return;
     }
     // 横成分（x）も捨てずに拾う。PixelDelta は既存の換算
@@ -879,7 +889,7 @@ fn event(app: &App, model: &mut Model, event: Event) {
         mouse_wheel(app, model, delta);
         return;
     }
-    if model.rename.is_none() && model.bpm_edit.is_none() {
+    if model.rename.is_none() && model.bpm_edit.is_none() && model.tone_rename.is_none() {
         return;
     }
     let Event::WindowEvent {
@@ -898,6 +908,25 @@ fn event(app: &App, model: &mut Model, event: Event) {
     };
     // BPM 入力（Issue #35）: リネームとは同時に開かない。
     if model.rename.is_none() {
+        // 音色の改名（Issue #76）: BPM 入力とも同時に開かない。
+        if let Some(session) = model.tone_rename.as_mut() {
+            match session.handle(input) {
+                edit::RenameAction::None => {}
+                edit::RenameAction::Cancel => {
+                    model.tone_rename = None;
+                    println!("tone rename cancelled");
+                }
+                edit::RenameAction::Commit(cmd) => match model.history.apply(&cmd) {
+                    Ok(_) => {
+                        model.tone_rename = None;
+                        println!("after tone rename: {}", model.history.project().dump_json());
+                        save_project_file(model);
+                    }
+                    Err(e) => println!("tone rename rejected: {e}"),
+                },
+            }
+            return;
+        }
         if let Some(session) = model.bpm_edit.as_mut() {
             match session.handle(input) {
                 edit::BpmAction::None => {}
@@ -939,7 +968,8 @@ fn update(app: &App, model: &mut Model, update: Update) {
     // リネーム編集中は他の操作（ポインタ編集・ピッチ・サンプラー）を
     // 受け付けない（Issue #56）。BPM 入力中も同じ扱い（Issue #35）。
     // 再生ヘッドとファイル監視は続ける。
-    let renaming = model.rename.is_some() || model.bpm_edit.is_some();
+    let renaming =
+        model.rename.is_some() || model.bpm_edit.is_some() || model.tone_rename.is_some();
     if renaming {
         model.prev_left_down = app.mouse.buttons.left().is_down();
         // エッジ検出用の prev は編集中も現在値に同期する（バグ #60:
@@ -1047,7 +1077,12 @@ fn update(app: &App, model: &mut Model, update: Update) {
     // #69）、次にループ解除（Issue #40）。テキスト編集中の Esc は
     // 編集のキャンセルが優先する（レビュー所見への対応）。
     let esc_down = app.keys.down.contains(&Key::Escape);
-    if esc_down && !model.prev_esc_down && model.rename.is_none() && model.bpm_edit.is_none() {
+    if esc_down
+        && !model.prev_esc_down
+        && model.rename.is_none()
+        && model.bpm_edit.is_none()
+        && model.tone_rename.is_none()
+    {
         if model.piano_roll.is_some() {
             // ドラッグ中に閉じる場合はジェスチャを確定してから
             // 閉じる（transient 適用済みの移動を、履歴に残らず
@@ -1708,6 +1743,7 @@ fn handle_pointer(app: &App, model: &mut Model) {
     let lx = app.mouse.x + win.w() / 2.0;
     let ly = win.h() / 2.0 - app.mouse.y;
     let left_down = app.mouse.buttons.left().is_down();
+    let right_down = app.mouse.buttons.right().is_down();
     let pointer_ms = edit::x_to_ms(lx, win.w(), &model.view_scale);
 
     // ピアノロール（Issue #69）が開いている間は、ポインタ操作を
@@ -1715,8 +1751,35 @@ fn handle_pointer(app: &App, model: &mut Model) {
     if model.piano_roll.is_some() {
         handle_roll_pointer(app, model, lx, ly, left_down);
         model.prev_left_down = left_down;
+        model.prev_right_down = right_down;
         return;
     }
+
+    // 音色チップの右クリック（Issue #76）: 割り当て中かどうかを
+    // 問わず、その音色を削除する。履歴経由なので Undo で戻せる。
+    if right_down && !model.prev_right_down {
+        let tones_snapshot = model.history.project().tones.clone();
+        if let Some(tones::ToneHit::Chip(index)) = tones::hit_tones(
+            model.history.project().tracks.len(),
+            &tones_snapshot,
+            lx,
+            ly,
+            win.w() - 16.0,
+        ) {
+            if let Some(tone) = tones_snapshot.get(index) {
+                let cmd = Command::RemoveTone { tone_id: tone.id };
+                match model.history.apply(&cmd) {
+                    Ok(_) => {
+                        println!("after tone: {}", model.history.project().dump_json());
+                        save_project_file(model);
+                        refresh_audio_map(model);
+                    }
+                    Err(e) => println!("command rejected: {e}"),
+                }
+            }
+        }
+    }
+    model.prev_right_down = right_down;
 
     // スクロールバー（Issue #87）: 帯での左押下でドラッグ開始し、
     // 保持中はつまみをポインタに追従させる。帯は他の要素と
@@ -1881,13 +1944,27 @@ fn handle_pointer(app: &App, model: &mut Model) {
             return;
         }
         // 音色パネル（Issue #73）: 色パネルの下のパネル。
+        // ダブルクリックで改名セッションに入る（Issue #76）。
         let tones_snapshot = model.history.project().tones.clone();
         if let Some(hit) = tones::hit_tones(
             model.history.project().tracks.len(),
             &tones_snapshot,
             lx,
             ly,
+            win.w() - 16.0,
         ) {
+            if let tones::ToneHit::Chip(index) = hit {
+                let now_ms = (app.time * 1_000.0) as u64;
+                if model.tone_clicks.register(now_ms, lx, ly) {
+                    if let Some(tone) = tones_snapshot.get(index) {
+                        model.tone_rename =
+                            Some(tones::ToneRenameSession::begin(tone.id, &tone.name));
+                        println!("tone rename begin: tone {}", tone.id);
+                    }
+                    model.prev_left_down = left_down;
+                    return;
+                }
+            }
             apply_tone_click(model, hit);
             model.prev_left_down = left_down;
             return;
@@ -3039,7 +3116,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 x: 8.0,
                 y: top - 8.0,
                 w: win.w() - 16.0,
-                h: tones::panel_height(),
+                h: tones::panel_height(&project.tones, win.w() - 16.0),
             },
             theme::PANEL_CORNER_RADIUS,
             theme::PANEL,
@@ -3062,7 +3139,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
             theme::TEXT_SUB.2,
         ));
         for (index, tone) in project.tones.iter().enumerate() {
-            let rect = tones::chip_rect(top, &project.tones, index);
+            let rect = tones::chip_rect(top, &project.tones, index, win.w() - 16.0);
             let is_assigned = assigned == Some(tone.id);
             let (face, text_color) = if is_assigned {
                 (theme::ACCENT, theme::PANEL)
@@ -3071,21 +3148,27 @@ fn view(app: &App, model: &Model, frame: Frame) {
             };
             draw_rounded_rect(&draw, win, rect, 4.0, face);
             let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
-            let label: String = tone.name.chars().take(18).collect();
+            // 改名編集中のチップは編集中の文字列＋キャレットを出す
+            // （Issue #76、トラック改名と同じ流儀）。
+            let renaming_this = model.tone_rename.as_ref().filter(|s| s.tone_id == tone.id);
+            let label: String = match renaming_this {
+                Some(session) => format!("{}_", session.text),
+                None => tone.name.chars().take(18).collect(),
+            };
             draw.text(&label).x_y(cx, cy).font_size(10).color(rgb(
                 text_color.0,
                 text_color.1,
                 text_color.2,
             ));
         }
-        let add = tones::add_rect(top, &project.tones);
+        let add = tones::add_rect(top, &project.tones, win.w() - 16.0);
         draw_rounded_rect(&draw, win, add, 4.0, theme::PANEL_SUNK);
         let (cx, cy) = rect_center(win, add.x, add.y, add.w, add.h);
         draw.text("+ TONE FROM TRACK")
             .x_y(cx, cy)
             .font_size(10)
             .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
-        let del = tones::delete_rect(top, &project.tones);
+        let del = tones::delete_rect(top, &project.tones, win.w() - 16.0);
         draw_rounded_rect(&draw, win, del, 4.0, theme::PANEL_SUNK);
         let (cx, cy) = rect_center(win, del.x, del.y, del.w, del.h);
         draw.text("DELETE ASSIGNED")
