@@ -79,6 +79,10 @@ impl PluginStateImpl for TestSynthMainThread {
 
 struct Voice {
     key: u8,
+    // Issue #75: ノート ID。同音高の重なりを区別するために保持し、
+    // ノートオフは ID が一致するボイスだけを止める。ID を送らない
+    // ホスト相手では None になり、従来どおりキーで止める。
+    note_id: Option<u32>,
     phase: f64,
     velocity: f32,
 }
@@ -112,14 +116,16 @@ impl<'a> PluginAudioProcessor<'a, TestSynthShared, TestSynthMainThread>
         events: Events,
     ) -> Result<ProcessStatus, PluginError> {
         let frames = audio.frames_count() as usize;
-        // イベントを (時刻, オン/オフ, キー, ベロシティ) に集める。
-        let mut evs: Vec<(u32, bool, u8, f32)> = Vec::new();
+        // イベントを (時刻, オン/オフ, キー, ノートID, ベロシティ)
+        // に集める。
+        let mut evs: Vec<(u32, bool, u8, Option<u32>, f32)> = Vec::new();
         for event in events.input.iter() {
             if let Some(on) = event.as_event::<NoteOnEvent>() {
                 evs.push((
                     on.header().time(),
                     true,
                     on.pckn().key.as_specific().copied().unwrap_or(0) as u8,
+                    on.pckn().note_id.as_specific().copied(),
                     on.velocity() as f32,
                 ));
             } else if let Some(off) = event.as_event::<NoteOffEvent>() {
@@ -127,6 +133,7 @@ impl<'a> PluginAudioProcessor<'a, TestSynthShared, TestSynthMainThread>
                     off.header().time(),
                     false,
                     off.pckn().key.as_specific().copied().unwrap_or(0) as u8,
+                    off.pckn().note_id.as_specific().copied(),
                     0.0,
                 ));
             }
@@ -142,13 +149,21 @@ impl<'a> PluginAudioProcessor<'a, TestSynthShared, TestSynthMainThread>
         let mut ev_idx = 0;
         for i in 0..frames {
             while ev_idx < evs.len() && evs[ev_idx].0 as usize <= i {
-                let (_, on, key, vel) = evs[ev_idx];
+                let (_, on, key, note_id, vel) = evs[ev_idx];
                 if on {
                     self.voices.push(Voice {
                         key,
+                        note_id,
                         phase: 0.0,
                         velocity: vel,
                     });
+                } else if let Some(id) = note_id {
+                    // Issue #75: ID 指定のノートオフは、そのボイス
+                    // だけを止める（同音高の重なりを巻き込まない）。
+                    // 対象が無ければ何もしない。
+                    if let Some(pos) = self.voices.iter().position(|v| v.note_id == Some(id)) {
+                        self.voices.remove(pos);
+                    }
                 } else {
                     self.voices.retain(|v| v.key != key);
                 }

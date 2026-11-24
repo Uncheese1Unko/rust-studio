@@ -189,13 +189,48 @@ pub fn default_helper_path() -> PathBuf {
     PathBuf::from("plugin-host")
 }
 
+/// ファイル内容ハッシュのキャッシュ（Issue #75 候補2）。
+/// 指紋計算は毎フレーム呼ばれるため、プリセットやプラグイン
+/// バイナリの実読み込みは「(サイズ, mtime) が変わったときだけ」
+/// に抑える。変わっていない間はキャッシュしたハッシュを返す。
+#[derive(Debug, Default)]
+pub struct FileHashCache {
+    entries: HashMap<PathBuf, (u64, std::time::SystemTime, u64)>,
+}
+
+impl FileHashCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// ファイル内容の FNV-1a ハッシュ。読めなければ None。
+    pub fn hash_file(&mut self, path: &Path) -> Option<u64> {
+        let meta = std::fs::metadata(path).ok()?;
+        let modified = meta.modified().ok()?;
+        if let Some(&(len, mtime, hash)) = self.entries.get(path) {
+            if len == meta.len() && mtime == modified {
+                return Some(hash);
+            }
+        }
+        let bytes = std::fs::read(path).ok()?;
+        let hash = fnv1a(&bytes);
+        self.entries
+            .insert(path.to_path_buf(), (meta.len(), modified, hash));
+        Some(hash)
+    }
+}
+
 /// プラグインの事前レンダリングに影響する状態の指紋（FNV-1a）。
 /// 楽器・プリセット（参照先ファイルの内容を含む）・クリップ配置・
 /// ノートが変われば値が変わる。音量やゲインのように render_mix が
 /// その場で適用する値は含めない。GUI はこの値の変化を見て
 /// 事前レンダリングをやり直す（Issue #72 レビュー Major 対応:
 /// GUI 編集・Undo・外部再読込の全経路で無効化を効かせるため）。
-pub fn plugin_fingerprint(project: &Project) -> u64 {
+/// キャッシュ版（Issue #75 候補2・4）: 呼び出し側が保持する
+/// `FileHashCache` でファイルの実読み込みを間引き、プリセットに
+/// 加えてプラグインバイナリ自体の内容も含める（同じパスで
+/// 差し替えた場合も再レンダリングが走る）。
+pub fn plugin_fingerprint_cached(project: &Project, cache: &mut FileHashCache) -> u64 {
     let mut text = String::new();
     for track in &project.tracks {
         // 実効楽器で見る（Issue #73: 音色として割り当てられた
@@ -212,10 +247,14 @@ pub fn plugin_fingerprint(project: &Project) -> u64 {
             "track:{}:{:?}:{}:{:?}:",
             track.id, format, plugin_path, preset_path
         ));
+        match cache.hash_file(Path::new(plugin_path.as_str())) {
+            Some(hash) => text.push_str(&format!("bin#{hash};")),
+            None => text.push_str("bin#missing;"),
+        }
         if let Some(path) = &preset_path {
-            match std::fs::read(path) {
-                Ok(bytes) => text.push_str(&format!("preset#{};", fnv1a(&bytes))),
-                Err(_) => text.push_str("preset#missing;"),
+            match cache.hash_file(Path::new(path.as_str())) {
+                Some(hash) => text.push_str(&format!("preset#{hash};")),
+                None => text.push_str("preset#missing;"),
             }
         }
         for clip in &track.clips {
@@ -334,6 +373,11 @@ mod tests {
     use studio_core::{apply, Command, Instrument, PluginFormat, TrackKind};
 
     const RATE: u32 = 48_000;
+
+    /// キャッシュ無しの指紋（テスト用の短縮形）。
+    fn plugin_fingerprint(project: &Project) -> u64 {
+        plugin_fingerprint_cached(project, &mut FileHashCache::new())
+    }
 
     /// ビルド成果物（plugin-host、フィクスチャの .so）を探す。
     /// 標準レイアウトではプロファイルディレクトリ（target/debug 等）の
@@ -552,6 +596,118 @@ mod tests {
         )
         .unwrap();
         assert_ne!(fp, plugin_fingerprint(&p));
+    }
+
+    #[test]
+    fn fingerprint_changes_when_plugin_binary_changes() {
+        // Issue #75（候補4）: プラグインバイナリ自体を同じパスで
+        // 差し替えたら指紋が変わる（再レンダリングが走る）。
+        let dir = temp_path("binchange");
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("Synth.clap");
+        std::fs::write(&bin, b"fake-plugin-v1").unwrap();
+        let (p, _track) = project_with_plugin_track(&bin.to_string_lossy(), None);
+        let fp1 = plugin_fingerprint(&p);
+        std::fs::write(&bin, b"fake-plugin-v2-with-different-bytes").unwrap();
+        assert_ne!(fp1, plugin_fingerprint(&p));
+    }
+
+    #[test]
+    fn cached_fingerprint_matches_and_detects_preset_change() {
+        // Issue #75（候補2）: キャッシュ付き指紋は素の指紋と一致し、
+        // プリセットの変更（mtime／サイズの変化）も検出する。
+        let dir = temp_path("fpcache");
+        std::fs::create_dir_all(&dir).unwrap();
+        let preset = dir.join("preset.vital");
+        std::fs::write(&preset, "{\"gain\": 0.5}").unwrap();
+        let (p, _track) = project_with_plugin_track(
+            &fixture_plugin_path(),
+            Some(preset.to_string_lossy().into_owned()),
+        );
+        let mut cache = FileHashCache::new();
+        let fp_before = plugin_fingerprint_cached(&p, &mut cache);
+        assert_eq!(fp_before, plugin_fingerprint(&p));
+        // 2回目（キャッシュヒット想定）も同じ値
+        assert_eq!(plugin_fingerprint_cached(&p, &mut cache), fp_before);
+        std::fs::write(&preset, "{\"gain\": 0.25, \"square\": true}").unwrap();
+        let fp_after = plugin_fingerprint_cached(&p, &mut cache);
+        assert_ne!(fp_after, fp_before);
+        assert_eq!(fp_after, plugin_fingerprint(&p));
+    }
+
+    #[test]
+    fn prepare_keeps_overlapping_same_pitch_notes_independent() {
+        // Issue #75（候補3）: 同音高の重なりは note_id で区別され、
+        // 先のノートのノートオフで後のノートまで止まらない。
+        // フィクスチャがボイスを音高キーで管理していた間は、
+        // このテストの「2つ目が残る」部分が落ちる。
+        let mut p = Project::new("overlap-test");
+        let track_id = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "VITAL".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let clip_id = apply(
+            &mut p,
+            &Command::AddClip {
+                track_id,
+                name: "melody".into(),
+                start_ms: 0,
+                duration_ms: 1_000,
+                source: String::new(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        for (start_ms, duration_ms) in [(0, 500), (250, 500)] {
+            apply(
+                &mut p,
+                &Command::AddNote {
+                    clip_id,
+                    pitch: 69,
+                    start_ms,
+                    duration_ms,
+                    velocity: 127,
+                },
+            )
+            .unwrap();
+        }
+        apply(
+            &mut p,
+            &Command::SetTrackInstrument {
+                track_id,
+                instrument: Some(Instrument::Plugin {
+                    format: PluginFormat::Clap,
+                    plugin_path: fixture_plugin_path(),
+                    preset_path: None,
+                }),
+            },
+        )
+        .unwrap();
+        let (audio, errors) = prepare_plugin_audio(&p, &helper_path(), RATE);
+        assert!(errors.is_empty(), "errors: {errors:?}");
+        let rendered = audio
+            .get(&crate::audio::plugin_track_key(track_id))
+            .unwrap();
+        let l: Vec<f32> = rendered.samples.iter().step_by(2).copied().collect();
+        // 550〜700ms: 1つ目は終わっているが、2つ目だけが鳴り続ける
+        let mid = &l[(0.55 * RATE as f32) as usize..(0.70 * RATE as f32) as usize];
+        assert!(
+            peak(mid) > 0.1,
+            "second note must survive the first note-off, peak was {}",
+            peak(mid)
+        );
+        // 800〜950ms: 両方終わって無音
+        let tail = &l[(0.80 * RATE as f32) as usize..(0.95 * RATE as f32) as usize];
+        assert!(
+            peak(tail) < 0.05,
+            "silence expected after both notes end, peak was {}",
+            peak(tail)
+        );
     }
 
     #[test]

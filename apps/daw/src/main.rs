@@ -208,6 +208,9 @@ struct Model {
     // Issue #72: プラグイン関連状態の指紋の前回値。変化したら
     // 事前レンダリングをやり直す（レビュー Major 対応）。
     plugin_fingerprint: u64,
+    // Issue #75: 指紋計算のファイルハッシュキャッシュ。毎フレームの
+    // 指紋計算でプリセット／バイナリを読み直さないために保持する。
+    file_hash_cache: plugin::FileHashCache,
     // Issue #42: 直近のドロップ処理時刻（秒）。複数ファイルの
     // ドロップは先頭1件だけ処理するためのバースト判定に使う。
     last_drop_at: Option<f32>,
@@ -402,7 +405,8 @@ fn model(app: &App) -> Model {
     // 配置用素材も波形を用意しておく（配置直後から波形が出るように）
     refresh_waveforms(&project, &dropped, &mut waveforms, &mut source_durations);
     let (audio_map, initial_plugin_errors) = compute_audio_map(&project, &dropped);
-    let initial_fingerprint = plugin::plugin_fingerprint(&project);
+    let mut initial_cache = plugin::FileHashCache::new();
+    let initial_fingerprint = plugin::plugin_fingerprint_cached(&project, &mut initial_cache);
     for error in &initial_plugin_errors {
         println!("plugin error [{}]: {}", error.track_name, error.message);
     }
@@ -466,6 +470,7 @@ fn model(app: &App) -> Model {
         export_status: None,
         plugin_errors: format_plugin_errors(&initial_plugin_errors),
         plugin_fingerprint: initial_fingerprint,
+        file_hash_cache: initial_cache,
         last_drop_at: None,
     }
 }
@@ -528,6 +533,18 @@ fn import_midi_cli(project_json: &str, mid_path: &str) {
             std::process::exit(1);
         }
     }
+}
+
+/// 音声マップの再計算とプラグイン指紋の同期（Issue #75 候補1）。
+/// `compute_audio_map` を呼ぶ箇所はすべてここを通し、直後の
+/// `update()` が指紋不一致を検知して二重に再レンダリングする
+/// 無駄を無くす。指紋はキャッシュ付きで計算する（候補2）。
+fn refresh_audio_map(model: &mut Model) {
+    let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
+    model.audio_map = map;
+    model.plugin_errors = format_plugin_errors(&errors);
+    model.plugin_fingerprint =
+        plugin::plugin_fingerprint_cached(model.history.project(), &mut model.file_hash_cache);
 }
 
 /// プロジェクト JSON を読み、ミックスを WAV に書き出す（Issue #41）。
@@ -655,12 +672,7 @@ fn watch_project_file(app: &App, model: &mut Model) {
                     &mut model.waveforms,
                     &mut model.source_durations,
                 );
-                {
-                    let (map, errors) =
-                        compute_audio_map(model.history.project(), &model.dropped_source);
-                    model.audio_map = map;
-                    model.plugin_errors = format_plugin_errors(&errors);
-                }
+                refresh_audio_map(model);
             }
             println!("project reloaded: {}", model.history.project().dump_json());
         }
@@ -793,12 +805,7 @@ fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
                 &mut model.waveforms,
                 &mut model.source_durations,
             );
-            {
-                let (map, errors) =
-                    compute_audio_map(model.history.project(), &model.dropped_source);
-                model.audio_map = map;
-                model.plugin_errors = format_plugin_errors(&errors);
-            }
+            refresh_audio_map(model);
             save_project_file(model);
             println!(
                 "dropped: {} -> {}",
@@ -986,14 +993,12 @@ fn update(app: &App, model: &mut Model, update: Update) {
     // レンダリングをやり直す。ピアノロール編集・タイムライン
     // 編集・Undo/Redo・外部再読込の全経路をここで一括りにする。
     // ドラッグ中（左ボタン押下中）は確定まで遅らせる。
-    let fp = plugin::plugin_fingerprint(model.history.project());
+    let fp = plugin::plugin_fingerprint_cached(model.history.project(), &mut model.file_hash_cache);
     if fp != model.plugin_fingerprint && !app.mouse.buttons.left().is_down() {
-        model.plugin_fingerprint = fp;
-        let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
-        model.audio_map = map;
-        model.plugin_errors = format_plugin_errors(&errors);
-        for error in &errors {
-            println!("plugin error [{}]: {}", error.track_name, error.message);
+        // refresh_audio_map が指紋も同期する（Issue #75 候補1）。
+        refresh_audio_map(model);
+        for error in &model.plugin_errors {
+            println!("{error}");
         }
     }
     let dt_ms = (update.since_last.as_secs_f64() * 1000.0) as i64;
@@ -1163,11 +1168,7 @@ fn handle_history_keys(app: &App, model: &mut Model) {
         &mut model.waveforms,
         &mut model.source_durations,
     );
-    {
-        let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
-        model.audio_map = map;
-        model.plugin_errors = format_plugin_errors(&errors);
-    }
+    refresh_audio_map(model);
     let label = match op {
         edit::HistoryOp::Undo => "undo",
         edit::HistoryOp::Redo => "redo",
@@ -1337,11 +1338,7 @@ fn apply_placement(model: &mut Model, placement: &edit::ClipPlacement, label: &s
         &mut model.waveforms,
         &mut model.source_durations,
     );
-    {
-        let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
-        model.audio_map = map;
-        model.plugin_errors = format_plugin_errors(&errors);
-    }
+    refresh_audio_map(model);
     println!("after {label}: {}", model.history.project().dump_json());
     save_project_file(model);
 }
@@ -1533,10 +1530,7 @@ fn apply_tone_click(model: &mut Model, hit: tones::ToneHit) {
         Ok(_) => {
             println!("after tone: {}", model.history.project().dump_json());
             save_project_file(model);
-            let (map, errors) = compute_audio_map(model.history.project(), &model.dropped_source);
-            model.audio_map = map;
-            model.plugin_errors = format_plugin_errors(&errors);
-            model.plugin_fingerprint = plugin::plugin_fingerprint(model.history.project());
+            refresh_audio_map(model);
         }
         Err(e) => println!("command rejected: {e}"),
     }
