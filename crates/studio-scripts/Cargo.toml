@@ -8,3 +8,6 @@ license.workspace = true
 studio-core = { path = "../studio-core" }
 mlua = { version = "0.11", features = ["lua51", "vendored"] }
 serde_json = "1"
+ab_glyph = "0.2"
+encoding_rs = "0.8"
+image = { version = "0.25", default-features = false, features = ["png"] }

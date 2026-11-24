@@ -62,7 +62,11 @@ pub fn apply_script_effect_with_dirs(
     let Some(effect) = &clip.script_effect else {
         return Ok(base.to_path_buf());
     };
-    let script_path = resolve_script_in(scripts_dir, &effect.script);
+    // AviUtl 形式（#83）の参照は `ファイル.anm@セクション名` と
+    // 書ける。解決と読み込みはファイル部で行い、セクションは
+    // 互換プロファイルへ渡す。
+    let (file_ref, section) = studio_scripts::split_reference(&effect.script);
+    let script_path = resolve_script_in(scripts_dir, file_ref);
     // Issue #82: 無効化したスクリプトは適用できない。適用済み
     // クリップでは呼び出し側がこのエラーを表示し、無効であることが
     // 観測できる。無効リストはファイル名で効く（一覧の管理単位）。
@@ -76,13 +80,27 @@ pub fn apply_script_effect_with_dirs(
             effect.script
         ));
     }
-    let source = std::fs::read_to_string(&script_path).map_err(|e| {
+    let source_bytes = std::fs::read(&script_path).map_err(|e| {
         format!(
             "スクリプト {} が読み込めません（{}）: {e}",
             effect.script,
             script_path.display()
         )
     })?;
+    let ext = script_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let is_aviutl = ext == "anm" || ext == "obj";
+    // .lua は従来どおり UTF-8 前提（読めなければ明示エラー）。
+    let lua_source: Option<String> = if is_aviutl {
+        None
+    } else {
+        Some(
+            String::from_utf8(source_bytes.clone())
+                .map_err(|_| format!("スクリプト {} は UTF-8 として読めません", effect.script))?,
+        )
+    };
     let img = image::open(base)
         .map_err(|e| format!("フレーム {} が開けません: {e}", base.display()))?
         .to_rgba8();
@@ -90,10 +108,13 @@ pub fn apply_script_effect_with_dirs(
     // キャッシュキーにはスクリプトが読める入力をすべて含める
     // （Issue #81 レビュー round 1 Major: クリップ相対時刻・名前・
     // 長さがキーに無いと、時間依存スクリプトの結果が stale になる）。
+    // #83: 参照文字列（セクション指定を含む）もキーに入れる。
+    // 同一ファイルの別セクションは結果が違うため。
     let key = format!(
-        "{}|{}|{:?}|{}x{}|time={}|name={}|dur={}",
+        "{}|ref={}|src={:016x}|{:?}|{}x{}|time={}|name={}|dur={}",
         base.display(),
-        source,
+        effect.script,
+        fnv1a(&source_bytes),
         effect.params,
         width,
         height,
@@ -124,9 +145,35 @@ pub fn apply_script_effect_with_dirs(
         time_ms: at_ms - clip.start_ms,
     };
     let mut pixels = img.into_raw();
-    studio_scripts::ScriptEngine::new()
-        .run_frame_effect(&source, &info, &params, width, height, &mut pixels)
-        .map_err(|e| format!("スクリプト {} の実行エラー: {}", effect.script, e.message))?;
+    let engine = studio_scripts::ScriptEngine::new();
+    let run_result = if is_aviutl {
+        // AviUtl 互換プロファイル（#83）。obj.frame の換算は
+        // 書き出しの 30fps を前提にする（docs/aviutl-compat.md）。
+        studio_scripts::run_anm_effect(
+            &engine,
+            &source_bytes,
+            section,
+            ext == "obj",
+            &info,
+            &params,
+            30,
+            width,
+            height,
+            &mut pixels,
+            scripts_dir,
+            &script_file_name,
+        )
+    } else {
+        engine.run_frame_effect(
+            lua_source.as_deref().unwrap_or_default(),
+            &info,
+            &params,
+            width,
+            height,
+            &mut pixels,
+        )
+    };
+    run_result.map_err(|e| format!("スクリプト {} の実行エラー: {}", effect.script, e.message))?;
     let img = image::RgbaImage::from_raw(width, height, pixels)
         .ok_or_else(|| "エフェクト後のフレーム再構成に失敗しました".to_string())?;
     if let Some(parent) = out.parent() {
@@ -1668,6 +1715,90 @@ mod tests {
     }
 
     #[test]
+    fn anm_script_effect_draws_figure_on_frame() {
+        // Issue #83: SJIS の .anm を配置し、参照するだけで図形系
+        // スクリプトがフレームへ反映される（互換プロファイル経路）。
+        let dir = fx_dir("anm-apply");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("sample.anm"),
+            studio_scripts::encode_sjis(
+                "@図形\n--track0:大きさ,10,400,120\nobj.load(\"figure\", \"円\", 0xff0000, obj.track0)\nobj.draw()\n",
+            ),
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(100, 100, vec![0u8; 100 * 100 * 4])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        // 黒地（α は 0 で書いたので中心ピクセルの RGB だけを見る）
+        let clip = clip_with_effect("sample.anm");
+        let derived =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap();
+        let img = image::open(&derived).unwrap().to_rgba8();
+        let center = img.get_pixel(50, 50);
+        assert_eq!([center[0], center[1], center[2]], [255, 0, 0]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn anm_section_references_have_distinct_results() {
+        // Issue #83: 同一ファイルの別セクション参照は結果が違い、
+        // キャッシュも混ざらない（キーに参照文字列を含む）。
+        let dir = fx_dir("anm-sections");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("two.anm"),
+            studio_scripts::encode_sjis(
+                "@赤\nobj.load(\"figure\", \"四角形\", 0xff0000, 100)\nobj.draw()\n@青\nobj.load(\"figure\", \"四角形\", 0x0000ff, 100)\nobj.draw()\n",
+            ),
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(100, 100, vec![0u8; 100 * 100 * 4])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let out_dir = dir.join("out");
+        let red_clip = clip_with_effect("two.anm@赤");
+        let red = apply_script_effect_with_dirs(&base, &red_clip, 0, &scripts, &out_dir).unwrap();
+        let blue_clip = clip_with_effect("two.anm@青");
+        let blue = apply_script_effect_with_dirs(&base, &blue_clip, 0, &scripts, &out_dir).unwrap();
+        assert_ne!(red, blue);
+        let red_img = image::open(&red).unwrap().to_rgba8();
+        assert_eq!(red_img.get_pixel(50, 50)[0], 255);
+        let blue_img = image::open(&blue).unwrap().to_rgba8();
+        assert_eq!(blue_img.get_pixel(50, 50)[2], 255);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn anm_unsupported_api_surfaces_as_error() {
+        // Issue #83: 範囲外 API は黙って壊さず明示エラーになる。
+        let dir = fx_dir("anm-unsupported");
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("bad.anm"),
+            studio_scripts::encode_sjis("@x\nobj.getaudio(0, 1)\n"),
+        )
+        .unwrap();
+        let base = dir.join("base.png");
+        image::RgbaImage::from_raw(4, 4, vec![0u8; 4 * 4 * 4])
+            .unwrap()
+            .save(&base)
+            .unwrap();
+        let clip = clip_with_effect("bad.anm");
+        let err =
+            apply_script_effect_with_dirs(&base, &clip, 0, &scripts, &dir.join("out")).unwrap_err();
+        assert!(err.contains("未対応"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn script_effect_disabled_script_is_not_applied() {
         // Issue #82: 無効化したスクリプトは、適用済みクリップでも
         // エフェクトとして適用できない（無効である旨が返る）。
@@ -1887,6 +2018,69 @@ mod tests {
             "書き出しフレームにエフェクトが反映される"
         );
         // プレビュー経路とピクセル一致
+        let clip = &p.tracks[0].clips[0];
+        let preview_out = apply_script_effect(&frame, clip, 0, &dir.join("pv")).unwrap();
+        let preview = image::open(&preview_out).unwrap().to_rgba8();
+        assert_eq!(preview.as_raw(), exported.as_raw());
+        let _ = std::fs::remove_file(scripts.join(&script_name));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn anm_export_frame_matches_preview_pixels() {
+        // Issue #83: .anm も書き出しとプレビューで同じ結果になる
+        // （適用経路が共通であることの確認）。
+        let dir = fx_dir("anm-export");
+        let scripts = scripts_dir();
+        std::fs::create_dir_all(&scripts).unwrap();
+        let script_name = format!("invert-export-{}.anm", std::process::id());
+        std::fs::write(
+            scripts.join(&script_name),
+            studio_scripts::encode_sjis("@反転\nobj.load(\"object\")\nobj.effect(\"色反転\")\n"),
+        )
+        .unwrap();
+        let mut p = project();
+        let clip_id = p.tracks[0].clips[0].id;
+        apply(
+            &mut p,
+            &Command::SetClipScriptEffect {
+                clip_id,
+                effect: Some(studio_core::ScriptEffect {
+                    script: script_name.clone(),
+                    params: Default::default(),
+                }),
+            },
+        )
+        .unwrap();
+        let frame = dir.join("f000.png");
+        image::RgbaImage::from_raw(2, 1, vec![10, 20, 30, 255, 200, 150, 100, 255])
+            .unwrap()
+            .save(&frame)
+            .unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("demo/opening.mp4".to_string(), vec![frame.clone()]);
+        let store = FrameStore::from_frames(10, map);
+        let preview_store = FrameStore::from_frames(10, BTreeMap::new());
+        let black = dir.join("black.png");
+        image::RgbaImage::from_raw(2, 1, vec![0, 0, 0, 255, 0, 0, 0, 255])
+            .unwrap()
+            .save(&black)
+            .unwrap();
+        let out = compose_export_frame(
+            &p,
+            &store,
+            &preview_store,
+            0,
+            &ExportSettings::default(),
+            &dir.join("work"),
+            &black,
+        );
+        let exported = image::open(&out).unwrap().to_rgba8();
+        assert_eq!(
+            exported.as_raw(),
+            &vec![245, 235, 225, 255, 55, 105, 155, 255],
+            "書き出しフレームに .anm エフェクトが反映される"
+        );
         let clip = &p.tracks[0].clips[0];
         let preview_out = apply_script_effect(&frame, clip, 0, &dir.join("pv")).unwrap();
         let preview = image::open(&preview_out).unwrap().to_rgba8();

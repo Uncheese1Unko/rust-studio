@@ -8,9 +8,14 @@
 //! 状態の変更は扱わない（プロジェクト変更は studio-core の
 //! コマンド層のみ。有効／無効はアプリ側設定ファイルへの記録）。
 
+pub mod aviutl;
 pub mod catalog;
 pub mod engine;
 
+pub use aviutl::{
+    check_anm_syntax, decode_sjis, encode_sjis, parse_anm, run_anm_effect, split_reference,
+    AnmFile, AnmSection, DialogKind, DialogVar, RgbaImage, TrackDef,
+};
 pub use catalog::{
     default_scripts_dir, display_rows, dump_json, is_enabled, read_disabled, reference_statuses,
     resolve_script_in, scan_scripts, set_enabled, ReferenceStatus, ScriptEntry, ScriptReference,

@@ -1019,7 +1019,9 @@ impl ScriptNameSession {
         }
     }
     pub fn handle(&mut self, input: RenameInput) -> TextAction {
-        text_session_handle(&mut self.text, input, &[])
+        // Issue #83: セクション参照 `ファイル.anm@セクション名` を
+        // 入力できるよう '@' も受け付ける。
+        text_session_handle(&mut self.text, input, &['@'])
     }
 }
 
@@ -1452,6 +1454,24 @@ mod tests {
         assert_eq!(
             session.handle(RenameInput::Enter),
             TextAction::Commit("level=0.5".into())
+        );
+    }
+    #[test]
+    fn script_name_session_accepts_section_reference_at_sign() {
+        // Issue #83: AviUtl 形式のセクション参照は
+        // `ファイル.anm@セクション名` と書く（docs/aviutl-compat.md）。
+        // スクリプト名セッションが '@' を落とすと、GUI からは
+        // セクション参照を一切入力できない（#83 駆動で検出）。
+        let p = sample_project();
+        let clip_id = p.tracks[0].clips[0].id;
+        let mut session = ScriptNameSession::begin(clip_id, "");
+        for c in "fx.anm@sec-1".chars() {
+            assert_eq!(session.handle(RenameInput::Char(c)), TextAction::Continue);
+        }
+        assert_eq!(session.text, "fx.anm@sec-1");
+        assert_eq!(
+            session.handle(RenameInput::Enter),
+            TextAction::Commit("fx.anm@sec-1".into())
         );
     }
     #[test]

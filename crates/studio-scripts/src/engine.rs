@@ -140,7 +140,7 @@ impl ScriptEngine {
     /// 上限超過なら打ち切りエラーにする。超過は成否にかかわらず
     /// 打ち切りとして返す（捕捉手段を外してあるため通常は Err で
     /// 届くが、二重に保証する）。
-    fn check_limit(&self, exceeded: &AtomicBool) -> Result<(), ScriptError> {
+    pub(crate) fn check_limit(&self, exceeded: &AtomicBool) -> Result<(), ScriptError> {
         if exceeded.load(Ordering::Relaxed) {
             Err(ScriptError {
                 kind: ScriptErrorKind::InstructionLimit,
@@ -156,7 +156,9 @@ impl ScriptEngine {
 
     /// サンドボックス済みの Lua 状態を作り、最小 API（clip / params）
     /// と命令数フックを入れて返す。超過フラグもあわせて返す。
-    fn build_lua(
+    /// 同クレートの互換プロファイル（aviutl、#83）もこの土台を共有し、
+    /// obj 等の追加グローバルを足してから実行する。
+    pub(crate) fn build_lua(
         &self,
         clip: &ClipInfo,
         params: &ScriptParams,
@@ -263,6 +265,20 @@ impl ScriptEngine {
     /// ソースをコンパイルだけして構文を検証する（実行はしない）。
     /// 一覧での「壊れたスクリプト」の区別に使う（Issue #82）。
     pub fn check_syntax(&self, source: &str) -> Result<(), ScriptError> {
+        let lua = Lua::new_with(
+            StdLib::TABLE | StdLib::STRING | StdLib::MATH,
+            LuaOptions::default(),
+        )
+        .map_err(|e| runtime_error(e.to_string()))?;
+        match lua.load(source).into_function() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(classify_error(e)),
+        }
+    }
+
+    /// バイト列版の構文検証。AviUtl 形式（SJIS）のセクション本体など、
+    /// UTF-8 として読めないソースの検証に使う（Issue #83）。
+    pub fn check_syntax_bytes(&self, source: &[u8]) -> Result<(), ScriptError> {
         let lua = Lua::new_with(
             StdLib::TABLE | StdLib::STRING | StdLib::MATH,
             LuaOptions::default(),
@@ -385,7 +401,7 @@ fn frame_pixel_index(width: u32, height: u32, x: i64, y: i64) -> mlua::Result<us
     Ok(((y * width as i64 + x) * 4) as usize)
 }
 
-fn runtime_error(message: String) -> ScriptError {
+pub(crate) fn runtime_error(message: String) -> ScriptError {
     ScriptError {
         kind: ScriptErrorKind::Runtime,
         message,
@@ -393,7 +409,7 @@ fn runtime_error(message: String) -> ScriptError {
 }
 
 /// mlua のエラーを構造化エラーへ寄せる。
-fn classify_error(error: mlua::Error) -> ScriptError {
+pub(crate) fn classify_error(error: mlua::Error) -> ScriptError {
     match error {
         mlua::Error::SyntaxError { message, .. } => ScriptError {
             kind: ScriptErrorKind::Syntax,

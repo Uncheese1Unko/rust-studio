@@ -25,3 +25,4 @@ supersede する。ルールは `.claude/rules/documentation.md`。
 | 0018 | 音色は Project の名前付きコレクションとして持ち、トラックは参照する | 採用 |
 | 0019 | AviUtl 拡張互換の範囲は「ExEdit Lua スクリプトエフェクト互換に絞る（方式 A）」とする | 採用 |
 | 0020 | Lua 基盤とスクリプトカタログは共有クレート `studio-scripts` に置く | 採用 |
+| 0021 | `obj.effect` の初期セットは「色調補正・単色化・ぼかし・色反転」とする | 採用 |

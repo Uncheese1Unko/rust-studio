@@ -28,7 +28,7 @@ pub const DISABLED_FILE_NAME: &str = "disabled-scripts.txt";
 
 /// 一覧に載せるスクリプトの拡張子（小文字、ドットなし）。
 /// AviUtl 形式（anm）は #83 でここへ足し、同じ一覧で扱う。
-pub const SCRIPT_EXTENSIONS: [&str; 1] = ["lua"];
+pub const SCRIPT_EXTENSIONS: [&str; 3] = ["lua", "anm", "obj"];
 
 /// スクリプトの読み込み状態。壊れたスクリプトは他のスクリプトの
 /// 読み込みを妨げず、エラーとして区別して一覧に出す。
@@ -118,11 +118,27 @@ pub fn scan_scripts(dir: &Path) -> Vec<ScriptEntry> {
             let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
                 continue;
             };
-            let status = match std::fs::read_to_string(&path) {
-                Ok(source) => match ScriptEngine::new().check_syntax(&source) {
-                    Ok(()) => ScriptStatus::Ready,
-                    Err(e) => ScriptStatus::Error(e.message),
-                },
+            let status = match std::fs::read(&path) {
+                Ok(bytes) => {
+                    let engine = ScriptEngine::new();
+                    match ext.as_deref() {
+                        // AviUtl 形式（#83）: SJIS バイト列のまま、
+                        // セクション単位で構文を検証する。
+                        Some("anm") | Some("obj") => {
+                            match crate::aviutl::check_anm_syntax(&engine, &bytes) {
+                                Some(message) => ScriptStatus::Error(message),
+                                None => ScriptStatus::Ready,
+                            }
+                        }
+                        _ => match String::from_utf8(bytes) {
+                            Ok(source) => match engine.check_syntax(&source) {
+                                Ok(()) => ScriptStatus::Ready,
+                                Err(e) => ScriptStatus::Error(e.message),
+                            },
+                            Err(_) => ScriptStatus::Error("UTF-8 として読めません".into()),
+                        },
+                    }
+                }
                 Err(e) => ScriptStatus::Error(format!("読み込めません: {e}")),
             };
             entries.push(ScriptEntry {
@@ -198,8 +214,11 @@ pub fn reference_statuses(project: &Project, dir: &Path) -> Vec<ScriptReference>
 
 /// 参照1件の状態を決める。解決は `media::resolve_script_in` と同じ
 /// 規則（絶対パスはそのまま、それ以外はフォルダ内の名前）。
+/// AviUtl 形式のセクション参照（`ファイル.anm@名前`、#83）は
+/// ファイル部で判定する。
 fn reference_status(reference: &str, dir: &Path, entries: &[ScriptEntry]) -> ReferenceStatus {
-    let resolved = resolve_script_in(dir, reference);
+    let (file_ref, _section) = crate::aviutl::split_reference(reference);
+    let resolved = resolve_script_in(dir, file_ref);
     if !resolved.is_file() {
         return ReferenceStatus::Missing;
     }
@@ -380,6 +399,35 @@ mod tests {
     }
 
     #[test]
+    fn scan_recognizes_anm_and_flags_broken_body() {
+        // AviUtl 形式（#83）: SJIS の .anm も一覧に出て、構文が
+        // 壊れたものは Error として区別される。
+        let dir = scripts_dir("scan-anm");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("ok.anm"),
+            crate::aviutl::encode_sjis("@図形\nobj.draw()\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("broken.obj"),
+            crate::aviutl::encode_sjis("@図形\nreturn 1 +\n"),
+        )
+        .unwrap();
+        let entries = scan_scripts(&dir);
+        assert_eq!(entries.len(), 2);
+        let ok = entries.iter().find(|e| e.name == "ok.anm").unwrap();
+        assert_eq!(ok.status, ScriptStatus::Ready);
+        let broken = entries.iter().find(|e| e.name == "broken.obj").unwrap();
+        assert!(
+            matches!(broken.status, ScriptStatus::Error(_)),
+            "{:?}",
+            broken.status
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn scan_missing_dir_is_empty() {
         let dir = scripts_dir("scan-missing");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -443,6 +491,25 @@ mod tests {
             by_name("bad.lua").status,
             ReferenceStatus::Error(_)
         ));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reference_status_resolves_anm_section_reference_by_file() {
+        // `ファイル.anm@セクション` 参照はファイル部で判定する
+        // （#83 の実アプリ駆動で検出: セクション参照が missing に
+        // なっていた）。
+        let dir = scripts_dir("refs-section");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("fx.anm"),
+            crate::aviutl::encode_sjis("@図形\nobj.draw()\n"),
+        )
+        .unwrap();
+        let project = project_with_refs(&["fx.anm@図形"]);
+        let refs = reference_statuses(&project, &dir);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].status, ReferenceStatus::Ready);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
