@@ -1004,8 +1004,9 @@ fn update(app: &App, model: &mut Model, update: Update) {
     // 再生追従（Issue #86）: 追従オンのとき、再生ヘッドが表示右端を
     // 超えたらページ送りで表示を進める。巻き戻り（終端ラップと
     // ループ範囲の折り返しはどちらも「新しい再生ヘッド < 直前」で
-    // 検出できる）ではオフセットも 0 に戻す。オフセットが変わったら
-    // ホイールスクロールと同じ形式で標準出力に記録する。
+    // 検出できる）では、折り返し先を含むページへオフセットを戻す。
+    // オフセットが変わったらホイールスクロールと同じ形式で標準
+    // 出力に記録する。
     if model.follow_playhead {
         let wrapped = model.playhead_ms < prev_playhead_ms;
         let win = app.window_rect();

@@ -171,7 +171,10 @@ impl ViewScale {
     /// 範囲内・表示範囲より前（左）にある場合は動かさない（手動
     /// スクロール直後に追従が表示を奪い返さないため）。
     /// `wrapped`（終端ラップ／ループ折り返しで先頭側へ巻き戻った）
-    /// のときはオフセットを 0 に戻す。
+    /// のときは、折り返し先の再生ヘッドを含むページの先頭へ
+    /// オフセットを戻す。終端ラップでは戻り先が先頭付近のため
+    /// 0 になるが、ループ折り返しでは戻り先はループ始端であり、
+    /// 始端が表示幅より先なら 0 では再生ヘッドが見えない。
     pub fn follow_playhead(
         &self,
         playhead_ms: i64,
@@ -179,10 +182,9 @@ impl ViewScale {
         wrapped: bool,
     ) -> ViewScale {
         if wrapped {
-            return ViewScale {
-                offset_ms: 0,
-                ..*self
-            };
+            let visible = self.visible_ms(view_width_px).max(1);
+            let offset_ms = (playhead_ms.max(0) / visible) * visible;
+            return ViewScale { offset_ms, ..*self };
         }
         let end = self.end_ms(view_width_px);
         if playhead_ms <= end {
@@ -511,7 +513,8 @@ mod tests {
     #[test]
     fn follow_playhead_resets_offset_on_wrap() {
         // Issue #86: 巻き戻り（終端ラップ／ループ折り返し）時は
-        // オフセットも 0 に戻る。
+        // 折り返し先の再生ヘッドを含むページの先頭へオフセットを
+        // 戻す。終端ラップでは戻り先が先頭付近なので 0 になる。
         let base = ViewScale {
             zoom: 1.0,
             offset_ms: 20_000,
@@ -519,6 +522,19 @@ mod tests {
         let followed = base.follow_playhead(120, 960.0, true);
         assert_eq!(followed.offset_ms, 0);
         assert_eq!(followed.zoom, base.zoom);
+        // ループ始端が最初のページ内なら 0
+        assert_eq!(base.follow_playhead(2_500, 960.0, true).offset_ms, 0);
+        // ループ始端が表示幅より先（20,100ms）なら、その再生ヘッドを
+        // 含むページ（20,000）へ戻す。0 では再生ヘッドが見えない。
+        let followed = base.follow_playhead(20_100, 960.0, true);
+        assert_eq!(followed.offset_ms, 20_000);
+        assert!(followed.offset_ms <= 20_100 && 20_100 <= followed.end_ms(960.0));
+        // 既に折り返し先が見えている場合はそのページに留まる
+        let paged = ViewScale {
+            zoom: 1.0,
+            offset_ms: 10_000,
+        };
+        assert_eq!(paged.follow_playhead(12_000, 960.0, true).offset_ms, 10_000);
     }
 
     #[test]
