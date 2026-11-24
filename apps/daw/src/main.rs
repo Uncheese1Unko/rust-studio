@@ -173,6 +173,10 @@ struct Model {
     // Issue #38: タイムラインの表示スケール（倍率と左端オフセット。
     // 表示状態で、プロジェクトには保存しない）。
     view_scale: timeline::ViewScale,
+    // Issue #86: 再生ヘッドへの表示追従のオン／オフ（既定オン）と
+    // F キーの押下エッジ追跡。表示状態であり、保存しない。
+    follow_playhead: bool,
+    prev_f_down: bool,
     // Issue #40: ループ再生の範囲と ON/OFF（再生状態。プロジェクト
     // には保存しない）。OFF にすると範囲も消える。
     loop_range: Option<(i64, i64)>,
@@ -440,6 +444,8 @@ fn model(app: &App) -> Model {
         bpm_edit: None,
         metronome_on: false,
         view_scale: timeline::ViewScale::default(),
+        follow_playhead: true,
+        prev_f_down: false,
         loop_range: None,
         loop_on: false,
         piano_roll: None,
@@ -929,6 +935,10 @@ fn update(app: &App, model: &mut Model, update: Update) {
         );
         model.prev_note_delete_down =
             app.keys.down.contains(&Key::Delete) || app.keys.down.contains(&Key::Back);
+        // Issue #86: 追従切り替えの F も編集中は同期だけ行う
+        // （編集中に押した F で編集終了直後に追従が切り替わらない
+        // ように。バグ #60 と同じパターン）。
+        model.prev_f_down = app.keys.down.contains(&Key::F);
     } else {
         handle_pointer(app, model);
     }
@@ -938,6 +948,18 @@ fn update(app: &App, model: &mut Model, update: Update) {
         handle_roll_keys(app, model);
         handle_edit_keys(app, model);
         handle_pitch_keys(app, model);
+        // 再生追従の切り替え（Issue #86）: F キーの押下エッジ。
+        // F はサンプラーのノートキーでもあるが、切り替えは表示状態
+        // のみで、発音への影響はない。
+        let f_down = app.keys.down.contains(&Key::F);
+        if f_down && !model.prev_f_down {
+            model.follow_playhead = !model.follow_playhead;
+            println!(
+                "follow: {}",
+                if model.follow_playhead { "on" } else { "off" }
+            );
+        }
+        model.prev_f_down = f_down;
     }
     // Issue #72 レビュー対応: プラグイン関連の状態（楽器・
     // プリセット・ノート・クリップ配置）が変わったら事前
@@ -971,6 +993,7 @@ fn update(app: &App, model: &mut Model, update: Update) {
         sampler.advance(dt_ms);
     }
     let end = timeline::project_end_ms(model.history.project());
+    let prev_playhead_ms = model.playhead_ms;
     model.playhead_ms = timeline::advance_playhead_in_loop(
         model.playhead_ms,
         dt_ms,
@@ -978,6 +1001,22 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.loop_range,
         model.loop_on,
     );
+    // 再生追従（Issue #86）: 追従オンのとき、再生ヘッドが表示右端を
+    // 超えたらページ送りで表示を進める。巻き戻り（終端ラップと
+    // ループ範囲の折り返しはどちらも「新しい再生ヘッド < 直前」で
+    // 検出できる）ではオフセットも 0 に戻す。オフセットが変わったら
+    // ホイールスクロールと同じ形式で標準出力に記録する。
+    if model.follow_playhead {
+        let wrapped = model.playhead_ms < prev_playhead_ms;
+        let win = app.window_rect();
+        let next = model
+            .view_scale
+            .follow_playhead(model.playhead_ms, win.w(), wrapped);
+        if next.offset_ms != model.view_scale.offset_ms {
+            model.view_scale = next;
+            println!("scroll offset: {}", model.view_scale.offset_ms);
+        }
+    }
     // Esc の処理: ピアノロールが開いていればまずそれを閉じ（Issue
     // #69）、次にループ解除（Issue #40）。テキスト編集中の Esc は
     // 編集のキャンセルが優先する（レビュー所見への対応）。
