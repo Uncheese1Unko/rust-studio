@@ -75,3 +75,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-23 | #79 （調査）AviUtl 拡張互換の範囲を決める | [issue-0079-aviutl-compat-investigation.md](issue-0079-aviutl-compat-investigation.md) |
 | 2026-11-23 | #84 再生ヘッドが画面外に出たらタイムライン表示が追従する | [issue-0084-playhead-follow.md](issue-0084-playhead-follow.md) |
 | 2026-11-23 | #85 タイムラインを素早く見渡せる（スクロールバーとドラッグパン、画面幅に比例したホイールスクロール） | [issue-0085-timeline-navigation.md](issue-0085-timeline-navigation.md) |
+| 2026-11-24 | #86 DAW の再生ヘッドが画面外に出たらタイムライン表示が追従する | [issue-0086-playhead-follow.md](issue-0086-playhead-follow.md) |
