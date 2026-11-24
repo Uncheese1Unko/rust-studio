@@ -972,6 +972,10 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.rename.is_some() || model.bpm_edit.is_some() || model.tone_rename.is_some();
     if renaming {
         model.prev_left_down = app.mouse.buttons.left().is_down();
+        // Issue #76 レビュー指摘: 右ボタンのエッジ追跡も同期する
+        // （編集中に押した右クリックで、編集終了直後にチップの
+        // 音色削除が誤発火しないように。バグ #60 と同じ型）。
+        model.prev_right_down = app.mouse.buttons.right().is_down();
         // エッジ検出用の prev は編集中も現在値に同期する（バグ #60:
         // 同期しないと、編集中に押したキーを押したまま編集を終えた
         // 次のフレームで「新規押下」と誤判定され、意図しないピッチ

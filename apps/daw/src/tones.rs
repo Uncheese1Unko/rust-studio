@@ -290,6 +290,31 @@ mod tests {
     }
 
     #[test]
+    fn chips_wrap_in_narrow_width_and_oversized_chip_stays_at_row_head() {
+        // Issue #76 レビュー任意指摘: 狭い幅でも折り返しが破綻
+        // しないことと、行頭のアイテムは幅が残り幅を超えても
+        // その行に置かれること（置き場が無いための仕様）。
+        let tones: Vec<Tone> = (1..=6).map(|i| tone(i, &format!("Tone {i:02}"))).collect();
+        let top = panel_top(2);
+        // limit 200 では1行に1〜2個しか入らない
+        let rows: Vec<f32> = (0..tones.len())
+            .map(|i| chip_rect(top, &tones, i, 200.0).y)
+            .collect();
+        assert!(rows.windows(2).all(|w| w[1] >= w[0]));
+        assert!(*rows.last().unwrap() > rows[0]);
+        // 名前が最大幅（150px）のチップは、残り幅（200-72=128）を
+        // 超えても行頭に置かれ、ヒットする
+        let wide = vec![tone(1, &"x".repeat(100))];
+        let rect = chip_rect(top, &wide, 0, 200.0);
+        assert_eq!(rect.x, CHIP_X_PX);
+        assert_eq!(rect.w, 150.0);
+        assert_eq!(
+            hit_tones(2, &wide, rect.x + 5.0, rect.y + 5.0, 200.0),
+            Some(ToneHit::Chip(0))
+        );
+    }
+
+    #[test]
     fn tone_rename_session_edits_and_commits() {
         // Issue #76: 音色の改名セッション。Enter で RenameTone を
         // 発行し、Esc で中止する（トラック改名と同じ意味論）。
