@@ -16,6 +16,9 @@
 
 - `crates/studio-core`：モデル＋コマンド層。GUI・メディア・ネットワークに
   依存しない。単体で `cargo test` が完結する。
+- `crates/studio-scripts`：Lua 実行基盤とスクリプトカタログ（ADR-0020）。
+  video-editor と studio-mcp が共有し、スクリプト一覧の形を経路で
+  ずらさない。プロジェクト状態は持たない（変更はコアのコマンド層のみ）。
 - `apps/video-editor` / `apps/daw`：nannou の GUI、メディア入出力、再生。
   モデルとコマンドはコアに委ね、アプリは「表示と入出力」に徹する。
 - MCP サーバーと HTTP API はコアのコマンド層の薄いラッパーにする。

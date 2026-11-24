@@ -12,9 +12,9 @@ pub mod catalog;
 pub mod engine;
 
 pub use catalog::{
-    display_rows, dump_json, is_enabled, read_disabled, reference_statuses, resolve_script_in,
-    scan_scripts, set_enabled, ReferenceStatus, ScriptEntry, ScriptReference, ScriptRow,
-    ScriptRowKind, ScriptStatus, DISABLED_FILE_NAME, SCRIPT_EXTENSIONS,
+    default_scripts_dir, display_rows, dump_json, is_enabled, read_disabled, reference_statuses,
+    resolve_script_in, scan_scripts, set_enabled, ReferenceStatus, ScriptEntry, ScriptReference,
+    ScriptRow, ScriptRowKind, ScriptStatus, DISABLED_FILE_NAME, SCRIPT_EXTENSIONS,
 };
 pub use engine::{
     ClipInfo, ScriptEngine, ScriptError, ScriptErrorKind, ScriptParam, ScriptParams, ScriptValue,

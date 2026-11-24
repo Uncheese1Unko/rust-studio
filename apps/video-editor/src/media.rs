@@ -25,8 +25,10 @@ pub fn media_dir() -> PathBuf {
 
 /// スクリプトの置き場（Issue #81）。スクリプト参照は原則ここで
 /// 解決する。発見・一覧・有効／無効の管理は `extensions`（#82）。
+/// パスの規約は共有クレート側の単一の定義に委ねる（MCP サーバーと
+/// 同じフォルダを指すため。#82 レビュー round 2）。
 pub fn scripts_dir() -> PathBuf {
-    media_dir().join("scripts")
+    studio_scripts::default_scripts_dir()
 }
 
 /// スクリプト参照の解決は共有クレート側の単一実装を使う

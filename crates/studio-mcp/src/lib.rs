@@ -248,13 +248,11 @@ impl McpServer {
     }
 }
 
-/// video-editor のスクリプトフォルダの既定位置。アプリ側
-/// `media::media_dir` / `media::scripts_dir` と同じ規約（Issue #82）。
-/// 走査そのものは studio-scripts の共有実装が行う。
+/// video-editor のスクリプトフォルダの既定位置は、共有クレート
+/// studio-scripts の単一の規約に従う（Issue #82 レビュー round 2:
+/// アプリ側 media::scripts_dir と同じ定義を指す）。
 fn default_scripts_dir() -> std::path::PathBuf {
-    std::env::temp_dir()
-        .join("rust-studio-video-editor-media")
-        .join("scripts")
+    studio_scripts::default_scripts_dir()
 }
 
 fn tool_result(text: String, is_error: bool) -> Value {

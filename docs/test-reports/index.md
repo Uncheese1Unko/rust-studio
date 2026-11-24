@@ -82,3 +82,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-24 | #80 Lua 実行基盤を組み込む（サンドボックス付きでスクリプトを実行できる） | [issue-0080-lua-script-engine.md](issue-0080-lua-script-engine.md) |
 | 2026-11-24 | #77 ピアノロール見出し帯の残件（#74 レビュー由来） | [issue-0077-piano-roll-header-followup.md](issue-0077-piano-roll-header-followup.md) |
 | 2026-11-24 | #81 Lua スクリプトエフェクトをクリップに適用できる | [issue-0081-script-effect-on-clip.md](issue-0081-script-effect-on-clip.md) |
+| 2026-11-24 | #82 スクリプト／拡張のインストールと管理ができる（配置で認識・一覧・有効／無効） | [issue-0082-script-management.md](issue-0082-script-management.md) |

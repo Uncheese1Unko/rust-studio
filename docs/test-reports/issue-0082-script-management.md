@@ -36,10 +36,10 @@
 
 ## 単体テスト
 
-- `crates/studio-scripts`: 34 件（engine 26、カタログ 8＋往復等）。
+- `crates/studio-scripts`: 36 件（engine 26、カタログ 10。round 2 対応の回帰テスト2件を含む）。
 - `crates/studio-mcp`: 33 件（+1: list_scripts、tools/list の期待名にも追加）。
 - `apps/video-editor`: 101 件（二モジュール移設分を除く。media の無効適用テストを含む）。
-- ワークスペース全体: **438 件**すべて通過。`./scripts/verify.sh`: fmt / clippy / テストすべて OK。
+- ワークスペース全体: **440 件**すべて通過。`./scripts/verify.sh`: fmt / clippy / テストすべて OK。
 
 ## 実アプリ駆動（証拠）
 
@@ -57,7 +57,12 @@
   1. （Major）試験レポートがコミットに無い（DoD 違反）。→ 本レポートを作成し、対応コミットに同梱した。
   2. （Major）MCP の一覧が不完全（status／references が無い）で走査ロジックを複製している。→ 共有クレート `studio-scripts` へ基盤とカタログを移し、MCP は `dump_json` の完全な形を返すようにした（上記「構造変更」）。
   3. （Minor）パネル表示で無効がエラーを隠す。→ `display_rows` の優先順位をエラー優先に変更し、回帰テストを追加した。
-- ラウンド2: （実施後に追記）
+- ラウンド2: CHANGES_REQUESTED。指摘4件、いずれも対応:
+  1. （Major）共有クレート新設というアーキテクチャ判断に ADR が無く、architecture ルールのクレート構成も未更新。→ **ADR-0020** を作成し、`docs/adr/index.md` と `.claude/rules/architecture.md` のクレート構成に `studio-scripts` を追加した（判断を行った変更への記録として、レビュー対応コミットに同梱）。
+  2. （Minor）試験レポートが `docs/log.md` と `docs/test-reports/index.md` に未登録。→ 両方に登録した。
+  3. （Minor）`reference_statuses` が無効をエラーより優先し、パネル（display_rows）と観測がずれる。→ エラー優先に統一し、回帰テスト `reference_status_prioritizes_error_over_disabled`（red を確認してから修正）を追加した。
+  4. （Minor）MCP の既定スクリプトフォルダがパス規約を複製している。→ 規約を `studio_scripts::default_scripts_dir` の単一の定義に寄せ、アプリの `media::scripts_dir` と MCP の既定値の双方が委ねる形にした（パス形状のテスト付き）。
+- レビューは上限2ラウンドのため、round 2 指摘の修正は回帰テストと verify.sh で担保し、3ラウンド目は行っていない（修正は指摘の方向そのまま）。
 
 ## 判断の記録
 
@@ -70,7 +75,7 @@
 
 - [x] 受け入れ条件をすべて、書いてある確認方法で確かめた
 - [x] TDD（red を記録）
-- [x] `cargo test` が 0 で終わった（ワークスペース 438 件）
+- [x] `cargo test` が 0 で終わった（ワークスペース 440 件）
 - [x] 画面で観測できる受け入れ条件を実アプリ駆動＋スクリーンショットで確認した
 - [x] 状態を変える受け入れ条件をダンプ（GUI ログ／MCP）で確認した
-- [ ] 独立レビューを受けた（round 1 対応済み、round 2 は本レポートと同時点で実施）
+- [x] 独立レビューを受けた（2ラウンド、指摘はすべて対応）

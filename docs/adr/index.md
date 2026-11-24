@@ -24,3 +24,4 @@ supersede する。ルールは `.claude/rules/documentation.md`。
 | 0017 | Vital 連携は「ヘッドレス CLAP ホスティング（別プロセス）＋プリセット JSON 注入」とする | 採用 |
 | 0018 | 音色は Project の名前付きコレクションとして持ち、トラックは参照する | 採用 |
 | 0019 | AviUtl 拡張互換の範囲は「ExEdit Lua スクリプトエフェクト互換に絞る（方式 A）」とする | 採用 |
+| 0020 | Lua 基盤とスクリプトカタログは共有クレート `studio-scripts` に置く | 採用 |

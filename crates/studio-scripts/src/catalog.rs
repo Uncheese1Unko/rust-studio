@@ -89,6 +89,16 @@ pub fn resolve_script_in(dir: &Path, reference: &str) -> std::path::PathBuf {
     dir.join(reference)
 }
 
+/// 既定のスクリプトフォルダ。アプリ（video-editor）と MCP サーバーは
+/// 別プロセスのため、この規約は共有クレート側の単一の定義に寄せる
+/// （#82 レビュー round 2 指摘: パス規約の複製で観測先がずれない
+/// ようにする）。アプリのメディア作業フォルダ配下の `scripts`。
+pub fn default_scripts_dir() -> std::path::PathBuf {
+    std::env::temp_dir()
+        .join("rust-studio-video-editor-media")
+        .join("scripts")
+}
+
 /// スクリプトフォルダを走査して一覧を作る。フォルダが無ければ空。
 /// 壊れたスクリプト（読めない／構文エラー）は Error として隔離し、
 /// 他のスクリプトの読み込みは妨げない。
@@ -198,13 +208,15 @@ fn reference_status(reference: &str, dir: &Path, entries: &[ScriptEntry]) -> Ref
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     if let Some(entry) = entries.iter().find(|e| e.name == file_name) {
+        // 壊れていることは無効化より優先して区別する
+        // （display_rows と同じ優先順位。#82 レビュー round 2）。
+        if let ScriptStatus::Error(msg) = &entry.status {
+            return ReferenceStatus::Error(msg.clone());
+        }
         if !entry.enabled {
             return ReferenceStatus::Disabled;
         }
-        return match &entry.status {
-            ScriptStatus::Ready => ReferenceStatus::Ready,
-            ScriptStatus::Error(msg) => ReferenceStatus::Error(msg.clone()),
-        };
+        return ReferenceStatus::Ready;
     }
     // 一覧の対象外（フォルダ外の絶対パス参照など）は、その場で
     // 構文だけ確かめる。無効リストはファイル名で効く。
@@ -341,6 +353,16 @@ mod tests {
     }
 
     #[test]
+    fn default_scripts_dir_follows_the_shared_convention() {
+        // アプリと MCP で同じフォルダを指すための単一の規約。
+        let dir = default_scripts_dir();
+        assert!(
+            dir.ends_with("rust-studio-video-editor-media/scripts"),
+            "{dir:?}"
+        );
+    }
+
+    #[test]
     fn scan_lists_lua_files_sorted_and_ignores_others() {
         let dir = scripts_dir("scan");
         write(&dir, "b.lua", "return 1");
@@ -421,6 +443,25 @@ mod tests {
             by_name("bad.lua").status,
             ReferenceStatus::Error(_)
         ));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reference_status_prioritizes_error_over_disabled() {
+        // 無効化されていても壊れていることは区別できること
+        // （パネルの display_rows と同じ優先順位。#82 レビュー
+        // round 2 Minor 指摘: ダンプ／MCP と画面で観測がずれない）。
+        let dir = scripts_dir("refs-err-off");
+        write(&dir, "bad.lua", "return 1 +");
+        set_enabled(&dir, "bad.lua", false).unwrap();
+        let project = project_with_refs(&["bad.lua"]);
+        let refs = reference_statuses(&project, &dir);
+        assert_eq!(refs.len(), 1);
+        assert!(
+            matches!(refs[0].status, ReferenceStatus::Error(_)),
+            "壊れたスクリプトが disabled に隠れた: {:?}",
+            refs[0].status
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
