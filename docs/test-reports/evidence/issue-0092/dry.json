@@ -1,0 +1,1 @@
+{"name": "fx-cli", "tracks": [{"id": 1, "name": "A1", "kind": "audio", "clips": [{"id": 2, "name": "sine", "start_ms": 0, "duration_ms": 2000, "source": "/tmp/fx92/sine50.wav", "gain": 1.0}], "effects": []}], "next_id": 3}
