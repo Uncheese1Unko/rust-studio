@@ -687,6 +687,15 @@ fn watch_project_file(app: &App, model: &mut Model) {
             // テキストで黙って上書きしてしまうため）。
             model.rename = None;
             model.tone_rename = None;
+            // エフェクト操作も打ち切る（Issue #94 レビュー B-1:
+            // 選択はインデックス基準で、差し替え後のチェーンでは
+            // 別のスロットを指し得る。ジェスチャ中のスナップショット
+            // が新しい History に記録されるのも防ぐ）。
+            model.fx_selected = None;
+            model.fx_track = None;
+            model.fx_active = None;
+            model.fx_before = None;
+            model.last_fx_cmd = None;
             // ソース集合の比較はプロジェクトのクリップ同士で行い、
             // 再計算では配置用素材の波形を保持する（Issue #16 レビュー指摘）。
             let changed = sources_changed(model.history.project(), &new_project);
@@ -1184,6 +1193,7 @@ fn handle_history_keys(app: &App, model: &mut Model) {
             &mut model.drag_before,
             &mut model.mixer_before,
             &mut model.roll_before,
+            &mut model.fx_before,
         ],
     );
     if !applied {
@@ -1197,6 +1207,12 @@ fn handle_history_keys(app: &App, model: &mut Model) {
     model.last_mixer_cmd = None;
     model.mixer_before = None;
     model.roll_before = None;
+    // エフェクトスライダーのジェスチャも打ち切る（Issue #94
+    // レビュー B-1: 登録漏れだとドラッグ中の Undo で旧系譜の
+    // スナップショットが新しい履歴に積まれ得る）。
+    model.fx_active = None;
+    model.last_fx_cmd = None;
+    model.fx_before = None;
     // ピアノロール（Issue #69）: 履歴が動いたらドラッグと選択を
     // 打ち切り、対象クリップが消えていたら閉じる。
     model.last_roll_cmd = None;
@@ -3435,7 +3451,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 x: 8.0,
                 y: top - 8.0,
                 w: win.w() - 16.0,
-                h: fxpanel::panel_height(selected_effect),
+                h: fxpanel::panel_height(effects.len(), selected_effect, limit_x),
             },
             theme::PANEL_CORNER_RADIUS,
             theme::PANEL,
@@ -3466,6 +3482,21 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .font_size(10)
                 .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
         } else {
+            if effects.is_empty() {
+                // 空チェーンは明示する（Issue #94 レビュー N-4）。
+                let (cx, cy) = rect_center(
+                    win,
+                    440.0,
+                    top + fxpanel::ROWS_TOP_OFFSET_PX,
+                    140.0,
+                    fxpanel::ROW_H_PX,
+                );
+                draw.text("NO EFFECTS").x_y(cx, cy).font_size(10).color(rgb(
+                    theme::TEXT_SUB.0,
+                    theme::TEXT_SUB.1,
+                    theme::TEXT_SUB.2,
+                ));
+            }
             for (index, slot) in effects.iter().enumerate() {
                 let rect = fxpanel::slot_rect(top, effects.len(), index, limit_x);
                 let is_selected = selected == Some(index);

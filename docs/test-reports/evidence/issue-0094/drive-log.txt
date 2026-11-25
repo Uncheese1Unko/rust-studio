@@ -6,7 +6,10 @@ OK: effects=['reverb', 'delay'] bypassed=['false', 'false'] decay=['0.75']
 OK: effects=['delay'] bypassed=['false'] decay=[]
 OK: effects=['delay', 'eq3'] bypassed=['false', 'false'] decay=[]
 OK: effects=['eq3', 'delay'] bypassed=['false', 'false'] decay=[]
-OK: effects=['eq3', 'delay'] bypassed=['true', 'false'] decay=[]
-accent pixels in fx chip row: 2425
+OK: effects=['delay', 'eq3'] bypassed=['false', 'false'] decay=[]
+OK: effects=['delay', 'eq3'] bypassed=['false', 'true'] decay=[]
+accent pixels in fx chip row: 2456
 pixels OK
+chains per track: [['delay', 'eq3'], ['eq3']]
+OK: fx panel followed the selected track
 DRIVE OK

@@ -268,19 +268,19 @@ after fx: {
       "effects": [
         {
           "effect": {
-            "type": "eq3",
-            "low_gain_db": 0.0,
-            "mid_gain_db": 0.0,
-            "high_gain_db": 0.0
-          },
-          "bypassed": true
-        },
-        {
-          "effect": {
             "type": "delay",
             "time_ms": 250,
             "feedback": 0.3,
             "mix": 0.3
+          },
+          "bypassed": false
+        },
+        {
+          "effect": {
+            "type": "eq3",
+            "low_gain_db": 0.0,
+            "mid_gain_db": 0.0,
+            "high_gain_db": 0.0
           },
           "bypassed": false
         }
@@ -290,4 +290,165 @@ after fx: {
   "tones": [],
   "bpm": 120.0,
   "next_id": 10
+}
+after fx: {
+  "name": "fx94",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": [
+        {
+          "effect": {
+            "type": "delay",
+            "time_ms": 250,
+            "feedback": 0.3,
+            "mix": 0.3
+          },
+          "bypassed": false
+        },
+        {
+          "effect": {
+            "type": "eq3",
+            "low_gain_db": 0.0,
+            "mid_gain_db": 0.0,
+            "high_gain_db": 0.0
+          },
+          "bypassed": true
+        }
+      ]
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 10
+}
+after track add: {
+  "name": "fx94",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": [
+        {
+          "effect": {
+            "type": "delay",
+            "time_ms": 250,
+            "feedback": 0.3,
+            "mix": 0.3
+          },
+          "bypassed": false
+        },
+        {
+          "effect": {
+            "type": "eq3",
+            "low_gain_db": 0.0,
+            "mid_gain_db": 0.0,
+            "high_gain_db": 0.0
+          },
+          "bypassed": true
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "A2",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 11
+}
+after fx: {
+  "name": "fx94",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [],
+      "volume": 0.8,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": [
+        {
+          "effect": {
+            "type": "delay",
+            "time_ms": 250,
+            "feedback": 0.3,
+            "mix": 0.3
+          },
+          "bypassed": false
+        },
+        {
+          "effect": {
+            "type": "eq3",
+            "low_gain_db": 0.0,
+            "mid_gain_db": 0.0,
+            "high_gain_db": 0.0
+          },
+          "bypassed": true
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "A2",
+      "kind": "audio",
+      "clips": [],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": [
+        {
+          "effect": {
+            "type": "eq3",
+            "low_gain_db": 0.0,
+            "mid_gain_db": 0.0,
+            "high_gain_db": 0.0
+          },
+          "bypassed": false
+        }
+      ]
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 11
 }

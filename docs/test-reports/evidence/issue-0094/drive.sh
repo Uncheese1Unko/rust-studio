@@ -64,9 +64,10 @@ decay = re.findall(r'"decay": ([\d.]+)', body)
 want_types = sys.argv[3].split(",") if sys.argv[3] else []
 assert types == want_types, f"types {types} != {want_types}"
 if sys.argv[4]:
-    key, want = sys.argv[4].split("=")
+    m = re.fullmatch(r"(\w+)(?:\[(\d+)\])?=(.+)", sys.argv[4])
+    key, idx, want = m.group(1), int(m.group(2) or 0), m.group(3)
     got = {"bypassed": bypassed, "decay": decay}[key]
-    assert got and got[0] == want, f"{key} {got} != {want}"
+    assert len(got) > idx and got[idx] == want, f"{key}[{idx}] {got} != {want}"
 print(f"OK: effects={types} bypassed={bypassed} decay={decay}")
 PYEOF
 }
@@ -92,8 +93,10 @@ click 309 422   # +EQ（スロット1個分の右）
 assert_effects "add eq" "delay,eq3" ""
 click 501 422   # ↑（2スロット時の位置）
 assert_effects "move up" "eq3,delay" ""
-click 575 422   # BYP（2スロット時の位置）
-assert_effects "bypass" "eq3,delay" "bypassed=true"
+click 533 422   # ↓（2スロット時の位置）
+assert_effects "move down" "delay,eq3" ""
+click 575 422   # BYP（2スロット時の位置、選択中は index 1 の EQ）
+assert_effects "bypass" "delay,eq3" "bypassed[1]=true"
 snap "$HERE/shot2-final.png"
 python3 - "$HERE/shot2-final.png" << 'PYEOF' || { echo "FAIL: pixels"; cleanup; exit 1; }
 # 選択中チップと BYP ボタンがアクセント色（#FF2E88）で灯ること
@@ -107,5 +110,23 @@ print(f"accent pixels in fx chip row: {n}")
 assert n > 200, "selected chip / BYP not lit"
 print("pixels OK")
 PYEOF
+# トラック切替（Issue #94 レビュー N-3）: トラックを追加すると
+# 新トラックが選択され、パネルはそのトラック（空チェーン）を
+# 対象にする。+EQ がトラック2に入り、トラック1は不変であること。
+click 60 96     # +TRACK
+click 211 507   # +EQ（2トラック時のパネル位置、空チェーン配置）
+python3 - "$HERE/gui-stdout.txt" << 'PYEOF' || { echo "FAIL: track switch"; cleanup; exit 1; }
+import json, sys
+text = open(sys.argv[1]).read()
+start = text.rfind("after fx: ")
+assert start >= 0
+obj, _ = json.JSONDecoder().raw_decode(text[start + len("after fx: "):])
+chains = [[s["effect"]["type"] for s in t["effects"]] for t in obj["tracks"]]
+print("chains per track:", chains)
+assert chains[0] == ["delay", "eq3"], chains
+assert chains[1] == ["eq3"], chains
+print("OK: fx panel followed the selected track")
+PYEOF
+snap "$HERE/shot3-track2.png"
 cleanup
 echo "DRIVE OK"

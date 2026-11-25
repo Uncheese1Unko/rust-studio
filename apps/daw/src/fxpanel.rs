@@ -39,10 +39,24 @@ pub fn panel_top(track_count: usize, tones: &[Tone], limit_x: f32) -> f32 {
     tones::panel_top(track_count) + tones::panel_height(tones, limit_x) + 12.0
 }
 
-/// パネルの高さ（ラベル＋チップ行＋選択中スロットのパラメータ行）。
-pub fn panel_height(selected: Option<&TrackEffect>) -> f32 {
+/// パネルの高さ（ラベル＋チップ行（折り返し込み）＋選択中
+/// スロットのパラメータ行）。
+pub fn panel_height(effects_len: usize, selected: Option<&TrackEffect>, limit_x: f32) -> f32 {
     let params = selected.map(param_count).unwrap_or(0);
-    ROWS_TOP_OFFSET_PX + ROW_H_PX + params as f32 * PARAM_ROW_H_PX + 6.0
+    ROWS_TOP_OFFSET_PX
+        + flow_row_count(effects_len, limit_x) as f32 * ROW_H_PX
+        + params as f32 * PARAM_ROW_H_PX
+        + 6.0
+}
+
+/// チップ行の折り返し後の行数。
+fn flow_row_count(effects_len: usize, limit_x: f32) -> usize {
+    flow_layout(effects_len, limit_x)
+        .iter()
+        .map(|(_, _, row)| *row)
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 /// スロットの短い名前（チップ表示用）。
@@ -300,12 +314,7 @@ pub fn slider_rect(
     index: usize,
     limit_x: f32,
 ) -> mixer::Rect {
-    let rows = flow_layout(effects_len, limit_x)
-        .iter()
-        .map(|(_, _, row)| *row)
-        .max()
-        .unwrap_or(0)
-        + 1;
+    let rows = flow_row_count(effects_len, limit_x);
     mixer::Rect {
         x: SLIDER_X_PX,
         y: panel_top_y
@@ -423,15 +432,21 @@ mod tests {
         );
         // パラメータ行の分だけ高さが伸びる
         let rev = TrackEffect::default_reverb();
-        assert!(panel_height(Some(&rev)) > panel_height(None));
+        assert!(panel_height(1, Some(&rev), 944.0) > panel_height(1, None, 944.0));
         assert_eq!(
-            panel_height(Some(&TrackEffect::default_delay())),
-            panel_height(Some(&TrackEffect::Eq3 {
-                low_gain_db: 0.0,
-                mid_gain_db: 0.0,
-                high_gain_db: 0.0
-            }))
+            panel_height(1, Some(&TrackEffect::default_delay()), 944.0),
+            panel_height(
+                1,
+                Some(&TrackEffect::Eq3 {
+                    low_gain_db: 0.0,
+                    mid_gain_db: 0.0,
+                    high_gain_db: 0.0
+                }),
+                944.0
+            )
         );
+        // 狭い幅ではチップ行が折り返し、高さも行数分だけ伸びる
+        assert!(panel_height(6, None, 300.0) > panel_height(6, None, 944.0));
     }
 
     #[test]
@@ -478,6 +493,28 @@ mod tests {
             ),
             Some(FxHit::Button(FxButton::Delete))
         );
+        // 選択があるとき ↑／↓／BYP にも当たる（Issue #94 レビュー N-3）
+        for button in [FxButton::Up, FxButton::Down, FxButton::Bypass] {
+            let rect = button_rect(top, effects.len(), button, 944.0);
+            assert_eq!(
+                hit_fx(
+                    2,
+                    &tones,
+                    &effects,
+                    Some(0),
+                    rect.x + 5.0,
+                    rect.y + 5.0,
+                    944.0
+                ),
+                Some(FxHit::Button(button)),
+                "{button:?}"
+            );
+            assert_eq!(
+                hit_fx(2, &tones, &effects, None, rect.x + 5.0, rect.y + 5.0, 944.0),
+                None,
+                "{button:?} without selection"
+            );
+        }
         // 選択中スロット（Delay）のスライダーに当たる
         let slider = slider_rect(top, effects.len(), 0, 944.0);
         assert_eq!(
