@@ -106,7 +106,8 @@ effects, _ = get_effects()
 assert effects == [slot(EQ3), slot(DELAY)], effects
 print("move OK:", effects)
 
-# set（成功系）で種類ごと差し替わる（バイパスは保持される）
+# set（成功系）で種類ごと差し替わる（バイパス保持は #92 の単体
+# テストで担保。ここでの差し替え対象はバイパスなしのスロット）
 call("set_track_effect", {"track_id": 1, "index": 0, "effect": REVERB})
 effects, _ = get_effects()
 assert effects == [slot(REVERB), slot(DELAY)], effects
