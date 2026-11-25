@@ -2238,18 +2238,108 @@ mod effect_tests {
         );
     }
 
+    /// インパルスクリップを持つ1トラックのプロジェクト。
+    fn project_with_impulse() -> (Project, HashMap<String, ClipAudio>, u64) {
+        let mut p = Project::new("fx impulse");
+        let track_id = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id,
+                name: "impulse".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: "imp.wav".into(),
+            },
+        )
+        .unwrap();
+        let frames = (RATE as usize) * 2;
+        let mut samples = vec![0.0f32; frames];
+        samples[0] = 1.0;
+        let mut audio = HashMap::new();
+        audio.insert(
+            "imp.wav".to_string(),
+            ClipAudio {
+                sample_rate: RATE,
+                channels: 1,
+                samples,
+            },
+        );
+        (p, audio, track_id)
+    }
+
+    fn sample_at(samples: &[f32], ms: i64) -> f32 {
+        let frame = (ms * RATE as i64 / 1000) as usize;
+        samples[frame * 2]
+    }
+
     #[test]
-    fn reverb_and_delay_slots_pass_through_in_foundation_pbi() {
-        // Issue #92 の時点では Reverb / Delay の DSP は素通り
-        // （DSP は Issue #93）。素通りであることをここで固定し、
-        // #93 でこのテストを「効く」側へ書き換える。
-        let (mut p, audio, track_id) = project_with_sine(440.0, 0.3);
-        let dry = render_mix(&p, &audio, 0, 2_000, RATE);
-        for effect in [TrackEffect::default_reverb(), TrackEffect::default_delay()] {
-            apply(&mut p, &Command::AddTrackEffect { track_id, effect }).unwrap();
-        }
+    fn delay_echoes_appear_in_rendered_mix() {
+        // Issue #93: render_mix でもディレイが効く（200ms 位置に
+        // 0.5、400ms 位置に 0.25 のエコー）。
+        let (mut p, audio, track_id) = project_with_impulse();
+        apply(
+            &mut p,
+            &Command::AddTrackEffect {
+                track_id,
+                effect: TrackEffect::Delay {
+                    time_ms: 200,
+                    feedback: 0.5,
+                    mix: 0.5,
+                },
+            },
+        )
+        .unwrap();
         let wet = render_mix(&p, &audio, 0, 2_000, RATE);
-        assert_eq!(dry, wet, "#92 では時間系は素通り");
+        assert!((sample_at(&wet, 200) - 0.5).abs() < 0.02);
+        assert!((sample_at(&wet, 400) - 0.25).abs() < 0.02);
+        assert_eq!(sample_at(&wet, 100), 0.0);
+    }
+
+    #[test]
+    fn reverb_tail_appears_in_rendered_mix() {
+        // Issue #93: リバーブで残響の尾が現れる（ドライでは無音の
+        // 区間にエネルギーが残る）。バイパス時はドライと一致する。
+        let (mut p, audio, track_id) = project_with_impulse();
+        let dry = render_mix(&p, &audio, 0, 2_000, RATE);
+        assert_eq!(rms(&window(&dry, 2, 600, 1_000, RATE)), 0.0);
+        apply(
+            &mut p,
+            &Command::AddTrackEffect {
+                track_id,
+                effect: TrackEffect::Reverb {
+                    decay: 0.8,
+                    mix: 1.0,
+                },
+            },
+        )
+        .unwrap();
+        let wet = render_mix(&p, &audio, 0, 2_000, RATE);
+        assert!(
+            rms(&window(&wet, 2, 600, 1_000, RATE)) > 0.001,
+            "600-1000ms に残響が残る"
+        );
+        // 決定的である（状態はレンダリングごとに初期化される）
+        assert_eq!(wet, render_mix(&p, &audio, 0, 2_000, RATE));
+        // バイパスでドライに戻る
+        apply(
+            &mut p,
+            &Command::SetTrackEffectBypass {
+                track_id,
+                index: 0,
+                bypassed: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(dry, render_mix(&p, &audio, 0, 2_000, RATE));
     }
 }
 

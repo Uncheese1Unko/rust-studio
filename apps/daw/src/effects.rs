@@ -11,8 +11,8 @@
 //! するため、同じ入力には常に同じ出力が返る（render_mix の
 //! 純粋性を保つ）。
 //!
-//! Issue #92 の範囲は EQ のみ。Reverb / Delay は素通りで、
-//! DSP は Issue #93 で入れる。
+//! EQ は Issue #92、ディレイとリバーブ（Schroeder/Freeverb 系）
+//! は Issue #93 で実装した。
 
 use studio_core::{EffectSlot, TrackEffect};
 
@@ -159,6 +159,151 @@ impl Eq3State {
     }
 }
 
+/// フィードバックディレイの処理状態（Issue #93）。
+/// チャンネルごとの循環バッファを持ち、出力 = ドライ + mix ×
+/// ウェット、遅延入力 = 入力 + feedback × ウェット。
+struct DelayState {
+    buffers: [Vec<f32>; 2],
+    pos: usize,
+    feedback: f32,
+    mix: f32,
+}
+
+impl DelayState {
+    fn new(sample_rate: u32, time_ms: i64, feedback: f32, mix: f32) -> Self {
+        let len = ((time_ms as u64 * sample_rate as u64) / 1000).max(1) as usize;
+        DelayState {
+            buffers: [vec![0.0; len], vec![0.0; len]],
+            pos: 0,
+            feedback,
+            mix,
+        }
+    }
+
+    fn process(&mut self, samples: &mut [f32]) {
+        for frame in samples.chunks_mut(2) {
+            for (ch, slot) in frame.iter_mut().enumerate() {
+                let wet = self.buffers[ch][self.pos];
+                let dry = *slot;
+                self.buffers[ch][self.pos] = dry + wet * self.feedback;
+                *slot = dry + wet * self.mix;
+            }
+            self.pos = (self.pos + 1) % self.buffers[0].len();
+        }
+    }
+}
+
+/// コムフィルタ（Freeverb の構成要素）。ループ内に一次ローパス
+/// （ダンピング）を持つ。
+struct Comb {
+    buffer: Vec<f32>,
+    pos: usize,
+    feedback: f32,
+    damp1: f32,
+    damp2: f32,
+    store: f32,
+}
+
+impl Comb {
+    fn new(len: usize, feedback: f32, damp: f32) -> Self {
+        Comb {
+            buffer: vec![0.0; len.max(1)],
+            pos: 0,
+            feedback,
+            damp1: 1.0 - damp,
+            damp2: damp,
+            store: 0.0,
+        }
+    }
+
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.buffer[self.pos];
+        self.store = output * self.damp2 + self.store * self.damp1;
+        self.buffer[self.pos] = input + self.store * self.feedback;
+        self.pos = (self.pos + 1) % self.buffer.len();
+        output
+    }
+}
+
+/// オールパスフィルタ（Freeverb の構成要素、ゲイン 0.5）。
+struct Allpass {
+    buffer: Vec<f32>,
+    pos: usize,
+}
+
+impl Allpass {
+    fn new(len: usize) -> Self {
+        Allpass {
+            buffer: vec![0.0; len.max(1)],
+            pos: 0,
+        }
+    }
+
+    fn process(&mut self, input: f32) -> f32 {
+        let buffered = self.buffer[self.pos];
+        let output = buffered - input;
+        self.buffer[self.pos] = input + buffered * 0.5;
+        self.pos = (self.pos + 1) % self.buffer.len();
+        output
+    }
+}
+
+/// リバーブの処理状態（Issue #93、Schroeder/Freeverb 系）。
+/// チャンネルごとにコム8本の並列 → オールパス4本の直列。
+/// 遅延量は Freeverb の 44.1kHz 基準値をサンプルレート比で
+/// スケーリングし、右チャンネルにはステレオ広がりのずらしを
+/// 加える。コムへの入力ゲインは Freeverb と同じ 0.015 に
+/// 基づき、8本の合算でも破綻しないよう調整した固定値。
+struct ReverbState {
+    combs: [[Comb; 8]; 2],
+    allpasses: [[Allpass; 4]; 2],
+    mix: f32,
+}
+
+const COMB_TUNINGS: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+const ALLPASS_TUNINGS: [usize; 4] = [556, 441, 341, 225];
+const STEREO_SPREAD: usize = 23;
+const REVERB_INPUT_GAIN: f32 = 0.2;
+const REVERB_DAMP: f32 = 0.2;
+
+impl ReverbState {
+    fn new(sample_rate: u32, decay: f32, mix: f32) -> Self {
+        // decay 0.0..=1.0 をコムのフィードバック 0.7..=0.98 へ写像
+        let feedback = 0.7 + 0.28 * decay;
+        let scale = sample_rate as f32 / 44_100.0;
+        let scaled = |base: usize, spread: usize| -> usize {
+            (((base + spread) as f32) * scale).round().max(1.0) as usize
+        };
+        let make_combs = |spread: usize| {
+            COMB_TUNINGS.map(|t| Comb::new(scaled(t, spread), feedback, REVERB_DAMP))
+        };
+        let make_allpasses =
+            |spread: usize| ALLPASS_TUNINGS.map(|t| Allpass::new(scaled(t, spread)));
+        ReverbState {
+            combs: [make_combs(0), make_combs(STEREO_SPREAD)],
+            allpasses: [make_allpasses(0), make_allpasses(STEREO_SPREAD)],
+            mix,
+        }
+    }
+
+    fn process(&mut self, samples: &mut [f32]) {
+        for frame in samples.chunks_mut(2) {
+            for (ch, slot) in frame.iter_mut().enumerate() {
+                let dry = *slot;
+                let input = dry * REVERB_INPUT_GAIN;
+                let mut wet: f32 = self.combs[ch]
+                    .iter_mut()
+                    .map(|comb| comb.process(input))
+                    .sum();
+                for allpass in &mut self.allpasses[ch] {
+                    wet = allpass.process(wet);
+                }
+                *slot = dry + wet * self.mix;
+            }
+        }
+    }
+}
+
 /// エフェクトチェーンをステレオインターリーブのバッファへ
 /// スロット順に適用する。バイパスされたスロットは読み飛ばす。
 /// チェーンが空なら何もしない（従来と同一の音）。
@@ -176,8 +321,18 @@ pub fn process_chain(effects: &[EffectSlot], samples: &mut [f32], sample_rate: u
                 let mut state = Eq3State::new(sample_rate, low_gain_db, mid_gain_db, high_gain_db);
                 state.process(samples);
             }
-            // Issue #93 で DSP を入れる。それまでは素通り。
-            TrackEffect::Reverb { .. } | TrackEffect::Delay { .. } => {}
+            TrackEffect::Delay {
+                time_ms,
+                feedback,
+                mix,
+            } => {
+                let mut state = DelayState::new(sample_rate, time_ms, feedback, mix);
+                state.process(samples);
+            }
+            TrackEffect::Reverb { decay, mix } => {
+                let mut state = ReverbState::new(sample_rate, decay, mix);
+                state.process(samples);
+            }
         }
     }
 }
@@ -253,6 +408,186 @@ mod tests {
             },
         );
         assert!((high - 12.0).abs() <= 1.5, "high band: {high:.2} dB");
+    }
+
+    fn impulse(seconds: f32) -> Vec<f32> {
+        let frames = (RATE as f32 * seconds) as usize;
+        let mut out = vec![0.0f32; frames * 2];
+        out[0] = 1.0;
+        out[1] = 1.0;
+        out
+    }
+
+    fn at(samples: &[f32], ms: f32) -> f32 {
+        let frame = (RATE as f32 * ms / 1000.0) as usize;
+        samples[frame * 2]
+    }
+
+    fn peak_in(samples: &[f32], from_ms: f32, to_ms: f32) -> f32 {
+        let a = (RATE as f32 * from_ms / 1000.0) as usize;
+        let b = (RATE as f32 * to_ms / 1000.0) as usize;
+        samples[a * 2..b * 2]
+            .iter()
+            .step_by(2)
+            .map(|v| v.abs())
+            .fold(0.0f32, f32::max)
+    }
+
+    #[test]
+    fn delay_produces_echoes_at_configured_time() {
+        // Issue #93: インパルス → 200ms ごとに mix、mix×feedback と
+        // 減衰するエコーが立つ。ドライは原音のまま残る。
+        let mut out = impulse(1.0);
+        process_chain(
+            &[EffectSlot {
+                effect: TrackEffect::Delay {
+                    time_ms: 200,
+                    feedback: 0.5,
+                    mix: 0.5,
+                },
+                bypassed: false,
+            }],
+            &mut out,
+            RATE,
+        );
+        assert_eq!(at(&out, 0.0), 1.0, "ドライのインパルスはそのまま");
+        assert_eq!(at(&out, 100.0), 0.0, "エコー前は無音");
+        assert!(
+            (at(&out, 200.0) - 0.5).abs() < 0.02,
+            "1回目: {}",
+            at(&out, 200.0)
+        );
+        assert!(
+            (at(&out, 400.0) - 0.25).abs() < 0.02,
+            "2回目: {}",
+            at(&out, 400.0)
+        );
+        assert!(
+            (at(&out, 600.0) - 0.125).abs() < 0.02,
+            "3回目: {}",
+            at(&out, 600.0)
+        );
+    }
+
+    #[test]
+    fn delay_zero_mix_and_bypass_leave_input_untouched() {
+        let input = impulse(0.5);
+        let mut out = input.clone();
+        process_chain(
+            &[EffectSlot {
+                effect: TrackEffect::Delay {
+                    time_ms: 200,
+                    feedback: 0.5,
+                    mix: 0.0,
+                },
+                bypassed: false,
+            }],
+            &mut out,
+            RATE,
+        );
+        assert_eq!(input, out, "mix 0 ではエコーが混ざらない");
+        process_chain(
+            &[EffectSlot {
+                effect: TrackEffect::Delay {
+                    time_ms: 200,
+                    feedback: 0.5,
+                    mix: 0.5,
+                },
+                bypassed: true,
+            }],
+            &mut out,
+            RATE,
+        );
+        assert_eq!(input, out, "バイパスでは素通り");
+    }
+
+    #[test]
+    fn reverb_extends_impulse_tail() {
+        // Issue #93: decay 0.8 では 1 秒付近でも残響が -60dB を
+        // 上回り、decay が小さい場合より尾が長い。決定的である。
+        let run = |decay: f32| {
+            let mut out = impulse(2.0);
+            process_chain(
+                &[EffectSlot {
+                    effect: TrackEffect::Reverb { decay, mix: 1.0 },
+                    bypassed: false,
+                }],
+                &mut out,
+                RATE,
+            );
+            out
+        };
+        let wet = run(0.8);
+        let tail = peak_in(&wet, 900.0, 1_000.0);
+        assert!(tail > 0.001, "1秒付近の残響が -60dB を上回る: peak {tail}");
+        let short = run(0.2);
+        let short_tail = peak_in(&short, 900.0, 1_000.0);
+        assert!(
+            short_tail < tail,
+            "decay が小さい方が尾が短い: {short_tail} vs {tail}"
+        );
+        // ドライ（インパルスそのもの）は 500ms 以降無音
+        let dry = impulse(2.0);
+        assert_eq!(peak_in(&dry, 500.0, 1_000.0), 0.0);
+        // 決定的: 同じ入力には同じ出力
+        assert_eq!(wet, run(0.8));
+    }
+
+    #[test]
+    fn chain_composes_eq_into_delay_echoes() {
+        // Issue #93（順序の構成測定）: [EQ → Delay] ではエコー位置に
+        // EQ のインパルス応答が mix 倍で現れる。
+        let eq = TrackEffect::Eq3 {
+            low_gain_db: 12.0,
+            mid_gain_db: 0.0,
+            high_gain_db: 0.0,
+        };
+        let delay = TrackEffect::Delay {
+            time_ms: 200,
+            feedback: 0.0,
+            mix: 0.5,
+        };
+        let mut eq_only = impulse(0.5);
+        process_chain(
+            &[EffectSlot {
+                effect: eq,
+                bypassed: false,
+            }],
+            &mut eq_only,
+            RATE,
+        );
+        let eq_peak = peak_in(&eq_only, 0.0, 20.0);
+        let mut chained = impulse(0.5);
+        process_chain(
+            &[
+                EffectSlot {
+                    effect: eq,
+                    bypassed: false,
+                },
+                EffectSlot {
+                    effect: delay,
+                    bypassed: false,
+                },
+            ],
+            &mut chained,
+            RATE,
+        );
+        let echo_peak = peak_in(&chained, 195.0, 215.0);
+        assert!(
+            (echo_peak - 0.5 * eq_peak).abs() <= 0.25 * eq_peak,
+            "エコーは EQ 応答の mix 倍: echo {echo_peak}, eq {eq_peak}"
+        );
+        // チェーン出力は Delay 単体（EQ なし）とも異なる
+        let mut delay_only = impulse(0.5);
+        process_chain(
+            &[EffectSlot {
+                effect: delay,
+                bypassed: false,
+            }],
+            &mut delay_only,
+            RATE,
+        );
+        assert_ne!(chained, delay_only);
     }
 
     #[test]
