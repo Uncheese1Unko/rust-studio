@@ -8,6 +8,9 @@
 //! 読み取りも studio-scripts の共有実装に委ね、ラッパー側に
 //! ロジックを複製しない（Issue #82）。
 
+// ツール定義の json! が大きいため再帰上限を上げる（Issue #92）。
+#![recursion_limit = "256"]
+
 use std::io::{BufRead, Write};
 use std::sync::Mutex;
 
@@ -271,7 +274,7 @@ fn error_response(id: Value, code: i64, message: &str) -> String {
     .unwrap()
 }
 
-/// tools/list で公開する定義。コマンド26種＋MIDI 取り込み＋状態ダンプ取得＋スクリプト一覧＋undo/redo。
+/// tools/list で公開する定義。コマンド群（エフェクト5種を含む）＋MIDI 取り込み＋状態ダンプ取得＋スクリプト一覧＋undo/redo。
 fn tool_definitions() -> Value {
     let id_prop = |desc: &str| json!({"type": "integer", "description": desc});
     json!([
@@ -409,6 +412,75 @@ fn tool_definitions() -> Value {
                     },
                 },
                 "required": ["track_id"],
+            },
+        },
+        {
+            "name": "add_track_effect",
+            "description": "トラックのエフェクトチェーン末尾にエフェクトを追加する。戻り値は追加されたスロットの位置",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "effect": {
+                        "type": "object",
+                        "description": "エフェクト。リバーブは {\"type\": \"reverb\", \"decay\": 0.5（0..=1）, \"mix\": 0.3（0..=1）}、ディレイは {\"type\": \"delay\", \"time_ms\": 250（1..=2000）, \"feedback\": 0.3（0..=0.9）, \"mix\": 0.3（0..=1）}、3バンドEQは {\"type\": \"eq3\", \"low_gain_db\": 0.0, \"mid_gain_db\": 0.0, \"high_gain_db\": 0.0}（各 -24..=24 dB、帯域は 200Hz/1kHz/4kHz 固定）",
+                    },
+                },
+                "required": ["track_id", "effect"],
+            },
+        },
+        {
+            "name": "remove_track_effect",
+            "description": "トラックのエフェクトスロットを1つ削除する",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "index": {"type": "integer", "description": "エフェクトスロットの位置（0 始まり）"},
+                },
+                "required": ["track_id", "index"],
+            },
+        },
+        {
+            "name": "move_track_effect",
+            "description": "トラックのエフェクトスロットを並べ替える（from_index を取り出して to_index へ挿入）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "from_index": {"type": "integer", "description": "移動元の位置（0 始まり）"},
+                    "to_index": {"type": "integer", "description": "移動先の位置（0 始まり）"},
+                },
+                "required": ["track_id", "from_index", "to_index"],
+            },
+        },
+        {
+            "name": "set_track_effect",
+            "description": "トラックのエフェクトスロットの中身を差し替える（パラメータ変更・種類変更。バイパス状態は保たれる）",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "index": {"type": "integer", "description": "エフェクトスロットの位置（0 始まり）"},
+                    "effect": {
+                        "type": "object",
+                        "description": "エフェクト（add_track_effect と同じ形式）",
+                    },
+                },
+                "required": ["track_id", "index", "effect"],
+            },
+        },
+        {
+            "name": "set_track_effect_bypass",
+            "description": "トラックのエフェクトスロットのバイパスを設定する",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": id_prop("トラック ID"),
+                    "index": {"type": "integer", "description": "エフェクトスロットの位置（0 始まり）"},
+                    "bypassed": {"type": "boolean", "description": "true でバイパス（読み飛ばし）"},
+                },
+                "required": ["track_id", "index", "bypassed"],
             },
         },
         {

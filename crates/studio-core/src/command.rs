@@ -7,7 +7,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Clip, ColorTag, Instrument, Note, Project, ScriptEffect, Track, TrackKind, TransitionKind,
+    Clip, ColorTag, EffectSlot, Instrument, Note, Project, ScriptEffect, Track, TrackEffect,
+    TrackKind, TransitionKind,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -197,6 +198,41 @@ pub enum Command {
         clip_id: u64,
         note_index: usize,
     },
+    /// トラックのエフェクトチェーン末尾にエフェクトを追加する
+    /// （Issue #92、ADR-0023）。戻り値は追加されたスロットの
+    /// インデックス。バイパスは false で始まる。
+    AddTrackEffect {
+        track_id: u64,
+        effect: TrackEffect,
+    },
+    /// エフェクトスロットを1つ削除する（Issue #92）。後ろの
+    /// スロットは前に詰まる。
+    RemoveTrackEffect {
+        track_id: u64,
+        index: usize,
+    },
+    /// エフェクトスロットを並べ替える（Issue #92）。
+    /// `from_index` のスロットを取り出し、`to_index` の位置へ
+    /// 挿入する（除去後の列に対する挿入位置）。同位置は無害。
+    MoveTrackEffect {
+        track_id: u64,
+        from_index: usize,
+        to_index: usize,
+    },
+    /// エフェクトスロットの中身を差し替える（Issue #92）。
+    /// パラメータ変更と種類の変更の両方をこのコマンドで表す。
+    /// バイパス状態は保たれる。
+    SetTrackEffect {
+        track_id: u64,
+        index: usize,
+        effect: TrackEffect,
+    },
+    /// エフェクトスロットのバイパスを設定する（Issue #92）。
+    SetTrackEffectBypass {
+        track_id: u64,
+        index: usize,
+        bypassed: bool,
+    },
     /// テスト専用（Issue #61）：状態を変更してから失敗するコマンド。
     /// 実コマンドは全て「検証 → 変更」の順で失敗時に状態を変えないため、
     /// `History::apply_transient` の失敗時復元を再現するにはこの
@@ -257,6 +293,40 @@ fn validate_instrument(instrument: &Instrument) -> Result<(), CommandError> {
     Ok(())
 }
 
+/// エフェクトパラメータの不変条件（Issue #92、ADR-0023）。
+/// 非有限値は JSON で化けてプロジェクト全体を再読込不能に
+/// するため、範囲と合わせて弾く（BPM・ピッチの前例どおり）。
+fn validate_effect(effect: &TrackEffect) -> Result<(), CommandError> {
+    let invalid = || CommandError::InvalidRange("effect parameter out of range");
+    let unit = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
+    let ok = match effect {
+        TrackEffect::Reverb { decay, mix } => unit(*decay) && unit(*mix),
+        TrackEffect::Delay {
+            time_ms,
+            feedback,
+            mix,
+        } => {
+            (1..=2000).contains(time_ms)
+                && feedback.is_finite()
+                && (0.0..=0.9).contains(feedback)
+                && unit(*mix)
+        }
+        TrackEffect::Eq3 {
+            low_gain_db,
+            mid_gain_db,
+            high_gain_db,
+        } => {
+            let gain = |g: &f32| g.is_finite() && (-24.0..=24.0).contains(g);
+            gain(low_gain_db) && gain(mid_gain_db) && gain(high_gain_db)
+        }
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(invalid())
+    }
+}
+
 /// 音色名の不変条件（Issue #73）: 空白のみの名前は付けられない。
 fn validate_tone_name(name: &str) -> Result<(), CommandError> {
     if name.trim().is_empty() {
@@ -290,6 +360,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 solo: false,
                 instrument: None,
                 tone_id: None,
+                effects: Vec::new(),
             });
             Ok(Some(id))
         }
@@ -930,6 +1001,73 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
             clip.notes.remove(*note_index);
             Ok(None)
         }
+        Command::AddTrackEffect { track_id, effect } => {
+            validate_effect(effect)?;
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            track.effects.push(EffectSlot {
+                effect: *effect,
+                bypassed: false,
+            });
+            Ok(Some((track.effects.len() - 1) as u64))
+        }
+        Command::RemoveTrackEffect { track_id, index } => {
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            if *index >= track.effects.len() {
+                return Err(CommandError::InvalidRange("effect index out of range"));
+            }
+            track.effects.remove(*index);
+            Ok(None)
+        }
+        Command::MoveTrackEffect {
+            track_id,
+            from_index,
+            to_index,
+        } => {
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            if *from_index >= track.effects.len() || *to_index >= track.effects.len() {
+                return Err(CommandError::InvalidRange("effect index out of range"));
+            }
+            let slot = track.effects.remove(*from_index);
+            track.effects.insert(*to_index, slot);
+            Ok(None)
+        }
+        Command::SetTrackEffect {
+            track_id,
+            index,
+            effect,
+        } => {
+            validate_effect(effect)?;
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            let slot = track
+                .effects
+                .get_mut(*index)
+                .ok_or(CommandError::InvalidRange("effect index out of range"))?;
+            slot.effect = *effect;
+            Ok(None)
+        }
+        Command::SetTrackEffectBypass {
+            track_id,
+            index,
+            bypassed,
+        } => {
+            let track = project
+                .track_mut(*track_id)
+                .ok_or(CommandError::TrackNotFound(*track_id))?;
+            let slot = track
+                .effects
+                .get_mut(*index)
+                .ok_or(CommandError::InvalidRange("effect index out of range"))?;
+            slot.bypassed = *bypassed;
+            Ok(None)
+        }
         // テスト専用（Issue #61）：トラックを追加（id も消費）してから
         // 失敗する。「変更してから失敗する」コマンドの再現。
         #[cfg(test)]
@@ -947,6 +1085,7 @@ pub fn apply(project: &mut Project, command: &Command) -> Result<Option<u64>, Co
                 solo: false,
                 instrument: None,
                 tone_id: None,
+                effects: Vec::new(),
             });
             Err(CommandError::InvalidRange("mutate then fail (test only)"))
         }

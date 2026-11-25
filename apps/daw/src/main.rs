@@ -13,6 +13,7 @@
 
 mod audio;
 mod edit;
+mod effects;
 mod mixer;
 mod palette;
 mod pianoroll;

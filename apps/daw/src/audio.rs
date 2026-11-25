@@ -169,23 +169,29 @@ pub fn render_mix(
         .iter()
         .map(|t| project.effective_instrument(t))
         .collect();
-    for (i, frame) in out.chunks_mut(2).enumerate() {
-        // 時刻は f64 で持つ。整数ミリ秒に丸めると1ms ごとに波形が階段状に
-        // なり、音程が壊れる（Issue #13 のテストで検出）。
-        let t_ms = start_ms as f64 + i as f64 * 1000.0 / out_rate as f64;
-        for (track_index, track) in project.tracks.iter().enumerate() {
-            if track.kind != studio_core::TrackKind::Audio {
-                continue;
-            }
-            if !is_track_audible(track, any_solo) {
-                continue;
-            }
-            // トラック音量とパン（Issue #15）。パンはバランス方式:
-            // 中央では左右とも等倍、端では反対側が 0 になる。
-            let channel_factor = [
-                track.volume * (1.0 - track.pan.max(0.0)),
-                track.volume * (1.0 + track.pan.min(0.0)),
-            ];
+    // トラック単位の処理（Issue #92、ADR-0023）: トラックごとに
+    // ドライ信号をバッファへ描き、エフェクトチェーンを通してから、
+    // トラック音量・パンを掛けて本ミックスへ合算する。音量・パンは
+    // エフェクトの後段（ポストフェーダー）。チェーンが空のトラック
+    // は従来と同一の結果になる。
+    for (track_index, track) in project.tracks.iter().enumerate() {
+        if track.kind != studio_core::TrackKind::Audio {
+            continue;
+        }
+        if !is_track_audible(track, any_solo) {
+            continue;
+        }
+        // トラック音量とパン（Issue #15）。パンはバランス方式:
+        // 中央では左右とも等倍、端では反対側が 0 になる。
+        let channel_factor = [
+            track.volume * (1.0 - track.pan.max(0.0)),
+            track.volume * (1.0 + track.pan.min(0.0)),
+        ];
+        let mut track_buf = vec![0.0f32; frames * 2];
+        for (i, frame) in track_buf.chunks_mut(2).enumerate() {
+            // 時刻は f64 で持つ。整数ミリ秒に丸めると1ms ごとに波形が階段状に
+            // なり、音程が壊れる（Issue #13 のテストで検出）。
+            let t_ms = start_ms as f64 + i as f64 * 1000.0 / out_rate as f64;
             for clip in &track.clips {
                 if t_ms < clip.start_ms as f64 || t_ms >= (clip.start_ms + clip.duration_ms) as f64
                 {
@@ -223,7 +229,7 @@ pub fn render_mix(
                                         .get((i0 + 1) * ch + src_ch)
                                         .copied()
                                         .unwrap_or(0.0);
-                                    *slot += (a + (b - a) * frac) * gain * channel_factor[out_ch];
+                                    *slot += (a + (b - a) * frac) * gain;
                                 }
                             }
                         }
@@ -252,8 +258,8 @@ pub fn render_mix(
                             let gain = clip.gain
                                 * (note.velocity as f32 / 127.0)
                                 * fade_envelope(clip, t_ms - clip.start_ms as f64);
-                            for (out_ch, slot) in frame.iter_mut().enumerate() {
-                                *slot += value * gain * channel_factor[out_ch];
+                            for slot in frame.iter_mut() {
+                                *slot += value * gain;
                             }
                         }
                         continue;
@@ -311,7 +317,7 @@ pub fn render_mix(
                                 .get((i0 + 1) * ch + src_ch)
                                 .copied()
                                 .unwrap_or(0.0);
-                            *slot += (a + (b - a) * frac) * note_gain * channel_factor[out_ch];
+                            *slot += (a + (b - a) * frac) * note_gain;
                         }
                     }
                     continue;
@@ -352,18 +358,23 @@ pub fn render_mix(
                         .unwrap_or(0.0);
                     *slot += (a + (b - a) * frac)
                         * clip.gain
-                        * fade_envelope(clip, t_ms - clip.start_ms as f64)
-                        * channel_factor[out_ch];
+                        * fade_envelope(clip, t_ms - clip.start_ms as f64);
                 }
             }
         }
-        for slot in frame.iter_mut() {
-            *slot = slot.clamp(-1.0, 1.0);
+        // エフェクトチェーン（スロット順、バイパスは読み飛ばし）。
+        crate::effects::process_chain(&track.effects, &mut track_buf, out_rate);
+        // 音量・パンを掛けて本ミックスへ合算する。
+        for (dst, src) in out.chunks_mut(2).zip(track_buf.chunks(2)) {
+            dst[0] += src[0] * channel_factor[0];
+            dst[1] += src[1] * channel_factor[1];
         }
+    }
+    for slot in out.iter_mut() {
+        *slot = slot.clamp(-1.0, 1.0);
     }
     out
 }
-
 /// サンプル列のピーク（絶対値の最大、Issue #27）。レベルメーターの
 /// 入力で、読み取り専用（音声処理そのものには手を入れない）。
 /// メトロノームのクリックの振幅（固定、Issue #36）。
@@ -2012,6 +2023,213 @@ mod midi_import_tests {
             segmented_goertzel(&first, back.sample_rate, 261.63) > 0.05,
             "first note (C4) must be in the export"
         );
+    }
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use super::tests::*;
+    use super::*;
+    use studio_core::{apply, Command, TrackEffect, TrackKind};
+
+    // ---- トラックエフェクト（Issue #92、EPIC #91） ----
+
+    /// 任意の周波数の正弦波クリップを持つ1トラックのプロジェクト。
+    fn project_with_sine(freq: f32, amp: f32) -> (Project, HashMap<String, ClipAudio>, u64) {
+        let mut p = Project::new("fx test");
+        let track_id = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A1".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id,
+                name: "sine".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: "s.wav".into(),
+            },
+        )
+        .unwrap();
+        let mut audio = HashMap::new();
+        audio.insert("s.wav".to_string(), sine(freq, 2_000, amp));
+        (p, audio, track_id)
+    }
+
+    fn band_gain_db(dry: &[f32], wet: &[f32], from_ms: i64, to_ms: i64) -> f32 {
+        let dry_rms = rms(&window(dry, 2, from_ms, to_ms, RATE));
+        let wet_rms = rms(&window(wet, 2, from_ms, to_ms, RATE));
+        20.0 * (wet_rms / dry_rms).log10()
+    }
+
+    #[test]
+    fn render_mix_empty_and_bypassed_chain_matches_dry() {
+        // チェーン空はもちろん、全スロットバイパスでも従来と
+        // サンプル単位で同一になる（EPIC #91 の完了条件）。
+        let (mut p, audio, track_id) = project_with_sine(440.0, 0.3);
+        let dry = render_mix(&p, &audio, 0, 2_000, RATE);
+        apply(
+            &mut p,
+            &Command::AddTrackEffect {
+                track_id,
+                effect: TrackEffect::Eq3 {
+                    low_gain_db: 12.0,
+                    mid_gain_db: -12.0,
+                    high_gain_db: 12.0,
+                },
+            },
+        )
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::SetTrackEffectBypass {
+                track_id,
+                index: 0,
+                bypassed: true,
+            },
+        )
+        .unwrap();
+        let bypassed = render_mix(&p, &audio, 0, 2_000, RATE);
+        assert_eq!(dry, bypassed, "バイパス時はドライと完全一致する");
+    }
+
+    #[test]
+    fn render_mix_zero_db_eq_matches_dry() {
+        // 全帯域 0dB の EQ は恒等変換（浮動小数点誤差の範囲）。
+        let (mut p, audio, track_id) = project_with_sine(440.0, 0.3);
+        let dry = render_mix(&p, &audio, 0, 2_000, RATE);
+        apply(
+            &mut p,
+            &Command::AddTrackEffect {
+                track_id,
+                effect: TrackEffect::default_eq3(),
+            },
+        )
+        .unwrap();
+        let wet = render_mix(&p, &audio, 0, 2_000, RATE);
+        assert_eq!(dry.len(), wet.len());
+        for (a, b) in dry.iter().zip(wet.iter()) {
+            assert!((a - b).abs() < 1e-4, "0dB EQ は音を変えない: {a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn eq3_bands_change_gain_by_configured_db() {
+        // 代表周波数で帯域ゲインを測る: ローシェルフ（200Hz）の
+        // 代表は十分に低い 50Hz、ピーキングは中心 1kHz そのもの、
+        // ハイシェルフ（4kHz）の代表は十分に高い 10kHz。
+        for (freq, amp, effect, expected_db) in [
+            (
+                50.0f32,
+                0.1f32,
+                TrackEffect::Eq3 {
+                    low_gain_db: 12.0,
+                    mid_gain_db: 0.0,
+                    high_gain_db: 0.0,
+                },
+                12.0f32,
+            ),
+            (
+                1_000.0,
+                0.4,
+                TrackEffect::Eq3 {
+                    low_gain_db: 0.0,
+                    mid_gain_db: -12.0,
+                    high_gain_db: 0.0,
+                },
+                -12.0,
+            ),
+            (
+                10_000.0,
+                0.1,
+                TrackEffect::Eq3 {
+                    low_gain_db: 0.0,
+                    mid_gain_db: 0.0,
+                    high_gain_db: 12.0,
+                },
+                12.0,
+            ),
+        ] {
+            let (mut p, audio, track_id) = project_with_sine(freq, amp);
+            let dry = render_mix(&p, &audio, 0, 2_000, RATE);
+            apply(&mut p, &Command::AddTrackEffect { track_id, effect }).unwrap();
+            let wet = render_mix(&p, &audio, 0, 2_000, RATE);
+            // フィルタの過渡を避けて後半で測る
+            let gain = band_gain_db(&dry, &wet, 1_000, 2_000);
+            assert!(
+                (gain - expected_db).abs() <= 1.5,
+                "{freq}Hz: expected {expected_db} dB, measured {gain:.2} dB"
+            );
+        }
+    }
+
+    #[test]
+    fn render_mix_applies_effects_only_to_their_track() {
+        // エフェクトは自分のトラックにだけ効く（組み替えで
+        // トラック間の混線が無いこと）。
+        let (mut p, mut audio, track_id) = project_with_sine(50.0, 0.1);
+        let other = apply(
+            &mut p,
+            &Command::AddTrack {
+                name: "A2".into(),
+                kind: TrackKind::Audio,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        apply(
+            &mut p,
+            &Command::AddClip {
+                track_id: other,
+                name: "sine2".into(),
+                start_ms: 0,
+                duration_ms: 2_000,
+                source: "s2.wav".into(),
+            },
+        )
+        .unwrap();
+        audio.insert("s2.wav".to_string(), sine(50.0, 2_000, 0.1));
+        let dry = render_mix(&p, &audio, 0, 2_000, RATE);
+        apply(
+            &mut p,
+            &Command::AddTrackEffect {
+                track_id,
+                effect: TrackEffect::Eq3 {
+                    low_gain_db: 12.0,
+                    mid_gain_db: 0.0,
+                    high_gain_db: 0.0,
+                },
+            },
+        )
+        .unwrap();
+        let wet = render_mix(&p, &audio, 0, 2_000, RATE);
+        // 2トラック同位相の合算: 片方だけ +12dB（×3.98）になるので
+        // 全体は (3.98+1)/2 = 2.49 倍 ≒ +7.9dB になる。
+        let gain = band_gain_db(&dry, &wet, 1_000, 2_000);
+        assert!(
+            (gain - 7.9).abs() <= 1.0,
+            "片トラックだけ効くはず: measured {gain:.2} dB"
+        );
+    }
+
+    #[test]
+    fn reverb_and_delay_slots_pass_through_in_foundation_pbi() {
+        // Issue #92 の時点では Reverb / Delay の DSP は素通り
+        // （DSP は Issue #93）。素通りであることをここで固定し、
+        // #93 でこのテストを「効く」側へ書き換える。
+        let (mut p, audio, track_id) = project_with_sine(440.0, 0.3);
+        let dry = render_mix(&p, &audio, 0, 2_000, RATE);
+        for effect in [TrackEffect::default_reverb(), TrackEffect::default_delay()] {
+            apply(&mut p, &Command::AddTrackEffect { track_id, effect }).unwrap();
+        }
+        let wet = render_mix(&p, &audio, 0, 2_000, RATE);
+        assert_eq!(dry, wet, "#92 では時間系は素通り");
     }
 }
 

@@ -227,6 +227,83 @@ impl Clip {
     }
 }
 
+/// トラックエフェクトの種類（Issue #92、ADR-0023）。パラメータの
+/// 範囲はコマンド層が検証する（`command::validate_effect`）。
+/// DSP の実体はアプリ側（DAW の `effects` モジュール）が持ち、
+/// コアはパラメータだけを持つ（アーキテクチャルール: 重い処理は
+/// コアに入れない）。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TrackEffect {
+    /// リバーブ。`decay` は残響の長さ（0.0..=1.0）、`mix` は
+    /// ウェットの混合比（0.0..=1.0、ドライは原音を保つ）。
+    Reverb { decay: f32, mix: f32 },
+    /// フィードバックディレイ。`time_ms` は遅延時間
+    /// （1..=2000）、`feedback` は反復の減衰（0.0..=0.9）、
+    /// `mix` はエコーの混合比（0.0..=1.0）。
+    Delay {
+        time_ms: i64,
+        feedback: f32,
+        mix: f32,
+    },
+    /// 3バンドEQ。各ゲインは dB（-24.0..=24.0）。帯域は
+    /// ローシェルフ 200Hz／ピーキング 1kHz／ハイシェルフ 4kHz
+    /// で固定（アプリ側 DSP の定義）。
+    Eq3 {
+        low_gain_db: f32,
+        mid_gain_db: f32,
+        high_gain_db: f32,
+    },
+}
+
+impl TrackEffect {
+    /// GUI の追加ボタン等で使う既定のリバーブ（中庸な響き）。
+    pub fn default_reverb() -> Self {
+        TrackEffect::Reverb {
+            decay: 0.5,
+            mix: 0.3,
+        }
+    }
+
+    /// 既定のディレイ（8分音符相当の反響を薄く）。
+    pub fn default_delay() -> Self {
+        TrackEffect::Delay {
+            time_ms: 250,
+            feedback: 0.3,
+            mix: 0.3,
+        }
+    }
+
+    /// 既定の EQ（全帯域 0dB ＝ 音が変わらない）。
+    pub fn default_eq3() -> Self {
+        TrackEffect::Eq3 {
+            low_gain_db: 0.0,
+            mid_gain_db: 0.0,
+            high_gain_db: 0.0,
+        }
+    }
+
+    /// 表示用の短い名前（JSON の type タグと同じ）。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TrackEffect::Reverb { .. } => "reverb",
+            TrackEffect::Delay { .. } => "delay",
+            TrackEffect::Eq3 { .. } => "eq3",
+        }
+    }
+}
+
+/// エフェクトチェーンの1スロット（Issue #92、ADR-0023）。
+/// バイパスはエフェクトの値とは別の状態として持つ（パラメータを
+/// 差し替えてもバイパスは保たれる）。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EffectSlot {
+    pub effect: TrackEffect,
+    /// バイパス（処理を読み飛ばす。既定 false）。
+    #[serde(default)]
+    pub bypassed: bool,
+}
+
 fn default_track_volume() -> f32 {
     1.0
 }
@@ -264,6 +341,12 @@ pub struct Track {
     /// 旧形式の JSON では None。
     #[serde(default)]
     pub tone_id: Option<u64>,
+    /// エフェクトチェーン（Issue #92、ADR-0023）。スロット順に
+    /// 適用され、再生（render_mix）と書き出しの両方に効く。
+    /// 空 = エフェクトなし（従来と同一の音）。旧形式の JSON
+    /// では空。
+    #[serde(default)]
+    pub effects: Vec<EffectSlot>,
 }
 
 /// 名前付きの音色（Issue #73、ADR-0018）。プロジェクト内に
