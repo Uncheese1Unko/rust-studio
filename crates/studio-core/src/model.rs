@@ -70,6 +70,30 @@ pub enum PluginFormat {
     Clap,
 }
 
+/// 組み込みシンセの波形（Issue #89、ADR-0022）。外部素材を持たず、
+/// ノートの音高から波形を手続き的に生成して鳴らす楽器
+/// （[`Instrument::Synth`]）の波形を選ぶ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SynthWaveform {
+    Sine,
+    Triangle,
+    Square,
+    Sawtooth,
+}
+
+impl SynthWaveform {
+    /// JSON 表記と同じ短い名前（表示用）。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SynthWaveform::Sine => "sine",
+            SynthWaveform::Triangle => "triangle",
+            SynthWaveform::Square => "square",
+            SynthWaveform::Sawtooth => "sawtooth",
+        }
+    }
+}
+
 /// 音色（楽器）（Issue #68、ADR-0016）。トラック単位で参照する。
 /// サンプラーと、外部プラグイン（Issue #72、ADR-0017 の
 /// ヘッドレス CLAP ホスティング＋プリセット JSON 注入）。
@@ -92,6 +116,25 @@ pub enum Instrument {
         /// None はプラグインの既定状態で鳴らす。
         preset_path: Option<String>,
     },
+    /// 組み込みシンセ（Issue #89、ADR-0022）。外部素材を持たず、
+    /// ノートの音高から波形を手続き的に生成して鳴らす。MIDI
+    /// 取り込み時の既定楽器として割り当てられ、利用者は後から
+    /// サンプラーやプラグインへ差し替えられる。
+    Synth {
+        /// 波形の種類。
+        waveform: SynthWaveform,
+    },
+}
+
+impl Instrument {
+    /// MIDI 取り込み時の既定楽器（Issue #89、ADR-0022）。
+    /// 取り込んだトラックが追加操作なしで鳴るための組み込み
+    /// シンセ。波形は、倍音が少なく音高が分かりやすい三角波。
+    pub fn default_synth() -> Self {
+        Instrument::Synth {
+            waveform: SynthWaveform::Triangle,
+        }
+    }
 }
 
 /// スクリプトエフェクトのパラメータ値（Issue #81）。JSON では

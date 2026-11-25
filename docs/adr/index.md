@@ -26,3 +26,4 @@ supersede する。ルールは `.claude/rules/documentation.md`。
 | 0019 | AviUtl 拡張互換の範囲は「ExEdit Lua スクリプトエフェクト互換に絞る（方式 A）」とする | 採用 |
 | 0020 | Lua 基盤とスクリプトカタログは共有クレート `studio-scripts` に置く | 採用 |
 | 0021 | `obj.effect` の初期セットは「色調補正・単色化・ぼかし・色反転」とする | 採用 |
+| 0022 | MIDI 取り込みの既定楽器として組み込みシンセ（Instrument::Synth）を割り当てる | 採用 |

@@ -14,6 +14,13 @@
 //! の bpm には先頭のテンポを入れる（SetBpm の範囲外なら入れない。
 //! 変換自体はテンポマップで正確に行う）。SMPTE division は
 //! エラーとして扱う（スコープ外）。
+//!
+//! 取り込んだトラックには既定の楽器（組み込みシンセ、
+//! [`Instrument::default_synth`]）を `SetTrackInstrument` で
+//! 割り当てる（Issue #89、ADR-0022）。楽器のないノートクリップは
+//! 鳴らないため、割り当てが無いと「読み込んでも無音」になる。
+//! 割り当ては取り込みのコマンド列の一部なので、Undo 1回で
+//! 割り当てごと取り込み前に戻る。
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -22,7 +29,7 @@ use midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 
 use crate::command::{apply, Command, CommandError};
 use crate::history::History;
-use crate::model::{Note, TrackKind};
+use crate::model::{Instrument, Note, TrackKind};
 
 /// 変換結果: 取り込むトラック列と、プロジェクトへ反映する bpm。
 #[derive(Debug, Clone, PartialEq)]
@@ -280,6 +287,12 @@ where
             kind: TrackKind::Audio,
         })?
         .ok_or(CommandError::InvalidRange("add_track returned no id"))?;
+        // 取り込んだトラックは追加操作なしで鳴るよう、既定の
+        // 楽器（組み込みシンセ）を割り当てる（Issue #89）。
+        apply_fn(&Command::SetTrackInstrument {
+            track_id,
+            instrument: Some(Instrument::default_synth()),
+        })?;
         let clip_id = apply_fn(&Command::AddClip {
             track_id,
             name: track.name.clone(),

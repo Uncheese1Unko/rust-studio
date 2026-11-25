@@ -2,7 +2,7 @@
 //! 検証用 SMF はバイト列を組み立てて作る（外部ファイルに依存しない）。
 
 use studio_core::midi_import::{import_midi, parse_midi, MidiImportError};
-use studio_core::{History, Project};
+use studio_core::{History, Instrument, Project, SynthWaveform};
 
 fn vlq(mut n: u32) -> Vec<u8> {
     let mut buf = vec![(n & 0x7f) as u8];
@@ -513,4 +513,60 @@ fn format1_with_multiple_note_tracks_imports_each() {
     let import = parse_midi(&bytes).unwrap();
     let names: Vec<&str> = import.tracks.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, vec!["A", "B"]);
+}
+
+#[test]
+fn import_midi_assigns_a_default_instrument_to_each_track() {
+    // Issue #89: 取り込んだトラックには既定の楽器（組み込みシンセ）が
+    // 割り当てられ、状態ダンプにも現れる。割り当ては取り込みの
+    // コマンド列の一部なので、Undo 1回で割り当てごと取り込み前に
+    // 戻る。利用者が後から差し替えることは妨げない（実効楽器は
+    // 割り当て直後は既定シンセ、差し替え後は差し替え先になる）。
+    let bytes = smf(
+        1,
+        480,
+        vec![
+            track(vec![tempo(0, 500_000), end_of_track(0)]),
+            track(vec![
+                track_name(0, "A"),
+                note_on(0, 0, 60, 100),
+                note_off(480, 0, 60),
+                end_of_track(0),
+            ]),
+            track(vec![
+                track_name(0, "B"),
+                note_on(0, 0, 48, 90),
+                note_off(240, 0, 48),
+                end_of_track(0),
+            ]),
+        ],
+    );
+    let mut history = History::new(Project::new("t"));
+    import_midi(&mut history, &bytes).unwrap();
+    let project = history.project();
+    assert_eq!(project.tracks.len(), 2);
+    for track in &project.tracks {
+        assert_eq!(
+            track.instrument,
+            Some(Instrument::Synth {
+                waveform: SynthWaveform::Triangle,
+            }),
+            "track {} must carry the default synth",
+            track.name
+        );
+        assert_eq!(track.tone_id, None);
+        assert_eq!(project.effective_instrument(track), track.instrument);
+    }
+    let dump = project.dump_json();
+    assert!(
+        dump.contains("\"type\": \"synth\""),
+        "dump must show the assigned synth: {dump}"
+    );
+    assert!(
+        dump.contains("\"waveform\": \"triangle\""),
+        "dump must show the waveform: {dump}"
+    );
+    // Undo 1回で割り当てごと取り込み前に戻る
+    assert!(history.undo());
+    assert!(history.project().tracks.is_empty());
 }

@@ -1549,6 +1549,9 @@ fn apply_tone_click(model: &mut Model, hit: tones::ToneHit) {
                     .next()
                     .unwrap_or(plugin_path)
                     .to_string(),
+                studio_core::Instrument::Synth { waveform } => {
+                    format!("synth-{}", waveform.as_str())
+                }
             };
             let name = if base.trim().is_empty() {
                 format!("Tone {}", project.tones.len() + 1)
@@ -2201,6 +2204,9 @@ fn draw_piano_roll(draw: &Draw, win: Rect, model: &Model, roll: &pianoroll::Pian
                 }
                 None => format!("instrument: {base}"),
             }
+        }
+        Some(studio_core::Instrument::Synth { waveform }) => {
+            format!("instrument: synth ({})", waveform.as_str())
         }
         None => "instrument: (none)".to_string(),
     };

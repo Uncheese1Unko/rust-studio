@@ -1,0 +1,25 @@
+== CLI: import -> dump -> export -> measure ==
+midi imported: 2 tracks, 5 notes, bpm Some(150.0)
+dump: both tracks carry synth/triangle
+exported: /tmp/issue0089/out.wav
+frames=70560 rate=44100 ch=2 duration=1.60s peak=29490
+0-400ms   Lead A4 440.00: goertzel=0.1596 (x1.5 reference=0.0004)
+0-400ms   Bass A2 110.00: goertzel=0.1914 (x1.5 reference=0.0018)
+400-800ms Lead C5 523.25: goertzel=0.1757 (x1.5 reference=0.0006)
+800-1500ms Lead E5 659.25: goertzel=0.1435 (x1.5 reference=0.0002)
+800-1500ms Bass F2 87.31: goertzel=0.1914 (x1.5 reference=0.0022)
+MEASURE OK
+== MCP: replace Lead with a sampler still sounds ==
+set_track_instrument raw: {'id': 2, 'jsonrpc': '2.0', 'result': {'content': [{'text': '{"created_id":null,"ok":true,"persisted":true}', 'type': 'text'}], 'isError': False}}
+Lead instrument: {'type': 'sampler', 'source': '/tmp/issue0089/tone220.wav', 'root_note': 60}
+Bass instrument: {'type': 'synth', 'waveform': 'triangle'}
+MCP REPLACE OK
+exported: /tmp/issue0089/out2.wav
+peak: 21937
+0-400ms   sampler 369.99Hz: 0.0860 / synth 440Hz: 0.0008
+400-800ms sampler 440.00Hz: 0.0351 / synth 523.25Hz: 0.0002
+REPLACE MEASURE OK
+== GUI: open imported project, playback advances, piano roll header ==
+diff pixels: transport=2514 timeline=2307
+playback advancing OK
+DRIVE OK

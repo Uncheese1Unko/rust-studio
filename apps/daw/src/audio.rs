@@ -109,6 +109,45 @@ pub fn plugin_track_key(track_id: u64) -> String {
     format!("plugin://track/{track_id}")
 }
 
+/// 組み込みシンセの1サンプル（Issue #89、ADR-0022）。ノートの
+/// 絶対音高（MIDI ノート番号）から周波数を導き、波形を手続き的に
+/// 生成する純粋関数。エンベロープは 5ms のリニアアタックと
+/// ノート末尾 10ms のリニアリリースで、ノートの長さに収める
+/// （区切りでのクリックノイズ防止）。全体の振幅は 0.5 に抑え、
+/// 複数ノートの重なりでも極端にクリップしないようにする。
+pub fn synth_sample(
+    waveform: studio_core::SynthWaveform,
+    pitch: u8,
+    elapsed_ms: f64,
+    duration_ms: f64,
+) -> f32 {
+    use studio_core::SynthWaveform;
+    let freq = 440.0 * 2f64.powf((pitch as f64 - 69.0) / 12.0);
+    let phase = elapsed_ms / 1000.0 * freq;
+    let frac = phase.fract();
+    let raw = match waveform {
+        SynthWaveform::Sine => (2.0 * std::f64::consts::PI * phase).sin(),
+        SynthWaveform::Triangle => {
+            if frac < 0.5 {
+                4.0 * frac - 1.0
+            } else {
+                3.0 - 4.0 * frac
+            }
+        }
+        SynthWaveform::Square => {
+            if frac < 0.5 {
+                0.6
+            } else {
+                -0.6
+            }
+        }
+        SynthWaveform::Sawtooth => 2.0 * frac - 1.0,
+    };
+    let attack = (elapsed_ms / 5.0).min(1.0);
+    let release = ((duration_ms - elapsed_ms) / 10.0).clamp(0.0, 1.0);
+    (raw * attack * release * 0.5) as f32
+}
+
 pub fn render_mix(
     project: &Project,
     audio: &HashMap<String, ClipAudio>,
@@ -186,6 +225,35 @@ pub fn render_mix(
                                         .unwrap_or(0.0);
                                     *slot += (a + (b - a) * frac) * gain * channel_factor[out_ch];
                                 }
+                            }
+                        }
+                        continue;
+                    }
+                    if let Some(studio_core::Instrument::Synth { waveform }) =
+                        &effective[track_index]
+                    {
+                        // 組み込みシンセ（Issue #89、ADR-0022）:
+                        // 外部素材を持たず、ノートの音高から波形を
+                        // 手続き的に生成して発音する。ベロシティ・
+                        // クリップのゲインとフェードはサンプラーと
+                        // 同じに効く。
+                        for note in &clip.notes {
+                            let note_start = clip.start_ms as f64 + note.start_ms as f64;
+                            let note_end = note_start + note.duration_ms as f64;
+                            if t_ms < note_start || t_ms >= note_end {
+                                continue;
+                            }
+                            let value = synth_sample(
+                                *waveform,
+                                note.pitch,
+                                t_ms - note_start,
+                                note.duration_ms as f64,
+                            );
+                            let gain = clip.gain
+                                * (note.velocity as f32 / 127.0)
+                                * fade_envelope(clip, t_ms - clip.start_ms as f64);
+                            for (out_ch, slot) in frame.iter_mut().enumerate() {
+                                *slot += value * gain * channel_factor[out_ch];
                             }
                         }
                         continue;
@@ -1884,6 +1952,65 @@ mod midi_import_tests {
         assert!(
             segmented_goertzel(&second, RATE, 440.0) > 0.05,
             "note 72 sounds an octave up"
+        );
+    }
+
+    #[test]
+    fn imported_melody_plays_without_assigning_an_instrument() {
+        // Issue #89: 楽器を手で割り当てなくても、取り込み直後の
+        // プロジェクトが鳴る。test_smf は 120 BPM でノート 60
+        // （0–500ms）とノート 72（500–1000ms）。既定シンセは
+        // ノートの絶対音高で鳴る: 60 = C4 261.63Hz、72 = C5
+        // 523.25Hz。素材は一切要らない（音声マップは空）。
+        let mut history = History::new(Project::new("midi"));
+        import_midi(&mut history, &test_smf()).unwrap();
+        let project = history.project().clone();
+        let mix = render_mix(&project, &HashMap::new(), 0, 1_000, RATE);
+        let peak = mix.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(peak > 0.1, "imported project must not be silent: {peak}");
+        let first = window(&mix, 2, 100, 400, RATE);
+        assert!(
+            segmented_goertzel(&first, RATE, 261.63) > 0.05,
+            "note 60 sounds at C4"
+        );
+        let second = window(&mix, 2, 600, 900, RATE);
+        assert!(
+            segmented_goertzel(&second, RATE, 523.25) > 0.05,
+            "note 72 sounds at C5"
+        );
+        // ノートの無い区間は無音のまま（シンセが常時鳴るわけではない）
+        let mut history = History::new(Project::new("midi"));
+        import_midi(&mut history, &test_smf()).unwrap();
+        let project = history.project().clone();
+        let mix = render_mix(&project, &HashMap::new(), 1_000, 500, RATE);
+        assert!(
+            rms(&mix) < 1e-4,
+            "after the last note the mix must be silent"
+        );
+    }
+
+    #[test]
+    fn export_wav_of_imported_midi_is_not_silent() {
+        // Issue #89: 取り込み直後のプロジェクトの WAV 書き出しが
+        // 無音でなく、ノートの音高どおりの周波数を含む。
+        let mut history = History::new(Project::new("midi"));
+        import_midi(&mut history, &test_smf()).unwrap();
+        let project = history.project().clone();
+        let path = std::env::temp_dir().join(format!(
+            "daw-export-imported-midi-{}.wav",
+            std::process::id()
+        ));
+        export_wav(&project, &HashMap::new(), &path).unwrap();
+        let back = decode_audio(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            rms(&back.samples) > 0.05,
+            "export of an imported MIDI must not be silent"
+        );
+        let first = window(&back.samples, 2, 100, 400, back.sample_rate);
+        assert!(
+            segmented_goertzel(&first, back.sample_rate, 261.63) > 0.05,
+            "first note (C4) must be in the export"
         );
     }
 }
