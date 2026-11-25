@@ -2136,6 +2136,16 @@ mod effect_tests {
                 12.0f32,
             ),
             (
+                100.0,
+                0.1,
+                TrackEffect::Eq3 {
+                    low_gain_db: 12.0,
+                    mid_gain_db: 0.0,
+                    high_gain_db: 0.0,
+                },
+                12.0,
+            ),
+            (
                 1_000.0,
                 0.4,
                 TrackEffect::Eq3 {
@@ -2147,6 +2157,16 @@ mod effect_tests {
             ),
             (
                 10_000.0,
+                0.1,
+                TrackEffect::Eq3 {
+                    low_gain_db: 0.0,
+                    mid_gain_db: 0.0,
+                    high_gain_db: 12.0,
+                },
+                12.0,
+            ),
+            (
+                8_000.0,
                 0.1,
                 TrackEffect::Eq3 {
                     low_gain_db: 0.0,
