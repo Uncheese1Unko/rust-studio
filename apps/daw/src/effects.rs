@@ -252,8 +252,9 @@ impl Allpass {
 /// チャンネルごとにコム8本の並列 → オールパス4本の直列。
 /// 遅延量は Freeverb の 44.1kHz 基準値をサンプルレート比で
 /// スケーリングし、右チャンネルにはステレオ広がりのずらしを
-/// 加える。コムへの入力ゲインは Freeverb と同じ 0.015 に
-/// 基づき、8本の合算でも破綻しないよう調整した固定値。
+/// 加える。コムへの入力ゲインは、Freeverb 本家の 0.015 では
+/// 尾が小さすぎたため 0.2 へ引き上げた固定値（実測の経緯は
+/// 試験レポート issue-0093）。
 struct ReverbState {
     combs: [[Comb; 8]; 2],
     allpasses: [[Allpass; 4]; 2],
@@ -529,6 +530,22 @@ mod tests {
         // ドライ（インパルスそのもの）は 500ms 以降無音
         let dry = impulse(2.0);
         assert_eq!(peak_in(&dry, 500.0, 1_000.0), 0.0);
+        // エネルギー減衰（Schroeder 後方積分）で -40dB に達する
+        // 時刻が 500ms を超える（Issue #93 の確認方法の定義）。
+        let total: f32 = wet.iter().step_by(2).map(|v| v * v).sum();
+        let mut remaining = total;
+        let mut minus40_ms = 0.0f32;
+        for (i, v) in wet.iter().step_by(2).enumerate() {
+            remaining -= v * v;
+            if remaining / total < 1.0e-4 {
+                minus40_ms = i as f32 * 1000.0 / RATE as f32;
+                break;
+            }
+        }
+        assert!(
+            minus40_ms > 500.0,
+            "-40dB 到達が 500ms を超える: {minus40_ms:.1}ms"
+        );
         // 決定的: 同じ入力には同じ出力
         assert_eq!(wet, run(0.8));
     }
@@ -577,7 +594,8 @@ mod tests {
             (echo_peak - 0.5 * eq_peak).abs() <= 0.25 * eq_peak,
             "エコーは EQ 応答の mix 倍: echo {echo_peak}, eq {eq_peak}"
         );
-        // チェーン出力は Delay 単体（EQ なし）とも異なる
+        // チェーン出力は Delay 単体（EQ なし）とも EQ 単体
+        // （Delay なし）とも異なる
         let mut delay_only = impulse(0.5);
         process_chain(
             &[EffectSlot {
@@ -588,6 +606,7 @@ mod tests {
             RATE,
         );
         assert_ne!(chained, delay_only);
+        assert_ne!(chained, eq_only);
     }
 
     #[test]
