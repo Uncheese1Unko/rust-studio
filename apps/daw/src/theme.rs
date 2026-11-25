@@ -38,6 +38,7 @@ pub const SAMPLER_LABEL: &str = "04 SAMPLER";
 pub const COLOR_LABEL: &str = "05 COLOR";
 pub const PIANO_ROLL_LABEL: &str = "06 PIANO ROLL";
 pub const TONES_LABEL: &str = "07 TONES";
+pub const EFFECTS_LABEL: &str = "08 EFFECTS";
 
 /// ユーザー色の固定パレット（Issue #58、ADR-0013）。(タグ, 面, 縁)。
 /// テーマの2色相（ピンク系・ティール系）と暖色の中間色から作る淡色で
@@ -158,6 +159,7 @@ mod tests {
         assert_eq!(COLOR_LABEL, "05 COLOR");
         assert_eq!(PIANO_ROLL_LABEL, "06 PIANO ROLL");
         assert_eq!(TONES_LABEL, "07 TONES");
+        assert_eq!(EFFECTS_LABEL, "08 EFFECTS");
     }
 }
 

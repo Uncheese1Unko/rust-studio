@@ -1,0 +1,12 @@
+seed project written (empty chain)
+OK: effects=['reverb'] bypassed=['false'] decay=['0.5']
+OK: effects=['reverb', 'delay'] bypassed=['false', 'false'] decay=['0.5']
+OK: slot 0 selected
+OK: effects=['reverb', 'delay'] bypassed=['false', 'false'] decay=['0.75']
+OK: effects=['delay'] bypassed=['false'] decay=[]
+OK: effects=['delay', 'eq3'] bypassed=['false', 'false'] decay=[]
+OK: effects=['eq3', 'delay'] bypassed=['false', 'false'] decay=[]
+OK: effects=['eq3', 'delay'] bypassed=['true', 'false'] decay=[]
+accent pixels in fx chip row: 2425
+pixels OK
+DRIVE OK

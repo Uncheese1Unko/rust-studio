@@ -14,6 +14,7 @@
 mod audio;
 mod edit;
 mod effects;
+mod fxpanel;
 mod mixer;
 mod palette;
 mod pianoroll;
@@ -134,6 +135,15 @@ struct Model {
     tone_clicks: edit::ClickTracker,
     tone_rename: Option<tones::ToneRenameSession>,
     prev_right_down: bool,
+    /// エフェクト操作（Issue #94）: 選択中スロットとその持ち主
+    /// トラック、ドラッグ中のパラメータ、ジェスチャ開始時の
+    /// スナップショット。どれも GUI の表示状態で、プロジェクト
+    /// 状態には含めない。
+    fx_selected: Option<usize>,
+    fx_track: Option<u64>,
+    fx_active: Option<usize>,
+    fx_before: Option<Project>,
+    last_fx_cmd: Option<Command>,
     /// ソースごとの波形ピーク（全体を WAVEFORM_COLUMNS 本で事前計算）。
     waveforms: HashMap<String, Vec<f32>>,
     /// ソースごとの長さ（ms）。波形の切り出しに使う。
@@ -441,6 +451,11 @@ fn model(app: &App) -> Model {
         tone_clicks: edit::ClickTracker::new(),
         tone_rename: None,
         prev_right_down: false,
+        fx_selected: None,
+        fx_track: None,
+        fx_active: None,
+        fx_before: None,
+        last_fx_cmd: None,
         waveforms,
         source_durations,
         dropped_source: dropped,
@@ -1505,6 +1520,133 @@ fn apply_palette_click(model: &mut Model, target: palette::PaletteTarget, color:
     }
 }
 
+/// エフェクトパネルの選択中スロット（Issue #94）。選択は持ち主
+/// トラックと組で保持し、別のトラックが選択中なら無効として扱う。
+/// チェーンが縮んだ場合（Undo 等）も範囲外は無効。
+fn fx_selection(model: &Model, track_id: u64, effects_len: usize) -> Option<usize> {
+    if model.fx_track != Some(track_id) {
+        return None;
+    }
+    model.fx_selected.filter(|i| *i < effects_len)
+}
+
+/// エフェクトパネルのクリックをコマンドに変換する（Issue #94）。
+/// 状態変更はコマンド経由のみ（ADR-0004）。スライダーはジェスチャ
+/// を開始し、値の適用は保持中処理（handle_pointer）が担う。
+fn handle_fx_hit(
+    model: &mut Model,
+    track_id: u64,
+    effects: &[studio_core::EffectSlot],
+    hit: fxpanel::FxHit,
+    lx: f32,
+    limit_x: f32,
+) {
+    let selected = fx_selection(model, track_id, effects.len());
+    let cmd = match hit {
+        fxpanel::FxHit::Slot(index) => {
+            model.fx_selected = Some(index);
+            model.fx_track = Some(track_id);
+            println!("fx selected: slot {index}");
+            return;
+        }
+        fxpanel::FxHit::Button(fxpanel::FxButton::AddReverb) => Command::AddTrackEffect {
+            track_id,
+            effect: studio_core::TrackEffect::default_reverb(),
+        },
+        fxpanel::FxHit::Button(fxpanel::FxButton::AddDelay) => Command::AddTrackEffect {
+            track_id,
+            effect: studio_core::TrackEffect::default_delay(),
+        },
+        fxpanel::FxHit::Button(fxpanel::FxButton::AddEq) => Command::AddTrackEffect {
+            track_id,
+            effect: studio_core::TrackEffect::default_eq3(),
+        },
+        fxpanel::FxHit::Button(fxpanel::FxButton::Delete) => {
+            let Some(index) = selected else { return };
+            Command::RemoveTrackEffect { track_id, index }
+        }
+        fxpanel::FxHit::Button(fxpanel::FxButton::Up) => {
+            let Some(index) = selected.filter(|i| *i > 0) else {
+                return;
+            };
+            Command::MoveTrackEffect {
+                track_id,
+                from_index: index,
+                to_index: index - 1,
+            }
+        }
+        fxpanel::FxHit::Button(fxpanel::FxButton::Down) => {
+            let Some(index) = selected.filter(|i| *i + 1 < effects.len()) else {
+                return;
+            };
+            Command::MoveTrackEffect {
+                track_id,
+                from_index: index,
+                to_index: index + 1,
+            }
+        }
+        fxpanel::FxHit::Button(fxpanel::FxButton::Bypass) => {
+            let Some(index) = selected else { return };
+            Command::SetTrackEffectBypass {
+                track_id,
+                index,
+                bypassed: !effects[index].bypassed,
+            }
+        }
+        fxpanel::FxHit::Slider(param) => {
+            let Some(sel) = selected else { return };
+            let project = model.history.project();
+            let tones_snapshot = project.tones.clone();
+            let top = fxpanel::panel_top(project.tracks.len(), &tones_snapshot, limit_x);
+            let rect = fxpanel::slider_rect(top, effects.len(), param, limit_x);
+            let effect = effects[sel].effect;
+            let value = fxpanel::denormalize(&effect, param, fxpanel::value_at(rect, lx));
+            model.fx_selected = Some(sel);
+            model.fx_track = Some(track_id);
+            model.fx_active = Some(param);
+            model.fx_before = Some(model.history.project().clone());
+            let cmd = Command::SetTrackEffect {
+                track_id,
+                index: sel,
+                effect: fxpanel::with_param(&effect, param, value),
+            };
+            match model.history.apply_transient(&cmd) {
+                Ok(_) => {
+                    model.last_fx_cmd = Some(cmd);
+                }
+                Err(e) => println!("command rejected: {e}"),
+            }
+            return;
+        }
+    };
+    let is_add = matches!(cmd, Command::AddTrackEffect { .. });
+    match model.history.apply(&cmd) {
+        Ok(result) => {
+            match &cmd {
+                Command::AddTrackEffect { .. } => {
+                    if let Some(index) = result {
+                        model.fx_selected = Some(index as usize);
+                    }
+                }
+                Command::RemoveTrackEffect { .. } => {
+                    model.fx_selected = None;
+                }
+                Command::MoveTrackEffect { to_index, .. } => {
+                    model.fx_selected = Some(*to_index);
+                }
+                _ => {}
+            }
+            if is_add {
+                model.fx_track = Some(track_id);
+            }
+            println!("after fx: {}", model.history.project().dump_json());
+            save_project_file(model);
+            refresh_audio_map(model);
+        }
+        Err(e) => println!("command rejected: {e}"),
+    }
+}
+
 /// 音色パネルのクリックをコマンドに変換する（Issue #73、ADR-0018）。
 /// チップは選択中トラックへの割り当て／解除、作成は選択中トラックの
 /// 実効楽器から取り込み、削除は選択中トラックに割り当て中の音色を
@@ -1886,6 +2028,49 @@ fn handle_pointer(app: &App, model: &mut Model) {
         model.last_mixer_cmd = None;
     }
 
+    // エフェクトスライダーのドラッグ（Issue #94）: ミキサーと同じ
+    // ジェスチャ方式（開始時にスナップショット、保持中は
+    // apply_transient、解放時に履歴へ1件だけ記録）。
+    if left_down {
+        if let (Some(track_id), Some(param)) = (model.fx_track, model.fx_active) {
+            let project = model.history.project();
+            let tones_snapshot = project.tones.clone();
+            if let Some(track) = project.track(track_id) {
+                let selected = fx_selection(model, track_id, track.effects.len());
+                if let Some(sel) = selected {
+                    let effect = track.effects[sel].effect;
+                    let rect = fxpanel::slider_rect(
+                        fxpanel::panel_top(project.tracks.len(), &tones_snapshot, win.w() - 16.0),
+                        track.effects.len(),
+                        param,
+                        win.w() - 16.0,
+                    );
+                    let value = fxpanel::denormalize(&effect, param, fxpanel::value_at(rect, lx));
+                    let cmd = Command::SetTrackEffect {
+                        track_id,
+                        index: sel,
+                        effect: fxpanel::with_param(&effect, param, value),
+                    };
+                    if model.last_fx_cmd.as_ref() != Some(&cmd) {
+                        match model.history.apply_transient(&cmd) {
+                            Ok(_) => {
+                                model.last_fx_cmd = Some(cmd);
+                            }
+                            Err(e) => println!("command rejected: {e}"),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !left_down && model.prev_left_down && model.fx_active.take().is_some() {
+        finish_gesture_snapshot(&mut model.history, &mut model.fx_before);
+        println!("after fx: {}", model.history.project().dump_json());
+        save_project_file(model);
+        refresh_audio_map(model);
+        model.last_fx_cmd = None;
+    }
+
     if left_down && !model.prev_left_down {
         // メトロノームトグル（Issue #36）: アプリ側の再生状態を切り替える。
         let m_r = metronome_rect(model.history.project().tracks.len());
@@ -1976,6 +2161,33 @@ fn handle_pointer(app: &App, model: &mut Model) {
             apply_tone_click(model, hit);
             model.prev_left_down = left_down;
             return;
+        }
+        // エフェクトパネル（Issue #94）: 音色パネルの下のパネル。
+        // 対象は選択中トラックのチェーン。スライダーのドラッグは
+        // ミキサーと同じジェスチャ方式で捌く（下の保持中処理）。
+        if let Some(track_id) = model.selected_track {
+            let tones_snapshot = model.history.project().tones.clone();
+            let effects_snapshot = model
+                .history
+                .project()
+                .track(track_id)
+                .map(|t| t.effects.clone());
+            if let Some(effects) = effects_snapshot {
+                let selected = fx_selection(model, track_id, effects.len());
+                if let Some(hit) = fxpanel::hit_fx(
+                    model.history.project().tracks.len(),
+                    &tones_snapshot,
+                    &effects,
+                    selected,
+                    lx,
+                    ly,
+                    win.w() - 16.0,
+                ) {
+                    handle_fx_hit(model, track_id, &effects, hit, lx, win.w() - 16.0);
+                    model.prev_left_down = left_down;
+                    return;
+                }
+            }
         }
         // トラック削除（Issue #56）: ヘッダー右端の帯。コマンド経由で
         // 削除し、選択が消えたら同じ位置（なければ最後）のトラックへ
@@ -3198,6 +3410,172 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(cx, cy)
             .font_size(10)
             .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+    }
+
+    // エフェクトパネル（Issue #94）: 音色パネルの下。選択中
+    // トラックのチェーンをチップで出し（選択中はアクセント色、
+    // バイパス中はその旨を添える）、選択中スロットのパラメータを
+    // スライダー行で出す。
+    {
+        let project = model.history.project();
+        let count = project.tracks.len();
+        let limit_x = win.w() - 16.0;
+        let top = fxpanel::panel_top(count, &project.tones, limit_x);
+        let track = model.selected_track.and_then(|id| project.track(id));
+        let effects: &[studio_core::EffectSlot] =
+            track.map(|t| t.effects.as_slice()).unwrap_or(&[]);
+        let selected = model
+            .selected_track
+            .and_then(|id| fx_selection(model, id, effects.len()));
+        let selected_effect = selected.map(|i| &effects[i].effect);
+        draw_rounded_rect(
+            &draw,
+            win,
+            mixer::Rect {
+                x: 8.0,
+                y: top - 8.0,
+                w: win.w() - 16.0,
+                h: fxpanel::panel_height(selected_effect),
+            },
+            theme::PANEL_CORNER_RADIUS,
+            theme::PANEL,
+        );
+        draw_panel_label(&draw, win, theme::EFFECTS_LABEL, 40.0, top);
+        let (lx, ly) = rect_center(
+            win,
+            8.0,
+            top + fxpanel::ROWS_TOP_OFFSET_PX,
+            fxpanel::CHIP_X_PX - 8.0,
+            fxpanel::ROW_H_PX,
+        );
+        draw.text("TRACK").x_y(lx, ly).font_size(10).color(rgb(
+            theme::TEXT_SUB.0,
+            theme::TEXT_SUB.1,
+            theme::TEXT_SUB.2,
+        ));
+        if track.is_none() {
+            let (cx, cy) = rect_center(
+                win,
+                fxpanel::CHIP_X_PX,
+                top + fxpanel::ROWS_TOP_OFFSET_PX,
+                200.0,
+                fxpanel::ROW_H_PX,
+            );
+            draw.text("SELECT A TRACK")
+                .x_y(cx, cy)
+                .font_size(10)
+                .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+        } else {
+            for (index, slot) in effects.iter().enumerate() {
+                let rect = fxpanel::slot_rect(top, effects.len(), index, limit_x);
+                let is_selected = selected == Some(index);
+                let (face, text_color) = if is_selected {
+                    (theme::ACCENT, theme::PANEL)
+                } else {
+                    (theme::PANEL_SUNK, theme::TEXT)
+                };
+                draw_rounded_rect(&draw, win, rect, 4.0, face);
+                let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+                let label = if slot.bypassed {
+                    format!("{} {} BYP", index + 1, fxpanel::slot_label(&slot.effect))
+                } else {
+                    format!("{} {}", index + 1, fxpanel::slot_label(&slot.effect))
+                };
+                draw.text(&label).x_y(cx, cy).font_size(10).color(rgb(
+                    text_color.0,
+                    text_color.1,
+                    text_color.2,
+                ));
+            }
+            for button in [
+                fxpanel::FxButton::AddReverb,
+                fxpanel::FxButton::AddDelay,
+                fxpanel::FxButton::AddEq,
+                fxpanel::FxButton::Delete,
+                fxpanel::FxButton::Up,
+                fxpanel::FxButton::Down,
+                fxpanel::FxButton::Bypass,
+            ] {
+                let rect = fxpanel::button_rect(top, effects.len(), button, limit_x);
+                let needs_selection = matches!(
+                    button,
+                    fxpanel::FxButton::Delete
+                        | fxpanel::FxButton::Up
+                        | fxpanel::FxButton::Down
+                        | fxpanel::FxButton::Bypass
+                );
+                let bypassed_selected = button == fxpanel::FxButton::Bypass
+                    && selected.is_some_and(|i| effects[i].bypassed);
+                let (face, text_color) = if bypassed_selected {
+                    (theme::ACCENT, theme::PANEL)
+                } else if needs_selection && selected.is_none() {
+                    (theme::PANEL_SUNK, theme::TEXT_SUB)
+                } else {
+                    (theme::PANEL_SUNK, theme::TEXT)
+                };
+                draw_rounded_rect(&draw, win, rect, 4.0, face);
+                let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+                draw.text(button.label())
+                    .x_y(cx, cy)
+                    .font_size(10)
+                    .color(rgb(text_color.0, text_color.1, text_color.2));
+            }
+            if let (Some(sel), Some(effect)) = (selected, selected_effect) {
+                let _ = sel;
+                for index in 0..fxpanel::param_count(effect) {
+                    let rect = fxpanel::slider_rect(top, effects.len(), index, limit_x);
+                    let (lx2, ly2) = rect_center(
+                        win,
+                        fxpanel::CHIP_X_PX,
+                        rect.y - (fxpanel::PARAM_ROW_H_PX - fxpanel::SLIDER_H_PX) / 2.0,
+                        fxpanel::SLIDER_X_PX - fxpanel::CHIP_X_PX - 8.0,
+                        fxpanel::PARAM_ROW_H_PX,
+                    );
+                    draw.text(fxpanel::param_label(effect, index))
+                        .x_y(lx2, ly2)
+                        .font_size(10)
+                        .color(rgb(theme::TEXT_SUB.0, theme::TEXT_SUB.1, theme::TEXT_SUB.2));
+                    draw_rounded_rect(&draw, win, rect, 4.0, theme::PANEL_SUNK);
+                    let value = fxpanel::param_value(effect, index);
+                    let norm = fxpanel::normalize(effect, index, value);
+                    let zero_norm = fxpanel::normalize(effect, index, 0.0);
+                    let x0 = fxpanel::x_for_value(rect, zero_norm);
+                    let x1 = fxpanel::x_for_value(rect, norm);
+                    let fill = mixer::Rect {
+                        x: x0.min(x1),
+                        y: rect.y,
+                        w: (x1 - x0).abs(),
+                        h: rect.h,
+                    };
+                    if fill.w > 0.5 {
+                        draw_rounded_rect(&draw, win, fill, 4.0, theme::ACCENT);
+                    }
+                    draw_rounded_rect(
+                        &draw,
+                        win,
+                        mixer::Rect {
+                            x: x1 - 2.0,
+                            y: rect.y - 2.0,
+                            w: 4.0,
+                            h: rect.h + 4.0,
+                        },
+                        2.0,
+                        theme::TEXT,
+                    );
+                    let (vx, vy) = rect_center(
+                        win,
+                        fxpanel::SLIDER_X_PX + fxpanel::SLIDER_W_PX + 8.0,
+                        rect.y - (fxpanel::PARAM_ROW_H_PX - fxpanel::SLIDER_H_PX) / 2.0,
+                        84.0,
+                        fxpanel::PARAM_ROW_H_PX,
+                    );
+                    draw.text(&fxpanel::format_value(effect, index))
+                        .x_y(vx, vy)
+                        .font_size(10)
+                        .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+                }
+            }
+        }
     }
 
     // ピッチ表示（Issue #18）: 再生ヘッド位置の音声クリップのピッチ。
