@@ -1,0 +1,19 @@
+== MCP: add / bypass / reject ==
+after add: [{'effect': {'type': 'delay', 'time_ms': 200, 'feedback': 0.5, 'mix': 0.5}, 'bypassed': False}]
+bypass on OK
+bypass off OK
+rejected commands left the project unchanged OK
+project file persisted OK
+MCP FX OK
+== export the MCP-driven project and measure the delay ==
+exported: out.wav
+dry 0.8000 echo@200 0.4000 echo@400 0.2000 echo@600 0.1000
+delay measurement OK (ratios 0.5 / 0.25 / 0.125 of dry)
+== HTTP API: add / bypass / reject / undo ==
+track created: 1
+after add: [{'effect': {'type': 'eq3', 'low_gain_db': 6.0, 'mid_gain_db': 0.0, 'high_gain_db': 0.0}, 'bypassed': False}]
+bypass on OK
+rejected command left the project unchanged OK
+undo OK
+API FX OK
+DRIVE OK

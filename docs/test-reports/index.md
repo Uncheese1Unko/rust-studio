@@ -88,3 +88,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-25 | #92 トラックにエフェクトチェーンを持たせ、EQ を掛けられる（コア＋チェーン適用の土台） | [issue-0092-track-effect-chain-and-eq.md](issue-0092-track-effect-chain-and-eq.md) |
 | 2026-11-25 | #93 ディレイとリバーブが音に効く（時間系エフェクトの DSP） | [issue-0093-delay-and-reverb-dsp.md](issue-0093-delay-and-reverb-dsp.md) |
 | 2026-11-25 | #94 ミキサー画面でエフェクトチェーンを編集できる（GUI 編集 UI） | [issue-0094-mixer-effect-panel.md](issue-0094-mixer-effect-panel.md) |
+| 2026-11-25 | #95 MCP／HTTP API からエフェクトを操作し、効果を測定で確認できる（受け入れ確認） | [issue-0095-mcp-api-effect-acceptance.md](issue-0095-mcp-api-effect-acceptance.md) |
