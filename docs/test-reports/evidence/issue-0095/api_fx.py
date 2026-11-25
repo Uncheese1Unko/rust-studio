@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Issue #95 の HTTP API 駆動: studio-api 経由でエフェクトを
-追加・バイパスし、GET /project に現れること、不正なコマンドが
+"""Issue #95 の HTTP API 駆動: studio-api 経由で MCP と同じ
+コマンド列を適用し、最終チェーンが MCP 経路と一致すること
+（FINAL_EFFECTS 行で drive.sh が突き合わせる）、不正なコマンド
+（範囲外パラメータ／範囲外インデックス／存在しないトラック）が
 400 で状態不変なこと、/undo で巻き戻せることを確認する。
 使い方: api_fx.py <studio-api binary>"""
 import json
@@ -29,6 +31,21 @@ def request(method, path, body=None):
         return e.code, e.read().decode()
 
 
+def get_effects():
+    status, body = request("GET", "/project")
+    assert status == 200, (status, body)
+    return json.loads(body)["tracks"][0]["effects"], body
+
+
+DELAY = {"type": "delay", "time_ms": 200, "feedback": 0.5, "mix": 0.5}
+EQ3 = {"type": "eq3", "low_gain_db": 6.0, "mid_gain_db": 0.0,
+       "high_gain_db": 0.0}
+
+
+def slot(effect, bypassed=False):
+    return {"effect": effect, "bypassed": bypassed}
+
+
 try:
     for _ in range(50):
         try:
@@ -46,46 +63,39 @@ try:
     track_id = json.loads(body)["created_id"]
     print("track created:", track_id)
 
-    status, body = request(
-        "POST", "/commands",
-        {"type": "add_track_effect", "track_id": track_id,
-         "effect": {"type": "eq3", "low_gain_db": 6.0, "mid_gain_db": 0.0,
-                    "high_gain_db": 0.0}})
-    assert status == 200, (status, body)
-    status, body = request("GET", "/project")
-    proj = json.loads(body)
-    effects = proj["tracks"][0]["effects"]
-    print("after add:", effects)
-    assert effects == [{"effect": {"type": "eq3", "low_gain_db": 6.0,
-                                   "mid_gain_db": 0.0, "high_gain_db": 0.0},
-                        "bypassed": False}], effects
-
-    status, body = request(
-        "POST", "/commands",
+    # MCP 経路と同じコマンド列（add delay → add eq3 → bypass eq3）
+    for cmd in [
+        {"type": "add_track_effect", "track_id": track_id, "effect": DELAY},
+        {"type": "add_track_effect", "track_id": track_id, "effect": EQ3},
         {"type": "set_track_effect_bypass", "track_id": track_id,
-         "index": 0, "bypassed": True})
-    assert status == 200, (status, body)
-    status, before = request("GET", "/project")
-    assert json.loads(before)["tracks"][0]["effects"][0]["bypassed"] is True
-    print("bypass on OK")
+         "index": 1, "bypassed": True},
+    ]:
+        status, body = request("POST", "/commands", cmd)
+        assert status == 200, (status, body, cmd)
+    effects, before = get_effects()
+    print("after commands:", effects)
+    assert effects == [slot(DELAY), slot(EQ3, True)], effects
+    print("FINAL_EFFECTS:", json.dumps(effects, sort_keys=True))
 
-    # 不正なコマンドは 400 で、状態は変わらない
-    status, body = request(
-        "POST", "/commands",
+    # 不正なコマンド3種は 400 で、状態は変わらない
+    for cmd in [
         {"type": "add_track_effect", "track_id": track_id,
          "effect": {"type": "delay", "time_ms": 200, "feedback": 2.0,
-                    "mix": 0.5}})
-    assert status == 400, (status, body)
-    status, after = request("GET", "/project")
-    assert before == after, "project changed after rejected command"
-    print("rejected command left the project unchanged OK")
+                    "mix": 0.5}},
+        {"type": "remove_track_effect", "track_id": track_id, "index": 9},
+        {"type": "add_track_effect", "track_id": 999, "effect": DELAY},
+    ]:
+        status, body = request("POST", "/commands", cmd)
+        assert status == 400, (status, body, cmd)
+    _, after = get_effects()
+    assert before == after, "project changed after rejected commands"
+    print("rejected commands left the project unchanged OK")
 
-    # Undo でバイパスが巻き戻る
+    # Undo で最後の成功コマンド（バイパス）が巻き戻る
     status, body = request("POST", "/undo")
     assert status == 200 and json.loads(body)["undone"] is True, body
-    status, body = request("GET", "/project")
-    effects = json.loads(body)["tracks"][0]["effects"]
-    assert effects[0]["bypassed"] is False, effects
+    effects, _ = get_effects()
+    assert effects == [slot(DELAY), slot(EQ3)], effects
     print("undo OK")
 finally:
     proc.terminate()

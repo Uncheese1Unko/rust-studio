@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Issue #95 の MCP 駆動: studio-mcp 経由でエフェクトを追加・
-バイパスし、プロジェクトファイルに永続化されること、不正な
-コマンドがエラーになり状態が変わらないことを確認する。
-音の測定は drive.sh が書き出し WAV で行う。
+"""Issue #95 の MCP 駆動: studio-mcp の5ツール（add / remove /
+move / set / set_bypass）すべてを成功系で駆動し、get_project に
+現れること、不正なコマンド（範囲外パラメータ／範囲外
+インデックス／存在しないトラック）がエラーで状態不変なこと、
+プロジェクトファイルへの永続化を確認する。最後に API 経路と
+突き合わせるための正準チェーンを作り、FINAL_EFFECTS 行を出す。
 使い方: mcp_fx.py <studio-mcp binary> <work dir>"""
 import json
 import struct
@@ -40,6 +42,8 @@ proc = subprocess.Popen(
     [MCP, "--project-file", f"{WORK}/project.json"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 
+REQ = [100]
+
 
 def send(obj):
     proc.stdin.write(json.dumps(obj) + "\n")
@@ -47,13 +51,17 @@ def send(obj):
     return json.loads(proc.stdout.readline())
 
 
-def call(name, arguments, req_id):
-    return send({"jsonrpc": "2.0", "id": req_id, "method": "tools/call",
-                 "params": {"name": name, "arguments": arguments}})
+def call(name, arguments, expect_error=False):
+    REQ[0] += 1
+    r = send({"jsonrpc": "2.0", "id": REQ[0], "method": "tools/call",
+              "params": {"name": name, "arguments": arguments}})
+    is_error = bool(r["result"].get("isError"))
+    assert is_error == expect_error, (name, arguments, r)
+    return r
 
 
-def get_effects(req_id):
-    r = call("get_project", {}, req_id)
+def get_effects():
+    r = call("get_project", {})
     proj = json.loads(r["result"]["content"][0]["text"])
     return proj["tracks"][0]["effects"], r["result"]["content"][0]["text"]
 
@@ -66,41 +74,71 @@ proc.stdin.write(json.dumps({"jsonrpc": "2.0",
                              "params": {}}) + "\n")
 proc.stdin.flush()
 
-r = call("add_track_effect",
-         {"track_id": 1, "effect": {"type": "delay", "time_ms": 200,
-                                    "feedback": 0.5, "mix": 0.5}}, 2)
-assert not r["result"].get("isError"), r
-effects, _ = get_effects(3)
-print("after add:", effects)
-assert effects == [{"effect": {"type": "delay", "time_ms": 200,
-                               "feedback": 0.5, "mix": 0.5},
-                    "bypassed": False}], effects
+DELAY = {"type": "delay", "time_ms": 200, "feedback": 0.5, "mix": 0.5}
+EQ3 = {"type": "eq3", "low_gain_db": 6.0, "mid_gain_db": 0.0,
+       "high_gain_db": 0.0}
+REVERB = {"type": "reverb", "decay": 0.5, "mix": 0.3}
 
-r = call("set_track_effect_bypass",
-         {"track_id": 1, "index": 0, "bypassed": True}, 4)
-assert not r["result"].get("isError"), r
-effects, _ = get_effects(5)
-assert effects[0]["bypassed"] is True, effects
-print("bypass on OK")
-r = call("set_track_effect_bypass",
-         {"track_id": 1, "index": 0, "bypassed": False}, 6)
-assert not r["result"].get("isError"), r
-effects, before = get_effects(7)
-assert effects[0]["bypassed"] is False, effects
-print("bypass off OK")
 
-# 不正なコマンド: 範囲外パラメータと範囲外インデックスは
-# エラーになり、ダンプは変わらない
-r = call("add_track_effect",
-         {"track_id": 1, "effect": {"type": "eq3", "low_gain_db": 99.0,
-                                    "mid_gain_db": 0.0,
-                                    "high_gain_db": 0.0}}, 8)
-assert r["result"].get("isError"), r
-r = call("remove_track_effect", {"track_id": 1, "index": 9}, 9)
-assert r["result"].get("isError"), r
-_, after = get_effects(10)
+def slot(effect, bypassed=False):
+    return {"effect": effect, "bypassed": bypassed}
+
+
+# add（成功系）
+call("add_track_effect", {"track_id": 1, "effect": DELAY})
+effects, _ = get_effects()
+assert effects == [slot(DELAY)], effects
+print("add OK:", effects)
+
+# set_bypass の往復（成功系）
+call("set_track_effect_bypass", {"track_id": 1, "index": 0, "bypassed": True})
+effects, _ = get_effects()
+assert effects == [slot(DELAY, True)], effects
+call("set_track_effect_bypass", {"track_id": 1, "index": 0, "bypassed": False})
+effects, _ = get_effects()
+assert effects == [slot(DELAY)], effects
+print("set_bypass roundtrip OK")
+
+# add 2つ目 → move（成功系）で順序が入れ替わる
+call("add_track_effect", {"track_id": 1, "effect": EQ3})
+call("move_track_effect", {"track_id": 1, "from_index": 1, "to_index": 0})
+effects, _ = get_effects()
+assert effects == [slot(EQ3), slot(DELAY)], effects
+print("move OK:", effects)
+
+# set（成功系）で種類ごと差し替わる（バイパスは保持される）
+call("set_track_effect", {"track_id": 1, "index": 0, "effect": REVERB})
+effects, _ = get_effects()
+assert effects == [slot(REVERB), slot(DELAY)], effects
+print("set OK:", effects)
+
+# remove（成功系）
+call("remove_track_effect", {"track_id": 1, "index": 0})
+effects, before = get_effects()
+assert effects == [slot(DELAY)], effects
+print("remove OK:", effects)
+
+# 不正なコマンド3種: 範囲外パラメータ／範囲外インデックス／
+# 存在しないトラック。すべて isError で、ダンプは変わらない。
+call("add_track_effect",
+     {"track_id": 1, "effect": {"type": "eq3", "low_gain_db": 99.0,
+                                "mid_gain_db": 0.0, "high_gain_db": 0.0}},
+     expect_error=True)
+call("remove_track_effect", {"track_id": 1, "index": 9}, expect_error=True)
+call("add_track_effect", {"track_id": 999, "effect": DELAY},
+     expect_error=True)
+call("set_track_effect_bypass",
+     {"track_id": 999, "index": 0, "bypassed": True}, expect_error=True)
+_, after = get_effects()
 assert before == after, "dump changed after rejected commands"
 print("rejected commands left the project unchanged OK")
+
+# API 経路と突き合わせる正準チェーン: [delay（有効）, eq3（バイパス）]
+call("add_track_effect", {"track_id": 1, "effect": EQ3})
+call("set_track_effect_bypass", {"track_id": 1, "index": 1, "bypassed": True})
+effects, _ = get_effects()
+assert effects == [slot(DELAY), slot(EQ3, True)], effects
+print("FINAL_EFFECTS:", json.dumps(effects, sort_keys=True))
 
 proc.stdin.close()
 proc.terminate()

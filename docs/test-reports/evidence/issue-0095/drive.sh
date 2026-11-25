@@ -4,6 +4,7 @@
 # ディレイのエコーを測定する。
 # 使い方: bash drive.sh [REPO_ROOT]
 set -u
+set -o pipefail
 ROOT="${1:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 DAW="$ROOT/target/debug/daw"
@@ -13,8 +14,8 @@ W=/tmp/issue0095
 mkdir -p "$W"
 exec > >(tee "$HERE/drive-log.txt") 2>&1
 
-echo "== MCP: add / bypass / reject =="
-python3 "$HERE/mcp_fx.py" "$MCP" "$W" || { echo "FAIL: mcp"; exit 1; }
+echo "== MCP: all five tools / bypass / reject =="
+python3 "$HERE/mcp_fx.py" "$MCP" "$W" | tee "$W/mcp.out" || { echo "FAIL: mcp"; exit 1; }
 
 echo "== export the MCP-driven project and measure the delay =="
 (cd "$W" && "$DAW" --export-wav project.json out.wav) || { echo "FAIL: export"; exit 1; }
@@ -37,7 +38,23 @@ assert at(100) == 0.0
 print("delay measurement OK (ratios 0.5 / 0.25 / 0.125 of dry)")
 PYEOF
 
-echo "== HTTP API: add / bypass / reject / undo =="
-python3 "$HERE/api_fx.py" "$API" || { echo "FAIL: api"; exit 1; }
+echo "== HTTP API: same commands / reject / undo =="
+python3 "$HERE/api_fx.py" "$API" | tee "$W/api.out" || { echo "FAIL: api"; exit 1; }
+
+echo "== cross-route: the same command sequence yields the same chain =="
+python3 - "$W/mcp.out" "$W/api.out" << 'PYEOF' || { echo "FAIL: cross-route"; exit 1; }
+import json, sys
+def final_effects(path):
+    for line in open(path):
+        if line.startswith("FINAL_EFFECTS: "):
+            return json.loads(line[len("FINAL_EFFECTS: "):])
+    raise AssertionError(f"no FINAL_EFFECTS in {path}")
+mcp = final_effects(sys.argv[1])
+api = final_effects(sys.argv[2])
+print("MCP final:", mcp)
+print("API final:", api)
+assert mcp == api, "routes disagree on the same command sequence"
+print("cross-route match OK")
+PYEOF
 
 echo "DRIVE OK"

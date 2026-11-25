@@ -2,43 +2,50 @@
 
 対象 PBI: #95（EPIC #91「DAW トラックエフェクト」の4件目＝受け入れ確認）
 実施日: 2026-11-25
-対象コミット: なし（プロダクションコードの変更なし。#92 で追加した MCP ツール定義と、既存の汎用ディスパッチ（MCP／HTTP API とも）で受け入れ条件を満たすことを駆動で確認した）
+対象コミット: プロダクションコードの変更なし（駆動スクリプトと本レポートのみ）。#92 で追加した MCP ツール定義と、既存の汎用ディスパッチ（MCP／HTTP API とも）で受け入れ条件を満たすことを駆動で確認した。
 
 ## 駆動内容と結果（evidence/issue-0095/drive.sh、DRIVE OK）
 
-### MCP（stdio JSON-RPC、--project-file 付き）
+### MCP（stdio JSON-RPC、--project-file 付き）— `mcp_fx.py`
 
-`mcp_fx.py` の確認結果:
+5ツールすべてを成功系で駆動し、各段階を `get_project` のダンプで assert した:
 
-- `add_track_effect`（delay 200ms / feedback 0.5 / mix 0.5）が成功し、`get_project` のダンプに `{"effect": {"type": "delay", "time_ms": 200, "feedback": 0.5, "mix": 0.5}, "bypassed": false}` が現れる。
-- `set_track_effect_bypass` の往復（true → false）がダンプに反映される。
-- 不正なコマンド2件（eq3 の low_gain_db 99.0、remove の index 9）はどちらも `isError` で、実行前後のダンプ文字列が完全一致（状態不変）。
+- `add_track_effect`（delay 200ms / feedback 0.5 / mix 0.5）→ チェーンに現れる。
+- `set_track_effect_bypass` の往復（true → false）。
+- 2つ目（eq3 low +6.0dB）を add → `move_track_effect`（1→0）で順序が入れ替わる。
+- `set_track_effect` で eq3 を reverb へ種類ごと差し替え（バイパス保持）。
+- `remove_track_effect` で先頭を削除。
+- 不正なコマンド4件（範囲外パラメータ eq3 low_gain_db 99.0、範囲外インデックス remove 9、存在しないトラックへの add と set_bypass）はすべて `isError` で、実行前後のダンプ文字列が完全一致（状態不変）。
 - サーバー終了後、プロジェクトファイルに最終状態が永続化されている。
 
 ### 音の測定（MCP で作った状態を daw --export-wav で書き出し）
 
-インパルスクリップの書き出しを測定: dry 0.8000、echo@200ms **0.4000**、@400ms **0.2000**、@600ms **0.1000**、@100ms は 0。ドライ比で **0.5 / 0.25 / 0.125**（設定どおり、許容 ±0.03 以内）。MCP 経由で組んだチェーンが再生・書き出しの音に効くことを、コア単体（#93）とは別経路で再確認した。
+最終チェーンは [delay（有効）, eq3（バイパス）]。インパルスクリップの書き出しを測定: dry 0.8000、echo@200ms **0.4000**、@400ms **0.2000**、@600ms **0.1000**、@100ms は 0。ドライ比で **0.5 / 0.25 / 0.125**（設定どおり、許容 ±0.03 以内）。測定方式は #93 と同じ（drive.sh 内に同等ロジックを複製）。
 
-### HTTP API（studio-api、POST /commands + GET /project）
+### HTTP API（studio-api、POST /commands + GET /project）— `api_fx.py`
 
-`api_fx.py` の確認結果:
-
-- `add_track` → `add_track_effect`（eq3 low +6.0dB）が 200 で、GET /project に同じ値が現れる。
-- `set_track_effect_bypass` が 200 で反映される。
-- 不正なコマンド（delay の feedback 2.0）は **400** で、実行前後の GET /project が完全一致（状態不変）。
-- `POST /undo` でバイパスが巻き戻る（API 経由でも Undo が効く）。
+- MCP と**同じコマンド列**（add delay → add eq3 → eq3 をバイパス）を適用し、最終チェーンが MCP 経路と**完全一致**することを drive.sh が突き合わせて assert した（`FINAL_EFFECTS` の比較）。
+- 不正なコマンド3種（範囲外パラメータ feedback 2.0、範囲外インデックス remove 9、存在しないトラックへの add）はすべて **400** で、実行前後の GET /project が完全一致（状態不変）。
+- `POST /undo` で最後の成功コマンド（バイパス）が巻き戻る。
+- なお API 駆動は Python の urllib で行った（イシューの確認方法に挙げた curl と HTTP の実挙動としては等価）。
 
 ## テスト件数
 
-- 変更なし（ワークスペース **504 件** のまま、全て通過）。本 PBI は新規コードではなく両経路の受け入れ確認であり、駆動スクリプトとログを証拠として残す。
+- 変更なし（ワークスペース **504 件** のまま）。本 PBI は新規コードではなく両経路の受け入れ確認であり、駆動スクリプトとログを証拠として残す。
 
 ## 独立レビュー
 
-- （実施後に記録する）
+- ラウンド1: **CHANGES_REQUESTED**。ブロッキング3件: (B1) MCP の成功系で駆動されているのが add と set_bypass のみで move／set／remove 成功系がない、(B2) 不正ケースの網羅不足（存在しないトラックが両経路とも未テスト、API は範囲外インデックスも未テスト）、(B3) 経路間一致（同じコマンド列→同じダンプ）が実証されていない。→ 駆動を拡張して全件対応し（本レポートの駆動内容が対応後）、ラウンド2へ。
+- ラウンド2: （実施後に記録する）
 
-## Definition of Done チェック
+## Definition of Done チェック（イシュー記載の9項目）
 
-- [x] 受け入れ条件をすべて満たす（MCP の追加・バイパス・ダンプ反映、書き出しでの効果測定、両経路の不正コマンド拒否と状態不変、API の Undo）
-- [x] 駆動証拠を `evidence/issue-0095/` に保存（drive.sh / mcp_fx.py / api_fx.py / drive-log.txt）
-- [x] `./scripts/verify.sh` 緑（#94 完了時点の 504 件を維持）、CI 緑
-- [x] 新規の設計判断なし
+1. 受け入れ条件をすべて満たす: MCP 5ツールの成功系、API との経路間一致、書き出しでの効果測定、両経路の不正3種の拒否と状態不変、API の Undo — すべて駆動で確認した。
+2. TDD（red の記録）: 本 PBI は確認のみで新規コードがないため、失敗するテストの先行作成は対象外。代わりに駆動スクリプトの assert が受け入れ条件の検証そのものであり、ラウンド1レビューで不足を指摘され駆動を拡張した経緯を本レポートに残す。
+3. `./scripts/verify.sh` 緑: プロダクションコード無変更のため、#94 完了時点の緑（504 件）を維持。CI は本レポートのコミットで確認する。
+4. 独立 code-reviewer のレビューを通過する: ラウンド1 CHANGES_REQUESTED → 対応 → ラウンド2（結果は上記）。
+5. 試験レポートを docs/test-reports/ に追加し、index.md と docs/log.md を更新する: 本レポートで実施。
+6. 判断は ADR に記録する: 新規の設計判断なし（対象外）。
+7. コミットに Refs #95 を付け、push 後に CI の緑を確認する: close コメントに CI の run を記録する。
+8. 完了条件を確認してから完了コメントを付けて close する: close コメントで実施。
+9. 触った範囲外の既存問題は直さず別イシューに切り分ける: 該当する新規の問題は見つからなかった。
