@@ -86,3 +86,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-24 | #83 AviUtl 形式スクリプト（.anm 等）を取り込んで使える | [issue-0083-aviutl-anm-import.md](issue-0083-aviutl-anm-import.md) |
 | 2026-11-25 | #89 MIDI を読み込んだトラックが、楽器を割り当てるまで無音になる | [issue-0089-midi-import-default-instrument.md](issue-0089-midi-import-default-instrument.md) |
 | 2026-11-25 | #92 トラックにエフェクトチェーンを持たせ、EQ を掛けられる（コア＋チェーン適用の土台） | [issue-0092-track-effect-chain-and-eq.md](issue-0092-track-effect-chain-and-eq.md) |
+| 2026-11-25 | #93 ディレイとリバーブが音に効く（時間系エフェクトの DSP） | [issue-0093-delay-and-reverb-dsp.md](issue-0093-delay-and-reverb-dsp.md) |
