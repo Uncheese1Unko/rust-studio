@@ -89,3 +89,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-25 | #93 ディレイとリバーブが音に効く（時間系エフェクトの DSP） | [issue-0093-delay-and-reverb-dsp.md](issue-0093-delay-and-reverb-dsp.md) |
 | 2026-11-25 | #94 ミキサー画面でエフェクトチェーンを編集できる（GUI 編集 UI） | [issue-0094-mixer-effect-panel.md](issue-0094-mixer-effect-panel.md) |
 | 2026-11-25 | #95 MCP／HTTP API からエフェクトを操作し、効果を測定で確認できる（受け入れ確認） | [issue-0095-mcp-api-effect-acceptance.md](issue-0095-mcp-api-effect-acceptance.md) |
+| 2026-11-26 | #98 調査: Spleeter がこの環境で動くか＋ピッチ追跡の答え合わせ（needs-decision で停止） | [issue-0098-spleeter-feasibility.md](issue-0098-spleeter-feasibility.md) |
