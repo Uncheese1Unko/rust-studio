@@ -90,6 +90,14 @@ struct Model {
     // F キーの押下エッジ追跡。表示状態であり、保存しない。
     follow_playhead: bool,
     prev_f_down: bool,
+    // Issue #105: 再生状態（起動時は停止）、トランスポートキー
+    // （スペース／Home／End）の押下エッジ追跡、ルーラーでの
+    // スクラブ中フラグ。GUI の操作状態で、保存しない。
+    play_state: timeline::PlayState,
+    prev_space_down: bool,
+    prev_home_down: bool,
+    prev_end_down: bool,
+    seek_drag: bool,
     // Issue #85: スクロールバーのドラッグ中は掴み位置のずれ（px）、
     // 中ボタンパンの最中は前フレームのポインタ x（px）を保持する。
     // いずれも表示状態であり、保存しない。
@@ -509,6 +517,11 @@ fn model(app: &App) -> Model {
         view_scale: timeline::ViewScale::default(),
         follow_playhead: true,
         prev_f_down: false,
+        play_state: timeline::PlayState::Paused,
+        prev_space_down: false,
+        prev_home_down: false,
+        prev_end_down: false,
+        seek_drag: false,
         scrollbar_drag: None,
         pan_drag: None,
         media_items,
@@ -1098,6 +1111,28 @@ fn event(app: &App, model: &mut Model, event: Event) {
     }
 }
 
+/// シーク（Issue #105）: 再生ヘッドを指定位置へ移動する。
+/// プロジェクト範囲でクランプし、再生追従が有効なら表示も
+/// その位置を含むページへ合わせる（停止中のシークでも表示が
+/// 追いつく）。観測は stdout（ADR-0005: scroll offset と
+/// seek の記録）。
+fn seek_to(model: &mut Model, ms: i64, window_width: f32) {
+    let end = timeline::project_end_ms(model.history.project());
+    let target = timeline::seek_clamp(ms, end);
+    let wrapped = target < model.playhead_ms;
+    model.playhead_ms = target;
+    if model.follow_playhead {
+        let next = model
+            .view_scale
+            .follow_playhead(target, window_width, wrapped);
+        if next.offset_ms != model.view_scale.offset_ms {
+            model.view_scale = next;
+            println!("scroll offset: {}", model.view_scale.offset_ms);
+        }
+    }
+    println!("seek: {target}");
+}
+
 fn update(app: &App, model: &mut Model, update: Update) {
     // Issue #54: 書き出しの完了を一度だけログに出す。
     if let Some(state) = &model.export_state {
@@ -1140,6 +1175,12 @@ fn update(app: &App, model: &mut Model, update: Update) {
         model.prev_s_down = app.keys.down.contains(&Key::S);
         model.prev_x_down = app.keys.down.contains(&Key::X);
         model.prev_f_down = app.keys.down.contains(&Key::F);
+        // Issue #105: トランスポートキーも編集中は同期だけ行う
+        // （編集中に押したスペース等で編集終了直後に再生が
+        // 切り替わらないように。バグ #60 と同じパターン）。
+        model.prev_space_down = app.keys.down.contains(&Key::Space);
+        model.prev_home_down = app.keys.down.contains(&Key::Home);
+        model.prev_end_down = app.keys.down.contains(&Key::End);
     } else {
         handle_pointer(app, model);
         handle_history_keys(app, model);
@@ -1263,13 +1304,45 @@ fn update(app: &App, model: &mut Model, update: Update) {
             );
         }
         model.prev_f_down = f_down;
+        // トランスポート（Issue #105）: スペースで再生／一時停止、
+        // Home で先頭、End で末尾へ。押下エッジで判定する。
+        // テキスト編集中はこの節に入らない（編集中は上の節で
+        // prev を同期するだけ）。
+        let space_down = app.keys.down.contains(&Key::Space);
+        if space_down && !model.prev_space_down {
+            model.play_state = model.play_state.toggle();
+            println!(
+                "transport: {}",
+                if model.play_state.is_playing() {
+                    "playing"
+                } else {
+                    "paused"
+                }
+            );
+        }
+        model.prev_space_down = space_down;
+        let home_down = app.keys.down.contains(&Key::Home);
+        if home_down && !model.prev_home_down {
+            let win = app.window_rect();
+            seek_to(model, 0, win.w());
+        }
+        model.prev_home_down = home_down;
+        let end_down = app.keys.down.contains(&Key::End);
+        if end_down && !model.prev_end_down {
+            let end_ms = timeline::project_end_ms(model.history.project());
+            let win = app.window_rect();
+            seek_to(model, end_ms, win.w());
+        }
+        model.prev_end_down = end_down;
     }
     watch_project_file(app, model);
 
     let dt_ms = update.since_last.as_millis() as i64;
     let end_ms = timeline::project_end_ms(model.history.project());
     let prev_playhead_ms = model.playhead_ms;
-    model.playhead_ms = timeline::advance_playhead(model.playhead_ms, dt_ms, end_ms);
+    // トランスポート（Issue #105）: 停止中はヘッドが動かない。
+    model.playhead_ms =
+        timeline::transport_advance(model.play_state, model.playhead_ms, dt_ms, end_ms);
     // 再生追従（Issue #84）: 追従オンのとき、再生ヘッドが表示右端を
     // 超えたらページ送りで表示を進める。巻き戻り（ラップアラウンド）
     // ではオフセットも 0 に戻す。オフセットが変わったらホイール
@@ -1868,7 +1941,57 @@ fn handle_pointer(app: &App, model: &mut Model) {
         model.pan_drag = None;
     }
 
+    // ルーラーでのシーク開始（Issue #105）: ルーラー帯の左押下で
+    // その位置へ移動し、スクラブを開始する。ヘッダー列
+    // （x < HEADER_WIDTH_PX）はトランスポートボタンの領域なので
+    // 対象外（ボタンの当たり判定は下の押下エッジ節）。
+    if left_down
+        && !model.prev_left_down
+        && ly < timeline::RULER_HEIGHT_PX
+        && lx >= timeline::HEADER_WIDTH_PX
+    {
+        model.seek_drag = true;
+        seek_to(model, pointer_ms, win.w());
+        model.prev_left_down = left_down;
+        return;
+    }
+    // スクラブ継続（Issue #105）: 保持中はなぞった位置へ追従する。
+    // 位置が変わらないフレームでは seek を出し直さない。
+    if model.seek_drag {
+        if left_down {
+            let end = timeline::project_end_ms(model.history.project());
+            if timeline::seek_clamp(pointer_ms, end) != model.playhead_ms {
+                seek_to(model, pointer_ms, win.w());
+            }
+        } else {
+            model.seek_drag = false;
+        }
+    }
+
     if left_down && !model.prev_left_down {
+        // トランスポートボタン（Issue #105）: ルーラーのヘッダー列
+        // （x=0..120 を3分割）。キーボード（スペース／Home／End）と
+        // 同じ処理を通る。
+        if ly < timeline::RULER_HEIGHT_PX && lx < timeline::HEADER_WIDTH_PX {
+            if lx < 40.0 {
+                seek_to(model, 0, win.w());
+            } else if lx < 80.0 {
+                model.play_state = model.play_state.toggle();
+                println!(
+                    "transport: {}",
+                    if model.play_state.is_playing() {
+                        "playing"
+                    } else {
+                        "paused"
+                    }
+                );
+            } else {
+                let end = timeline::project_end_ms(model.history.project());
+                seek_to(model, end, win.w());
+            }
+            model.prev_left_down = left_down;
+            return;
+        }
         // ゲインスライダー（Issue #51）: プレビュー下の帯。
         // 対象クリップがあるときだけドラッグを開始する。
         if export_button_at(lx, ly) {
@@ -2106,6 +2229,25 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(nx + 10.0, win.h() / 2.0 - timeline::RULER_HEIGHT_PX / 2.0)
             .font_size(10)
             .color(rgb(0.65, 0.65, 0.70));
+    }
+    // トランスポートボタン（Issue #105）: ルーラーのヘッダー列を
+    // 3分割する（先頭／再生・一時停止／末尾）。再生中は中央ボタン
+    // の面を明るくし、ラベルを PAUSE にする。
+    {
+        let playing = model.play_state.is_playing();
+        let labels = ["START", if playing { "PAUSE" } else { "PLAY" }, "END"];
+        for (i, label) in labels.iter().enumerate() {
+            let (cx, cy) = rect_center(win, i as f32 * 40.0, 0.0, 40.0, timeline::RULER_HEIGHT_PX);
+            let shade = if i == 1 && playing { 0.38 } else { 0.22 };
+            draw.rect()
+                .x_y(cx, cy)
+                .w_h(38.0, 20.0)
+                .color(rgb(shade, shade, shade + 0.03));
+            draw.text(label)
+                .x_y(cx, cy)
+                .font_size(9)
+                .color(rgb(0.85, 0.85, 0.88));
+        }
     }
 
     // トラック行（timeline.track.<id>）: ヘッダーにトラック名、行背景は交互色。

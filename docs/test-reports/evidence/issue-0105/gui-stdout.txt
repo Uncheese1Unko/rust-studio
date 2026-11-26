@@ -1,0 +1,223 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+video-editor (issue #8: timeline UI)
+{
+  "name": "untitled video",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "V1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 4,
+          "name": "opening",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "demo/opening.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        },
+        {
+          "id": 5,
+          "name": "interview",
+          "start_ms": 2500,
+          "duration_ms": 4000,
+          "source": "demo/interview.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 2,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 6,
+          "name": "bgm",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bgm.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 3,
+      "name": "V2",
+      "kind": "video",
+      "clips": [
+        {
+          "id": 7,
+          "name": "bg",
+          "start_ms": 0,
+          "duration_ms": 8000,
+          "source": "demo/bg.mp4",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 8
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.4, timeline.clip.5, timeline.track.2, timeline.clip.6, timeline.track.3, timeline.clip.7, preview, media-bin, script-list
+media prepared: demo/opening.mp4 -> 40 frames
+media prepared: demo/interview.mp4 -> 60 frames
+media prepared: demo/bg.mp4 -> 80 frames
+media bin: bg.mp4, interview.mp4, opening.mp4
+scripts: {"references":[],"scripts":[]}
+preview textures loaded: 180
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+transport: playing
+preview: source=demo/opening.mp4 playhead=117 source_time=117 frame=1
+preview: source=demo/opening.mp4 playhead=214 source_time=214 frame=2
+preview: source=demo/opening.mp4 playhead=307 source_time=307 frame=3
+preview: source=demo/opening.mp4 playhead=482 source_time=482 frame=4
+preview: source=demo/opening.mp4 playhead=507 source_time=507 frame=5
+preview: source=demo/opening.mp4 playhead=619 source_time=619 frame=6
+preview: source=demo/opening.mp4 playhead=778 source_time=778 frame=7
+preview: source=demo/opening.mp4 playhead=807 source_time=807 frame=8
+preview: source=demo/opening.mp4 playhead=912 source_time=912 frame=9
+preview: source=demo/opening.mp4 playhead=1006 source_time=1006 frame=10
+preview: source=demo/opening.mp4 playhead=1104 source_time=1104 frame=11
+preview: source=demo/opening.mp4 playhead=1212 source_time=1212 frame=12
+preview: source=demo/opening.mp4 playhead=1309 source_time=1309 frame=13
+preview: source=demo/opening.mp4 playhead=1407 source_time=1407 frame=14
+preview: source=demo/opening.mp4 playhead=1524 source_time=1524 frame=15
+preview: source=demo/opening.mp4 playhead=1607 source_time=1607 frame=16
+preview: source=demo/opening.mp4 playhead=1708 source_time=1708 frame=17
+preview: source=demo/opening.mp4 playhead=1815 source_time=1815 frame=18
+preview: source=demo/opening.mp4 playhead=1914 source_time=1914 frame=19
+preview: source=demo/bg.mp4 playhead=2003 source_time=2003 frame=20
+preview: source=demo/bg.mp4 playhead=2173 source_time=2173 frame=21
+preview: source=demo/bg.mp4 playhead=2210 source_time=2210 frame=22
+preview: source=demo/bg.mp4 playhead=2362 source_time=2362 frame=23
+preview: source=demo/bg.mp4 playhead=2415 source_time=2415 frame=24
+preview: source=demo/interview.mp4 playhead=2501 source_time=1 frame=0
+preview: source=demo/interview.mp4 playhead=2661 source_time=161 frame=1
+preview: source=demo/interview.mp4 playhead=2757 source_time=257 frame=2
+preview: source=demo/interview.mp4 playhead=2803 source_time=303 frame=3
+preview: source=demo/interview.mp4 playhead=2961 source_time=461 frame=4
+preview: source=demo/interview.mp4 playhead=3074 source_time=574 frame=5
+preview: source=demo/interview.mp4 playhead=3101 source_time=601 frame=6
+preview: source=demo/interview.mp4 playhead=3255 source_time=755 frame=7
+preview: source=demo/interview.mp4 playhead=3370 source_time=870 frame=8
+preview: source=demo/interview.mp4 playhead=3461 source_time=961 frame=9
+preview: source=demo/interview.mp4 playhead=3552 source_time=1052 frame=10
+preview: source=demo/interview.mp4 playhead=3659 source_time=1159 frame=11
+preview: source=demo/interview.mp4 playhead=3750 source_time=1250 frame=12
+preview: source=demo/interview.mp4 playhead=3862 source_time=1362 frame=13
+transport: paused
+seek: 5000
+preview: source=demo/interview.mp4 playhead=5000 source_time=2500 frame=25
+seek: 2143
+preview: source=demo/bg.mp4 playhead=2143 source_time=2143 frame=21
+seek: 3571
+preview: source=demo/interview.mp4 playhead=3571 source_time=1071 frame=10
+seek: 5000
+preview: source=demo/interview.mp4 playhead=5000 source_time=2500 frame=25
+seek: 0
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+seek: 8000
+seek: 8000
+seek: 0
+preview: source=demo/opening.mp4 playhead=0 source_time=0 frame=0
+transport: playing
+preview: source=demo/opening.mp4 playhead=150 source_time=150 frame=1
+preview: source=demo/opening.mp4 playhead=252 source_time=252 frame=2
+preview: source=demo/opening.mp4 playhead=358 source_time=358 frame=3
+preview: source=demo/opening.mp4 playhead=454 source_time=454 frame=4
+preview: source=demo/opening.mp4 playhead=550 source_time=550 frame=5
+preview: source=demo/opening.mp4 playhead=654 source_time=654 frame=6
+preview: source=demo/opening.mp4 playhead=740 source_time=740 frame=7
+preview: source=demo/opening.mp4 playhead=841 source_time=841 frame=8
+preview: source=demo/opening.mp4 playhead=954 source_time=954 frame=9
+preview: source=demo/opening.mp4 playhead=1042 source_time=1042 frame=10
+preview: source=demo/opening.mp4 playhead=1150 source_time=1150 frame=11
+preview: source=demo/opening.mp4 playhead=1251 source_time=1251 frame=12
+transport: paused
+seek: 1429
+preview: source=demo/opening.mp4 playhead=1429 source_time=1429 frame=14
+title input begin: clip 4
+title input cancelled
+zoom: 1.25 offset: 429
+zoom: 1.56 offset: 772
+zoom: 1.95 offset: 1046
+zoom: 2.44 offset: 1265
+zoom: 3.05 offset: 1441
+zoom: 3.81 offset: 1581
+zoom: 4.77 offset: 1694
+zoom: 5.96 offset: 1783
+scroll offset: 6817
+seek: 8000
