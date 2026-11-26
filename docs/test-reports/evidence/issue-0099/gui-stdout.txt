@@ -1,0 +1,521 @@
+project file mode: /home/hatch/demucs-work/gui/project.json
+daw (issue #14: timeline UI)
+{
+  "name": "midi-drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "Lead",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "Lead",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 69,
+              "start_ms": 0,
+              "duration_ms": 400,
+              "velocity": 100
+            },
+            {
+              "pitch": 72,
+              "start_ms": 400,
+              "duration_ms": 400,
+              "velocity": 110
+            },
+            {
+              "pitch": 76,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 90
+            }
+          ],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": {
+        "type": "synth",
+        "waveform": "triangle"
+      },
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 3,
+      "name": "Bass",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "Bass",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 45,
+              "start_ms": 0,
+              "duration_ms": 800,
+              "velocity": 120
+            },
+            {
+              "pitch": 41,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 120
+            }
+          ],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": {
+        "type": "synth",
+        "waveform": "triangle"
+      },
+      "tone_id": null,
+      "effects": []
+    }
+  ],
+  "tones": [],
+  "bpm": 150.0,
+  "next_id": 5
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.2, timeline.track.3, timeline.clip.4
+dropped: /home/hatch/demucs-work/gui/drop.wav -> {
+  "name": "midi-drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "Lead",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "Lead",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 69,
+              "start_ms": 0,
+              "duration_ms": 400,
+              "velocity": 100
+            },
+            {
+              "pitch": 72,
+              "start_ms": 400,
+              "duration_ms": 400,
+              "velocity": 110
+            },
+            {
+              "pitch": 76,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 90
+            }
+          ],
+          "script_effect": null
+        },
+        {
+          "id": 5,
+          "name": "drop",
+          "start_ms": 1535,
+          "duration_ms": 2000,
+          "source": "/home/hatch/demucs-work/gui/drop.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": {
+        "type": "synth",
+        "waveform": "triangle"
+      },
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 3,
+      "name": "Bass",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "Bass",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 45,
+              "start_ms": 0,
+              "duration_ms": 800,
+              "velocity": 120
+            },
+            {
+              "pitch": 41,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 120
+            }
+          ],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": {
+        "type": "synth",
+        "waveform": "triangle"
+      },
+      "tone_id": null,
+      "effects": []
+    }
+  ],
+  "tones": [],
+  "bpm": 150.0,
+  "next_id": 6
+}
+separation started: /home/hatch/demucs-work/gui/drop.wav
+separated: drop (4 tracks)
+after separation: {
+  "name": "midi-drive",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "Lead",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "Lead",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 69,
+              "start_ms": 0,
+              "duration_ms": 400,
+              "velocity": 100
+            },
+            {
+              "pitch": 72,
+              "start_ms": 400,
+              "duration_ms": 400,
+              "velocity": 110
+            },
+            {
+              "pitch": 76,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 90
+            }
+          ],
+          "script_effect": null
+        },
+        {
+          "id": 5,
+          "name": "drop",
+          "start_ms": 1535,
+          "duration_ms": 2000,
+          "source": "/home/hatch/demucs-work/gui/drop.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": {
+        "type": "synth",
+        "waveform": "triangle"
+      },
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 3,
+      "name": "Bass",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 4,
+          "name": "Bass",
+          "start_ms": 0,
+          "duration_ms": 1600,
+          "source": "",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [
+            {
+              "pitch": 45,
+              "start_ms": 0,
+              "duration_ms": 800,
+              "velocity": 120
+            },
+            {
+              "pitch": 41,
+              "start_ms": 800,
+              "duration_ms": 800,
+              "velocity": 120
+            }
+          ],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": {
+        "type": "synth",
+        "waveform": "triangle"
+      },
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 6,
+      "name": "drop / vocals",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 7,
+          "name": "vocals",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/home/hatch/demucs-work/gui/project.stems/drop-eb572c3d911f18fc/htdemucs/drop/vocals.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 8,
+      "name": "drop / drums",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 9,
+          "name": "drums",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/home/hatch/demucs-work/gui/project.stems/drop-eb572c3d911f18fc/htdemucs/drop/drums.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 10,
+      "name": "drop / bass",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 11,
+          "name": "bass",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/home/hatch/demucs-work/gui/project.stems/drop-eb572c3d911f18fc/htdemucs/drop/bass.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    },
+    {
+      "id": 12,
+      "name": "drop / other",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 13,
+          "name": "other",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/home/hatch/demucs-work/gui/project.stems/drop-eb572c3d911f18fc/htdemucs/drop/other.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    }
+  ],
+  "tones": [],
+  "bpm": 150.0,
+  "next_id": 14
+}

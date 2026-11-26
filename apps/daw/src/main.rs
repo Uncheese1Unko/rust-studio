@@ -20,6 +20,7 @@ mod palette;
 mod pianoroll;
 mod plugin;
 mod sampler;
+mod separation;
 mod tones;
 // theme は配色表の全色を先に定義する土台（Issue #23）。アクセント系と
 // トランスポート系の定数は後続 PBI（#24〜#27）で使うため、未使用の
@@ -231,6 +232,15 @@ struct Model {
     // Issue #42: 直近のドロップ処理時刻（秒）。複数ファイルの
     // ドロップは先頭1件だけ処理するためのバースト判定に使う。
     last_drop_at: Option<f32>,
+    // Issue #99: 音声分離（Demucs）の状態表示（画面と stdout に出す。
+    // プロジェクトには保存しない）と、ワーカースレッドからの
+    // 完了通知チャネル。分離中は Some、終わったら None に戻す。
+    separation_status: Option<String>,
+    separation_rx: Option<
+        std::sync::mpsc::Receiver<
+            Result<separation::SeparationOutcome, separation::SeparationError>,
+        >,
+    >,
 }
 
 /// プロジェクトファイル共有モード（Issue #16、ADR-0010。video-editor の
@@ -497,6 +507,8 @@ fn model(app: &App) -> Model {
         plugin_fingerprint: initial_fingerprint,
         file_hash_cache: initial_cache,
         last_drop_at: None,
+        separation_status: None,
+        separation_rx: None,
     }
 }
 
@@ -530,6 +542,12 @@ fn main() {
         import_midi_cli(&args[2], &args[3]);
         return;
     }
+    // 音声分離（Issue #99 の検証用 CLI）:
+    // daw --separate <project.json> <file.wav>
+    if args.len() == 4 && args[1] == "--separate" {
+        separate_cli(&args[2], &args[3]);
+        return;
+    }
     nannou::app(model).event(event).update(update).run();
 }
 
@@ -555,6 +573,51 @@ fn import_midi_cli(project_json: &str, mid_path: &str) {
         }
         Err(e) => {
             eprintln!("midi import failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// プロジェクト JSON へ WAV ファイルの分離結果を取り込んで
+/// 保存し直す（Issue #99）。分離は同期実行（検証用入口のため）。
+/// 失敗時は終了コード 1 で、プロジェクトファイルは変更しない。
+fn separate_cli(project_json: &str, wav_path: &str) {
+    let project_path = std::path::Path::new(project_json);
+    let project = Project::load_from_path(project_path).expect("load project json");
+    let python = match separation::resolve_python_default() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("separation failed: {e}");
+            std::process::exit(1);
+        }
+    };
+    let outcome = match separation::separate_file(
+        &python,
+        Some(project_path),
+        &media_dir(),
+        std::path::Path::new(wav_path),
+    ) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("separation failed: {e}");
+            std::process::exit(1);
+        }
+    };
+    let mut history = studio_core::History::new(project);
+    match separation::apply_stems(&mut history, &outcome.base_name, &outcome.stems) {
+        Ok(summary) => {
+            history
+                .project()
+                .save_to_path(project_path)
+                .expect("save project json");
+            println!(
+                "separated: {} tracks added from {}",
+                summary.tracks_added, wav_path
+            );
+            println!("dump: {}", history.project().dump_json());
+        }
+        Err(e) => {
+            eprintln!("separation failed: {e}");
             std::process::exit(1);
         }
     }
@@ -778,6 +841,102 @@ fn import_midi_file(model: &mut Model, path: &std::path::Path) {
     }
 }
 
+/// WAV ドロップ後の音声分離（Issue #99、ADR-0024）。分離は重い
+/// 処理なのでワーカースレッドで実行し、完了は [`poll_separation`]
+/// が `update()` で受けて適用する。Python が解決できない場合は
+/// ワーカーを起動せず、その場でステータスに明示する（黙って
+/// 波形配置だけで終わらせない）。
+fn start_separation(model: &mut Model, path: &std::path::Path) {
+    if model.separation_rx.is_some() {
+        println!(
+            "separation skipped: {} (another separation is running)",
+            path.display()
+        );
+        return;
+    }
+    let python = match separation::resolve_python_default() {
+        Ok(p) => p,
+        Err(e) => {
+            model.separation_status = Some(format!("SEPARATION UNAVAILABLE: {e}"));
+            println!("separation unavailable: {} ({e})", path.display());
+            return;
+        }
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    model.separation_rx = Some(rx);
+    model.separation_status = Some("SEPARATING …".to_string());
+    let input = path.to_path_buf();
+    let project_file = model.project_file.clone();
+    let media = media_dir();
+    std::thread::spawn(move || {
+        let result = separation::separate_file(&python, project_file.as_deref(), &media, &input);
+        let _ = tx.send(result);
+    });
+    println!("separation started: {}", path.display());
+}
+
+/// 分離ワーカーの完了を受けてプロジェクトへ適用する（Issue #99）。
+/// 適用は原子的で Undo 1回で戻れる。失敗時は状態を変えず、
+/// ステータスと stdout に理由を出す。
+fn poll_separation(model: &mut Model) {
+    let Some(rx) = model.separation_rx.as_ref() else {
+        return;
+    };
+    let received = rx.try_recv();
+    match received {
+        Ok(result) => {
+            model.separation_rx = None;
+            match result {
+                Ok(outcome) => {
+                    match separation::apply_stems(
+                        &mut model.history,
+                        &outcome.base_name,
+                        &outcome.stems,
+                    ) {
+                        Ok(summary) => {
+                            // 構造が変わるため、開いているピアノ
+                            // ロールは閉じる（MIDI 取り込みと同じ）。
+                            model.piano_roll = None;
+                            model.roll_before = None;
+                            model.last_roll_cmd = None;
+                            refresh_waveforms(
+                                model.history.project(),
+                                &model.dropped_source,
+                                &mut model.waveforms,
+                                &mut model.source_durations,
+                            );
+                            refresh_audio_map(model);
+                            save_project_file(model);
+                            model.separation_status =
+                                Some(format!("SEPARATED: {} STEMS", summary.tracks_added));
+                            println!(
+                                "separated: {} ({} tracks)",
+                                outcome.base_name, summary.tracks_added
+                            );
+                            println!("after separation: {}", model.history.project().dump_json());
+                        }
+                        Err(e) => {
+                            model.separation_status = Some(format!("SEPARATION FAILED: {e}"));
+                            println!("separation failed: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    model.separation_status = Some(format!("SEPARATION FAILED: {e}"));
+                    println!("separation failed: {e}");
+                }
+            }
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            model.separation_rx = None;
+            model.separation_status =
+                Some("SEPARATION FAILED: worker ended without a result".to_string());
+            println!("separation failed: worker disconnected");
+        }
+    }
+}
+
 fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
     // Issue #70: .mid / .midi はオーディオ配置ではなく MIDI
     // 取り込みとして扱う（重複抑制の対象外: 取り込みは明示操作）。
@@ -847,6 +1006,9 @@ fn handle_drop(app: &App, model: &mut Model, path: &std::path::Path) {
                 path.display(),
                 model.history.project().dump_json()
             );
+            // Issue #99: 配置に加えて Demucs 分離も走らせる
+            // （ワーカースレッド。完了後にステムが追加される）。
+            start_separation(model, path);
         }
         Err(e) => println!("drop rejected: {} (command rejected: {e})", path.display()),
     }
@@ -1029,6 +1191,11 @@ fn update(app: &App, model: &mut Model, update: Update) {
         handle_pointer(app, model);
     }
     watch_project_file(app, model);
+    // Issue #99: 分離ワーカーの完了適用。編集中は適用しない
+    // （通知はチャネルに残り、編集が終わったフレームで受ける）。
+    if !renaming {
+        poll_separation(model);
+    }
     if !renaming {
         handle_history_keys(app, model);
         handle_roll_keys(app, model);
@@ -3250,6 +3417,27 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .left_justify()
                 .font_size(10)
                 .color(rgb(theme::ACCENT.0, theme::ACCENT.1, theme::ACCENT.2));
+        }
+        // 音声分離の状態（Issue #99）: 実行中・完了・失敗を
+        // プラグインエラーの下に1行で出す。全文は stdout にある
+        // ため画面では切り詰める。失敗はピンクで明示する。
+        if let Some(status) = &model.separation_status {
+            let failed = status.starts_with("SEPARATION FAILED")
+                || status.starts_with("SEPARATION UNAVAILABLE");
+            let mut text: String = status.chars().take(72).collect();
+            if status.chars().count() > 72 {
+                text.push_str(" …");
+            }
+            let color = if failed {
+                theme::ACCENT
+            } else {
+                theme::TEXT_SUB
+            };
+            draw.text(&text)
+                .x_y(612.0 - win.w() / 2.0, win.h() / 2.0 - (top + 62.0))
+                .left_justify()
+                .font_size(10)
+                .color(rgb(color.0, color.1, color.2));
         }
     }
 
