@@ -1,6 +1,7 @@
 # ドキュメントの更新履歴
 
 ## 2026-11-26
+* **Update**: ADR-0024 を「採用」に更新した。#98 の調査で Spleeter が Python 3.12 では動かないことが確定し、ユーザーが代替案 B（Demucs への乗り換え）を選択した（2026-11-26、decider: user）。骨格として、モデルは htdemucs（4ステム: vocals／drums／bass／other）、実行環境は `~/demucs-venv`（torch は CPU ホイール）、解決順は環境変数 `RUST_STUDIO_DEMUCS_PYTHON` → 規約パス、生成物はプロジェクトに紐づく `.stems` ディレクトリ、適用は `commit_replacement` で原子的に、分解の最終形は「1ステム = 1トラック = 1クリップ。音高が取れたステムはノートクリップ、取れないステムは波形クリップのまま。全ステムに Sampler 音色を登録して割り当てる」と定めた。#98 は「Spleeter 不可の実証＋Demucs 採用の決定」をもって完了として close し、EPIC #97 と #99 は Demucs 前提にタイトル・本文を書き換えた。Demucs の実インストールと実分離の実証は #99 の最初のステップとして行う。
 * **Addition**: EPIC #97（WAV を Spleeter で分離し、各ステムをメロディと音色に分解する）と PBI #98〜#101 を起票した。先頭の調査 PBI #98 で前提を実証した結果、**Spleeter はこの VM の Python 3.12 では動かない**ことが確定した: 最新 2.4.2 は `requires_python <3.12` で tensorflow 2.12.1 を固定し、正規インストールは 2.1.0 まで落ちて旧 numpy のソースビルド（distutils 削除）で失敗。依存を寄せた強制構成（TF 2.17.1 等）でも推論が `tf.estimator`（TF 2.16 で削除）の不在で失敗し、tensorflow-estimator 単独提供（最終 2.15.0）も内部 API 削除で import 不可だった。証拠と代替案比較（A: Python 3.11 venv、B: Demucs、C: ステム取り込みのみ、D: Spleeter パッチ＝非推奨）を ADR-0024 と試験レポート issue-0098 に残し、#98 は `needs-decision` で停止、EPIC は open のまま。一方、ピッチ追跡の試作（自己相関、外部クレートなし）は既知メロディ4音すべてを音高一致・開始誤差14ms以内で抽出でき、#100 の土台として有効。本番コードの変更はなく、テストは 504 件全通過のまま。
 
 ## 2026-11-25
