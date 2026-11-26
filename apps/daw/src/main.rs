@@ -18,6 +18,7 @@ mod fxpanel;
 mod mixer;
 mod palette;
 mod pianoroll;
+mod pitch;
 mod plugin;
 mod sampler;
 mod separation;

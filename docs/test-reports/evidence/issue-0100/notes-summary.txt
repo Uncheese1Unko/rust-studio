@@ -1,0 +1,10 @@
+== two-part mix (melody + pad): project.json ==
+input / vocals: source='/home/hatch/demucs-work/cli100/project.stems/input-85781cf53deb68f3/htdemucs/input/vocals.wav' notes=[]
+input / drums: source='/home/hatch/demucs-work/cli100/project.stems/input-85781cf53deb68f3/htdemucs/input/drums.wav' notes=[]
+input / bass: source='/home/hatch/demucs-work/cli100/project.stems/input-85781cf53deb68f3/htdemucs/input/bass.wav' notes=[]
+input / other: source='' notes=[(69, 34, 46, 96), (50, 336, 46, 67), (50, 429, 46, 62), (53, 568, 46, 95), (53, 626, 348, 86), (76, 986, 487, 99), (81, 1486, 476, 99)]
+== melody only: mel.json ==
+melody_only / vocals: source='/home/hatch/demucs-work/cli100/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/vocals.wav' notes=[]
+melody_only / drums: source='/home/hatch/demucs-work/cli100/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/drums.wav' notes=[]
+melody_only / bass: source='/home/hatch/demucs-work/cli100/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/bass.wav' notes=[]
+melody_only / other: source='' notes=[(69, 0, 476, 114), (72, 487, 487, 115), (76, 986, 487, 114), (81, 1497, 464, 116)]

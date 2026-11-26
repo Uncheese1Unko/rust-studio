@@ -269,10 +269,14 @@ pub fn separate_file(
                 path.display()
             ))
         })?;
+        // メロディ抽出（#100）: 単旋律ピッチ追跡。音高が取れない
+        // ステムはノート列が空になり、波形クリップのまま扱われる。
+        let notes = crate::pitch::extract_notes(&decoded);
         stems.push(StemInput {
             stem: stem.to_string(),
             source: path.to_string_lossy().into_owned(),
             duration_ms: decoded.duration_ms(),
+            notes,
         });
     }
     let base_name = input
@@ -282,15 +286,18 @@ pub fn separate_file(
     Ok(SeparationOutcome { base_name, stems })
 }
 
-/// プロジェクトへ追加するステム1つ分（波形クリップの材料）。
+/// プロジェクトへ追加するステム1つ分（クリップの材料）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct StemInput {
     /// ステム名（vocals 等）。
     pub stem: String,
-    /// ステム WAV へのパス（クリップの `source` になる）。
+    /// ステム WAV へのパス（波形クリップの `source` になる）。
     pub source: String,
     /// ステム WAV の長さ（デコードして得る）。
     pub duration_ms: i64,
+    /// ステム音声から抽出したノート列（#100）。空なら音高が
+    /// 取れなかったステムとして波形クリップのまま置く。
+    pub notes: Vec<crate::pitch::ExtractedNote>,
 }
 
 /// 取り込みの結果サマリ（入口が表示に使う）。
@@ -300,9 +307,11 @@ pub struct SeparationSummary {
 }
 
 /// ステム列をプロジェクトへ原子的に追加する。各ステムは新規
-/// トラック＋波形クリップ（開始 0、ステム全体）になる。失敗時は
-/// プロジェクトも履歴も変わらない。成功時は Undo 1回で分離前に
-/// 戻れる。分離前の既存トラック／クリップには触れない。
+/// トラック＋クリップ（開始 0、ステム全体）になり、音高が取れた
+/// ステムはノートクリップ、取れなかったステムは波形クリップに
+/// なる。失敗時はプロジェクトも履歴も変わらない。成功時は
+/// Undo 1回で分離前に戻れる。分離前の既存トラック／クリップには
+/// 触れない。
 pub fn apply_stems(
     history: &mut History,
     base_name: &str,
@@ -322,17 +331,38 @@ pub fn apply_stems(
         )
         .map_err(|e| SeparationError::Command(e.to_string()))?
         .ok_or_else(|| SeparationError::Command("add_track returned no id".to_string()))?;
-        apply(
+        // 音高が取れたステムはノートクリップ（source は空、ノートは
+        // AddNote コマンド経由でモデルの不変条件を通す）、取れな
+        // かったステムは波形クリップにする（ADR-0024 の最終形）。
+        let clip_id = apply(
             &mut built,
             &Command::AddClip {
                 track_id,
                 name: stem.stem.clone(),
                 start_ms: 0,
                 duration_ms: stem.duration_ms,
-                source: stem.source.clone(),
+                source: if stem.notes.is_empty() {
+                    stem.source.clone()
+                } else {
+                    String::new()
+                },
             },
         )
-        .map_err(|e| SeparationError::Command(e.to_string()))?;
+        .map_err(|e| SeparationError::Command(e.to_string()))?
+        .ok_or_else(|| SeparationError::Command("add_clip returned no id".to_string()))?;
+        for note in &stem.notes {
+            apply(
+                &mut built,
+                &Command::AddNote {
+                    clip_id,
+                    pitch: note.pitch,
+                    start_ms: note.start_ms,
+                    duration_ms: note.duration_ms,
+                    velocity: note.velocity,
+                },
+            )
+            .map_err(|e| SeparationError::Command(e.to_string()))?;
+        }
     }
     history.commit_replacement(built);
     Ok(SeparationSummary {
@@ -485,6 +515,7 @@ mod tests {
             stem: name.to_string(),
             source: format!("/stems/song/{name}.wav"),
             duration_ms,
+            notes: Vec::new(),
         }
     }
 
@@ -516,11 +547,72 @@ mod tests {
             assert_eq!(clip.source, format!("/stems/song/{name}.wav"));
             assert_eq!(clip.start_ms, 0);
             assert_eq!(clip.duration_ms, 2000);
-            assert!(clip.notes.is_empty(), "issue #99 adds waveform clips only");
+            assert!(clip.notes.is_empty(), "no notes extracted -> waveform clip");
         }
         // Undo 1回で分離前に戻れる。
         assert!(history.undo());
         assert_eq!(history.project().dump_json(), before);
+    }
+
+    #[test]
+    fn apply_stems_with_notes_adds_note_clip() {
+        use crate::pitch::ExtractedNote;
+        let mut history = History::new(Project::new("t"));
+        let mut pitched = stem("vocals", 2000);
+        pitched.notes = vec![
+            ExtractedNote {
+                pitch: 69,
+                start_ms: 0,
+                duration_ms: 500,
+                velocity: 90,
+            },
+            ExtractedNote {
+                pitch: 72,
+                start_ms: 500,
+                duration_ms: 500,
+                velocity: 80,
+            },
+        ];
+        let stems = vec![pitched, stem("drums", 2000)];
+        let summary = apply_stems(&mut history, "song", &stems).expect("apply succeeds");
+        assert_eq!(summary.tracks_added, 2);
+        let project = history.project();
+        // 音高が取れたステム: ノートクリップ（source は空）。
+        let vocals = &project.tracks[0];
+        assert_eq!(vocals.clips.len(), 1);
+        let clip = &vocals.clips[0];
+        assert_eq!(clip.source, "");
+        assert_eq!(clip.notes.len(), 2);
+        assert_eq!(clip.notes[0].pitch, 69);
+        assert_eq!(clip.notes[0].start_ms, 0);
+        assert_eq!(clip.notes[0].duration_ms, 500);
+        assert_eq!(clip.notes[0].velocity, 90);
+        assert_eq!(clip.notes[1].pitch, 72);
+        // 取れなかったステム: 波形クリップのまま。
+        let drums = &project.tracks[1];
+        assert_eq!(drums.clips[0].source, "/stems/song/drums.wav");
+        assert!(drums.clips[0].notes.is_empty());
+    }
+
+    #[test]
+    fn apply_stems_rejects_notes_outside_the_clip() {
+        use crate::pitch::ExtractedNote;
+        let mut history = History::new(Project::new("t"));
+        let before = history.project().dump_json();
+        let mut bad = stem("vocals", 1000);
+        // クリップ範囲を超えるノートは AddNote の検証で落ち、
+        // 取り込み全体が失敗して状態は変わらない。
+        bad.notes = vec![ExtractedNote {
+            pitch: 69,
+            start_ms: 900,
+            duration_ms: 500,
+            velocity: 90,
+        }];
+        let err = apply_stems(&mut history, "song", &[bad])
+            .expect_err("out-of-clip note must fail the whole import");
+        assert!(matches!(err, SeparationError::Command(_)), "{err}");
+        assert_eq!(history.project().dump_json(), before);
+        assert!(!history.can_undo());
     }
 
     #[test]
