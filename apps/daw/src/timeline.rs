@@ -420,6 +420,56 @@ pub fn loop_range_from_drag(anchor_ms: i64, current_ms: i64) -> Option<(i64, i64
     }
 }
 
+/// 再生状態（Issue #104）。GUI の操作状態であり、プロジェクトには
+/// 保存しない（メトロノーム #36・ループ #40・再生追従 #86 と同じ扱い）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayState {
+    Playing,
+    Paused,
+}
+
+impl PlayState {
+    pub fn is_playing(self) -> bool {
+        self == PlayState::Playing
+    }
+
+    pub fn toggle(self) -> PlayState {
+        match self {
+            PlayState::Playing => PlayState::Paused,
+            PlayState::Paused => PlayState::Playing,
+        }
+    }
+}
+
+/// トランスポートを1フレーム進める（Issue #104）。停止中は現在位置を
+/// そのまま返し、再生中は advance_playhead_in_loop と同じ前進
+/// （終端ラップとループ折り返し）をする。
+pub fn transport_advance(
+    state: PlayState,
+    current_ms: i64,
+    dt_ms: i64,
+    end_ms: i64,
+    loop_range: Option<(i64, i64)>,
+    loop_on: bool,
+) -> i64 {
+    match state {
+        PlayState::Paused => current_ms,
+        PlayState::Playing => {
+            advance_playhead_in_loop(current_ms, dt_ms, end_ms, loop_range, loop_on)
+        }
+    }
+}
+
+/// シーク先をプロジェクト範囲 [0, 終端] にクランプする（Issue #104）。
+/// 終端が 0 以下（空プロジェクト）なら常に 0。
+pub fn seek_clamp(ms: i64, end_ms: i64) -> i64 {
+    if end_ms <= 0 {
+        0
+    } else {
+        ms.clamp(0, end_ms)
+    }
+}
+
 /// タイムライン全体の識別子（ADR-0005: UI 要素には安定した識別子）。
 pub fn timeline_id() -> &'static str {
     "timeline"
@@ -814,6 +864,83 @@ mod tests {
         assert_eq!(advance_playhead(100, 50, 1_000), 150);
         assert_eq!(advance_playhead(900, 200, 1_000), 100);
         assert_eq!(advance_playhead(0, 500, 0), 0);
+    }
+
+    #[test]
+    fn play_state_toggles() {
+        // Issue #104: 再生状態はトグルで往復し、再生中かどうかを答える。
+        assert!(!PlayState::Paused.is_playing());
+        assert!(PlayState::Playing.is_playing());
+        assert_eq!(PlayState::Paused.toggle(), PlayState::Playing);
+        assert_eq!(PlayState::Playing.toggle(), PlayState::Paused);
+        assert_eq!(PlayState::Paused.toggle().toggle(), PlayState::Paused);
+    }
+
+    #[test]
+    fn transport_advance_holds_when_paused() {
+        // Issue #104: 停止中は dt がどれだけ大きくてもヘッドが動かない
+        // （ループ有効時も同じ）。
+        assert_eq!(
+            transport_advance(PlayState::Paused, 3_000, 500, 10_000, None, false),
+            3_000
+        );
+        assert_eq!(
+            transport_advance(
+                PlayState::Paused,
+                3_000,
+                500,
+                10_000,
+                Some((1_000, 3_000)),
+                true
+            ),
+            3_000
+        );
+        assert_eq!(
+            transport_advance(PlayState::Paused, 0, 60_000, 10_000, None, false),
+            0
+        );
+    }
+
+    #[test]
+    fn transport_advance_moves_and_wraps_when_playing() {
+        // Issue #104: 再生中は従来の前進（終端ラップとループ折り返し）
+        // と一致する。
+        assert_eq!(
+            transport_advance(PlayState::Playing, 100, 50, 1_000, None, false),
+            150
+        );
+        assert_eq!(
+            transport_advance(PlayState::Playing, 900, 200, 1_000, None, false),
+            100
+        );
+        assert_eq!(
+            transport_advance(
+                PlayState::Playing,
+                2_900,
+                200,
+                10_000,
+                Some((1_000, 3_000)),
+                true
+            ),
+            1_100
+        );
+        assert_eq!(
+            transport_advance(PlayState::Playing, 0, 500, 0, None, false),
+            0
+        );
+    }
+
+    #[test]
+    fn seek_clamp_bounds() {
+        // Issue #104: シーク先はプロジェクト範囲 [0, 終端] に収まる。
+        assert_eq!(seek_clamp(5_000, 10_000), 5_000);
+        assert_eq!(seek_clamp(0, 10_000), 0);
+        assert_eq!(seek_clamp(10_000, 10_000), 10_000);
+        assert_eq!(seek_clamp(-250, 10_000), 0);
+        assert_eq!(seek_clamp(99_999, 10_000), 10_000);
+        // 空プロジェクト（終端 0）では常に 0。
+        assert_eq!(seek_clamp(500, 0), 0);
+        assert_eq!(seek_clamp(-500, 0), 0);
     }
 
     #[test]

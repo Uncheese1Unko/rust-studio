@@ -1,0 +1,89 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+daw (issue #14: timeline UI)
+{
+  "name": "daw demo session",
+  "tracks": [
+    {
+      "id": 1,
+      "name": "A1",
+      "kind": "audio",
+      "clips": [
+        {
+          "id": 2,
+          "name": "tone-220",
+          "start_ms": 0,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone220.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        },
+        {
+          "id": 3,
+          "name": "tone-440",
+          "start_ms": 2500,
+          "duration_ms": 2000,
+          "source": "/tmp/rust-studio-daw-media/tone440.wav",
+          "offset_ms": 0,
+          "gain": 1.0,
+          "cutout": false,
+          "pitch_semitones": 0.0,
+          "color": null,
+          "fade_in_ms": 0,
+          "fade_out_ms": 0,
+          "title_text": "",
+          "transition_in_kind": "none",
+          "transition_in_ms": 0,
+          "notes": [],
+          "script_effect": null
+        }
+      ],
+      "volume": 1.0,
+      "pan": 0.0,
+      "color": null,
+      "muted": false,
+      "solo": false,
+      "instrument": null,
+      "tone_id": null,
+      "effects": []
+    }
+  ],
+  "tones": [],
+  "bpm": 120.0,
+  "next_id": 4
+}
+elements: timeline, timeline.ruler, timeline.playhead, timeline.track.1, timeline.clip.2, timeline.clip.3
+transport: playing
+transport: paused
+seek: 3071
+loop range: 1571..3571
+seek: 0
+seek: 4500
+seek: 4500
+seek: 0
+transport: playing
+transport: paused
+rename begin: track 1
+rename cancelled
+loop: cleared
+zoom: 1.25 offset: 429
+zoom: 1.56 offset: 772
+zoom: 1.95 offset: 1046
+zoom: 2.44 offset: 1265
+zoom: 3.05 offset: 1441
+zoom: 3.81 offset: 1581
+zoom: 4.77 offset: 1694
+zoom: 5.96 offset: 1783
+scroll offset: 3461
+seek: 4500

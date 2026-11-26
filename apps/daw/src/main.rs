@@ -196,6 +196,13 @@ struct Model {
     // F キーの押下エッジ追跡。表示状態であり、保存しない。
     follow_playhead: bool,
     prev_f_down: bool,
+    // Issue #104: 再生状態（起動時は停止）とトランスポートキー
+    // （スペース／Home／End）の押下エッジ追跡。GUI の操作状態で、
+    // プロジェクトには保存しない。
+    play_state: timeline::PlayState,
+    prev_space_down: bool,
+    prev_home_down: bool,
+    prev_end_down: bool,
     // Issue #87: スクロールバーのドラッグ中は掴み位置のずれ（px）、
     // 中ボタンパンの最中は前フレームのポインタ x（px）を保持する。
     // いずれも表示状態であり、保存しない。
@@ -491,6 +498,10 @@ fn model(app: &App) -> Model {
         view_scale: timeline::ViewScale::default(),
         follow_playhead: true,
         prev_f_down: false,
+        play_state: timeline::PlayState::Paused,
+        prev_space_down: false,
+        prev_home_down: false,
+        prev_end_down: false,
         scrollbar_drag: None,
         pan_drag: None,
         loop_range: None,
@@ -1152,6 +1163,28 @@ fn event(app: &App, model: &mut Model, event: Event) {
     }
 }
 
+/// シーク（Issue #104）: 再生ヘッドを指定位置へ移動する。
+/// プロジェクト範囲でクランプし、再生追従が有効なら表示も
+/// その位置を含むページへ合わせる（停止中のシークでも表示が
+/// 追いつく）。観測は stdout（ADR-0005: scroll offset と
+/// seek の記録）。
+fn seek_to(model: &mut Model, ms: i64, window_width: f32) {
+    let end = timeline::project_end_ms(model.history.project());
+    let target = timeline::seek_clamp(ms, end);
+    let wrapped = target < model.playhead_ms;
+    model.playhead_ms = target;
+    if model.follow_playhead {
+        let next = model
+            .view_scale
+            .follow_playhead(target, window_width, wrapped);
+        if next.offset_ms != model.view_scale.offset_ms {
+            model.view_scale = next;
+            println!("scroll offset: {}", model.view_scale.offset_ms);
+        }
+    }
+    println!("seek: {target}");
+}
+
 fn update(app: &App, model: &mut Model, update: Update) {
     // リネーム編集中は他の操作（ポインタ編集・ピッチ・サンプラー）を
     // 受け付けない（Issue #56）。BPM 入力中も同じ扱い（Issue #35）。
@@ -1188,6 +1221,12 @@ fn update(app: &App, model: &mut Model, update: Update) {
         // （編集中に押した F で編集終了直後に追従が切り替わらない
         // ように。バグ #60 と同じパターン）。
         model.prev_f_down = app.keys.down.contains(&Key::F);
+        // Issue #104: トランスポートキーも編集中は同期だけ行う
+        // （編集中に押したスペース等で編集終了直後に再生が
+        // 切り替わらないように。バグ #60 と同じパターン）。
+        model.prev_space_down = app.keys.down.contains(&Key::Space);
+        model.prev_home_down = app.keys.down.contains(&Key::Home);
+        model.prev_end_down = app.keys.down.contains(&Key::End);
     } else {
         handle_pointer(app, model);
     }
@@ -1214,6 +1253,36 @@ fn update(app: &App, model: &mut Model, update: Update) {
             );
         }
         model.prev_f_down = f_down;
+        // トランスポート（Issue #104）: スペースで再生／一時停止、
+        // Home で先頭、End で末尾へ。押下エッジで判定する。
+        // テキスト編集中はこの節に入らない（編集中は上の節で
+        // prev を同期するだけ）。
+        let space_down = app.keys.down.contains(&Key::Space);
+        if space_down && !model.prev_space_down {
+            model.play_state = model.play_state.toggle();
+            println!(
+                "transport: {}",
+                if model.play_state.is_playing() {
+                    "playing"
+                } else {
+                    "paused"
+                }
+            );
+        }
+        model.prev_space_down = space_down;
+        let home_down = app.keys.down.contains(&Key::Home);
+        if home_down && !model.prev_home_down {
+            let win = app.window_rect();
+            seek_to(model, 0, win.w());
+        }
+        model.prev_home_down = home_down;
+        let end_down = app.keys.down.contains(&Key::End);
+        if end_down && !model.prev_end_down {
+            let end = timeline::project_end_ms(model.history.project());
+            let win = app.window_rect();
+            seek_to(model, end, win.w());
+        }
+        model.prev_end_down = end_down;
     }
     // Issue #72 レビュー対応: プラグイン関連の状態（楽器・
     // プリセット・ノート・クリップ配置）が変わったら事前
@@ -1246,7 +1315,9 @@ fn update(app: &App, model: &mut Model, update: Update) {
     }
     let end = timeline::project_end_ms(model.history.project());
     let prev_playhead_ms = model.playhead_ms;
-    model.playhead_ms = timeline::advance_playhead_in_loop(
+    // トランスポート（Issue #104）: 停止中はヘッドが動かない。
+    model.playhead_ms = timeline::transport_advance(
+        model.play_state,
         model.playhead_ms,
         dt_ms,
         end,
@@ -2256,6 +2327,37 @@ fn handle_pointer(app: &App, model: &mut Model) {
     }
 
     if left_down && !model.prev_left_down {
+        // トランスポートボタン（Issue #104）: 再生／一時停止と
+        // 先頭／末尾ジャンプ。キーボード（スペース／Home／End）と
+        // 同じ処理を通る。
+        let count = model.history.project().tracks.len();
+        let p_r = play_pause_rect(count);
+        if lx >= p_r.x && lx < p_r.x + p_r.w && ly >= p_r.y && ly < p_r.y + p_r.h {
+            model.play_state = model.play_state.toggle();
+            println!(
+                "transport: {}",
+                if model.play_state.is_playing() {
+                    "playing"
+                } else {
+                    "paused"
+                }
+            );
+            model.prev_left_down = left_down;
+            return;
+        }
+        let s_r = to_start_rect(count);
+        if lx >= s_r.x && lx < s_r.x + s_r.w && ly >= s_r.y && ly < s_r.y + s_r.h {
+            seek_to(model, 0, win.w());
+            model.prev_left_down = left_down;
+            return;
+        }
+        let n_r = to_end_rect(count);
+        if lx >= n_r.x && lx < n_r.x + n_r.w && ly >= n_r.y && ly < n_r.y + n_r.h {
+            let end = timeline::project_end_ms(model.history.project());
+            seek_to(model, end, win.w());
+            model.prev_left_down = left_down;
+            return;
+        }
         // メトロノームトグル（Issue #36）: アプリ側の再生状態を切り替える。
         let m_r = metronome_rect(model.history.project().tracks.len());
         if lx >= m_r.x && lx < m_r.x + m_r.w && ly >= m_r.y && ly < m_r.y + m_r.h {
@@ -2543,6 +2645,10 @@ fn handle_pointer(app: &App, model: &mut Model) {
                 model.loop_range = Some((start, end));
                 model.loop_on = true;
                 println!("loop range: {start}..{end}");
+            } else {
+                // クリック（移動なし）はシーク（Issue #104）。
+                // ドラッグ＝ループ範囲指定（#40）と両立させる。
+                seek_to(model, anchor, win.w());
             }
         }
     }
@@ -2772,6 +2878,38 @@ fn pitch_label_color() -> theme::Rgb {
 /// トランスポートパネルの上端 y（Issue #27 のレイアウト）。
 fn transport_top(track_count: usize) -> f32 {
     mixer::mixer_top_y(track_count) + track_count as f32 * mixer::STRIP_HEIGHT_PX + 28.0
+}
+
+/// 再生／一時停止ボタンの矩形（Issue #104）。トランスポート1行目の
+/// 左寄せ。進行バーとレベルメーターはこの右に寄せる。高さは
+/// 2行目のチップ（+38 から）と重ならない 28 にする。
+fn play_pause_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 230.0,
+        y: transport_top(track_count) + 8.0,
+        w: 104.0,
+        h: 28.0,
+    }
+}
+
+/// 先頭ジャンプボタンの矩形（Issue #104）。再生ボタンの右隣。
+fn to_start_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 342.0,
+        y: transport_top(track_count) + 8.0,
+        w: 72.0,
+        h: 28.0,
+    }
+}
+
+/// 末尾ジャンプボタンの矩形（Issue #104）。先頭ボタンの右隣。
+fn to_end_rect(track_count: usize) -> mixer::Rect {
+    mixer::Rect {
+        x: 422.0,
+        y: transport_top(track_count) + 8.0,
+        w: 72.0,
+        h: 28.0,
+    }
 }
 
 /// BPM 表示の矩形（Issue #35）。トランスポート右側の大きな数値表示で、
@@ -3274,11 +3412,12 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .x_y(115.0 - win.w() / 2.0, win.h() / 2.0 - (top + 27.0))
         .font_size(theme::VALUE_FONT_SIZE)
         .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
-        // 進行バー: 溝はサンド、進んだ分はピンク
+        // 進行バー: 溝はサンド、進んだ分はピンク。
+        // トランスポートボタン（Issue #104）の右に寄せた位置。
         let bar = mixer::Rect {
-            x: 230.0,
+            x: 506.0,
             y: top + 14.0,
-            w: 460.0,
+            w: 184.0,
             h: 7.0,
         };
         draw_rounded_rect(&draw, win, bar, 3.0, theme::PANEL_SUNK);
@@ -3303,9 +3442,9 @@ fn view(app: &App, model: &Model, frame: Frame) {
             0.0
         };
         let meter = mixer::Rect {
-            x: 230.0,
+            x: 506.0,
             y: top + 31.0,
-            w: 460.0,
+            w: 184.0,
             h: 7.0,
         };
         draw_rounded_rect(&draw, win, meter, 3.0, theme::PANEL_SUNK);
@@ -3364,6 +3503,34 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .x_y(bcx, bcy)
             .font_size(theme::VALUE_FONT_SIZE)
             .color(rgb(theme::TEXT.0, theme::TEXT.1, theme::TEXT.2));
+        // トランスポートボタン（Issue #104）: 再生中は再生／一時停止
+        // ボタンがピンクになりラベルが PAUSE になる（メトロノーム
+        // ON と同じ「現在状態はピンク」の約束、ADR-0012）。
+        let p_r = play_pause_rect(count);
+        let (p_face, p_text_color) = if model.play_state.is_playing() {
+            (theme::ACCENT, theme::PANEL)
+        } else {
+            (theme::PANEL_SUNK, theme::TEXT_SUB)
+        };
+        draw_rounded_rect(&draw, win, p_r, 4.0, p_face);
+        let (pcx, pcy) = rect_center(win, p_r.x, p_r.y, p_r.w, p_r.h);
+        draw.text(if model.play_state.is_playing() {
+            "PAUSE"
+        } else {
+            "PLAY"
+        })
+        .x_y(pcx, pcy)
+        .font_size(10)
+        .color(rgb(p_text_color.0, p_text_color.1, p_text_color.2));
+        for (rect, label) in [(to_start_rect(count), "START"), (to_end_rect(count), "END")] {
+            draw_rounded_rect(&draw, win, rect, 4.0, theme::PANEL_SUNK);
+            let (cx, cy) = rect_center(win, rect.x, rect.y, rect.w, rect.h);
+            draw.text(label).x_y(cx, cy).font_size(10).color(rgb(
+                theme::TEXT_SUB.0,
+                theme::TEXT_SUB.1,
+                theme::TEXT_SUB.2,
+            ));
+        }
         // メトロノームトグル（Issue #36）: ON はピンクのチップ。
         let m_r = metronome_rect(count);
         let (m_face, m_text_color) = if model.metronome_on {

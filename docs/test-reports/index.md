@@ -93,3 +93,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-26 | #99 WAV 取り込みから Demucs 分離を実行し、ステムをプロジェクトに追加できる | [issue-0099-demucs-separation.md](issue-0099-demucs-separation.md) |
 | 2026-11-26 | #100 ステム音声からメロディ（ノート列）を抽出できる | [issue-0100-melody-extraction.md](issue-0100-melody-extraction.md) |
 | 2026-11-26 | #101 ステムを音色として登録し、抽出メロディが元の音色で鳴る | [issue-0101-tone-registration.md](issue-0101-tone-registration.md) |
+| 2026-11-27 | #104 DAW で再生／一時停止・シーク・先頭／末尾ジャンプができる | [issue-0104-daw-transport.md](issue-0104-daw-transport.md) |
