@@ -41,7 +41,7 @@
   **19.2秒**（プロセス起動・モデル読み込み込み、キャッシュ温済み）
   で終了し、`<out>/htdemucs/input/{vocals,drums,bass,other}.wav`
   の4ステム（各 352,844 バイト）を生成した
-  （証拠: `evidence/issue-0099/separate2.log`、`make_test_wav.py`）。
+  （証拠: `evidence/issue-0099/separate2.txt`、`make_test_wav.py`）。
 
 ## 受け入れ条件ごとの結果
 
@@ -63,7 +63,7 @@
   であることをダンプで確認した。絶対パスであることはレビュー
   round 1 の指摘で担保したもので、別 cwd（`/`）から開いても
   全ステムが解決できることを再駆動で確認済み
-  （証拠: `evidence/issue-0099/separate-cli.log`）。
+  （証拠: `evidence/issue-0099/separate-cli.txt`）。
 - GUI 駆動: XDND ドロップで配置と同時に分離がワーカースレッドで
   始まり（stdout: `separation started:`）、完了後に
   `separated: drop (4 tracks)` が出て、保存されたプロジェクトと
@@ -91,11 +91,11 @@ CLI 駆動で分離前後のプロジェクト JSON を比較し、既存トラ�
 - 壊れた WAV（テキストファイル）を CLI に渡す: 終了コード 1、
   `separation failed: demucs separation failed: ... no suitable
   format reader found ...` のメッセージ、プロジェクト JSON は
-  不変（証拠: `evidence/issue-0099/fail1.log`）。
+  不変（証拠: `evidence/issue-0099/fail1.txt`）。
 - venv が無い環境設定（`RUST_STUDIO_DEMUCS_PYTHON` に存在しない
   パス）: 終了コード 1、`demucs is not installed: ...` の明示
   エラー、プロジェクト JSON は不変
-  （証拠: `evidence/issue-0099/fail2.log`）。
+  （証拠: `evidence/issue-0099/fail2.txt`）。
 - GUI では未導入・失敗がステータス表示（SEPARATION UNAVAILABLE／
   SEPARATION FAILED、失敗はピンク）と stdout に出る実装で、
   解決失敗時にワーカーを起動しないこともコードで担保した

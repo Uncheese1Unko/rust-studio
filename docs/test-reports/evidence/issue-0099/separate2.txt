@@ -1,0 +1,11 @@
+start: 2026-11-26T03:58:29+00:00
+Selected model is a bag of 1 models. You will see that many progress bars per track.
+Separated tracks will be stored in /home/hatch/demucs-work/out/htdemucs
+Separating track /home/hatch/demucs-work/input.wav
+  0%|                                                                                   | 0.0/5.85 [00:00<?, ?seconds/s]100%|██████████████████████████████████████████████████████████████████████████| 5.85/5.85 [00:12<00:00,  2.14s/seconds]100%|██████████████████████████████████████████████████████████████████████████| 5.85/5.85 [00:12<00:00,  2.14s/seconds]
+
+real	0m19.162s
+user	0m18.670s
+sys	0m3.271s
+exit: 0
+end: 2026-11-26T03:58:48+00:00
