@@ -1,0 +1,25 @@
+== CLI drive: daw --separate mel.json melody_only.wav (exit 0) ==
+
+tones:
+  melody_only / vocals: {'type': 'sampler', 'source': '/home/hatch/demucs-work/cli101/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/vocals.wav', 'root_note': 60}
+  melody_only / drums: {'type': 'sampler', 'source': '/home/hatch/demucs-work/cli101/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/drums.wav', 'root_note': 60}
+  melody_only / bass: {'type': 'sampler', 'source': '/home/hatch/demucs-work/cli101/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/bass.wav', 'root_note': 60}
+  melody_only / other: {'type': 'sampler', 'source': '/home/hatch/demucs-work/cli101/mel.stems/melody_only-97f16c8796ae9364/htdemucs/melody_only/other.wav', 'root_note': 69}
+tracks:
+  melody_only / vocals tone_id=3 notes=[]
+  melody_only / drums tone_id=6 notes=[]
+  melody_only / bass tone_id=9 notes=[]
+  melody_only / other tone_id=12 notes=[(69, 0), (72, 487), (76, 986), (81, 1497)]
+
+== export: daw --export-wav mel.json export.wav (exit 0) ==
+frames=88200 sr=44100 ch=2 peak=0.7191 rms=0.2603
+Goertzel magnitudes: A4 440Hz=0.04398, C5 523.25Hz=0.02788, E5 659.26Hz=0.02325, A5 880Hz=0.04614
+controls: D4 293.66Hz=0.00006, F4 349.23Hz=0.00022
+
+== MCP drive: python3 mcp_dump.py studio-mcp mel.json ==
+MCP DUMP CHECK OK: 4 sampler tones, tone_id assignments, other notes [69, 72, 76, 81], root_note 69
+(asserted: get_project dump == project file, byte-level JSON equality)
+
+== API drive: python3 api_dump.py studio-api ==
+API DUMP CHECK OK: tones and tone_id observable in the same dump shape via GET /project
+(note: studio-api has no project-file loading; see the test report)

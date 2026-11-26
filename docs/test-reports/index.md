@@ -92,3 +92,4 @@ PBI の完了時に、受け入れ条件ごとの結果と証拠をここに残�
 | 2026-11-26 | #98 調査: Spleeter がこの環境で動くか＋ピッチ追跡の答え合わせ（needs-decision で停止） | [issue-0098-spleeter-feasibility.md](issue-0098-spleeter-feasibility.md) |
 | 2026-11-26 | #99 WAV 取り込みから Demucs 分離を実行し、ステムをプロジェクトに追加できる | [issue-0099-demucs-separation.md](issue-0099-demucs-separation.md) |
 | 2026-11-26 | #100 ステム音声からメロディ（ノート列）を抽出できる | [issue-0100-melody-extraction.md](issue-0100-melody-extraction.md) |
+| 2026-11-26 | #101 ステムを音色として登録し、抽出メロディが元の音色で鳴る | [issue-0101-tone-registration.md](issue-0101-tone-registration.md) |

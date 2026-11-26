@@ -13,7 +13,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcCommand, Stdio};
 
-use studio_core::{apply, Command, History, TrackKind};
+use studio_core::{apply, Command, History, Instrument, TrackKind};
 
 /// 分離モデル（ADR-0024: htdemucs、4ステム）。
 pub const MODEL_NAME: &str = "htdemucs";
@@ -306,12 +306,38 @@ pub struct SeparationSummary {
     pub tracks_added: usize,
 }
 
+/// ノートが空のステムの root_note 既定値（中央の C、Issue #101）。
+pub const DEFAULT_ROOT_NOTE: u8 = 60;
+
+/// ステム音色の root_note を抽出ノート列から決定的に導く（#101）:
+/// 最頻音高、同数の場合は最初に現れた音高。ノートが空なら
+/// [`DEFAULT_ROOT_NOTE`]。
+pub fn root_note_for(notes: &[crate::pitch::ExtractedNote]) -> u8 {
+    // 最初に現れた順を保ったまま数え、同数なら先勝ちにする。
+    let mut counts: Vec<(u8, usize)> = Vec::new();
+    for note in notes {
+        match counts.iter_mut().find(|(p, _)| *p == note.pitch) {
+            Some((_, c)) => *c += 1,
+            None => counts.push((note.pitch, 1)),
+        }
+    }
+    // max_by_key は同数で後勝ちになるため、先勝ちを明示する。
+    let mut best: Option<(u8, usize)> = None;
+    for (pitch, count) in counts {
+        if best.is_none_or(|(_, best_count)| count > best_count) {
+            best = Some((pitch, count));
+        }
+    }
+    best.map(|(p, _)| p).unwrap_or(DEFAULT_ROOT_NOTE)
+}
+
 /// ステム列をプロジェクトへ原子的に追加する。各ステムは新規
 /// トラック＋クリップ（開始 0、ステム全体）になり、音高が取れた
 /// ステムはノートクリップ、取れなかったステムは波形クリップに
-/// なる。失敗時はプロジェクトも履歴も変わらない。成功時は
-/// Undo 1回で分離前に戻れる。分離前の既存トラック／クリップには
-/// 触れない。
+/// なる。あわせて各ステムは Sampler 音色として登録され、その
+/// トラックへ割り当てられる（#101）。失敗時はプロジェクトも
+/// 履歴も変わらない。成功時は Undo 1回で分離前に戻れる。
+/// 分離前の既存トラック／クリップには触れない。
 pub fn apply_stems(
     history: &mut History,
     base_name: &str,
@@ -363,6 +389,29 @@ pub fn apply_stems(
             )
             .map_err(|e| SeparationError::Command(e.to_string()))?;
         }
+        // 音色化（#101）: ステム音声そのものを Sampler 音色として
+        // 登録し、このトラックへ割り当てる。抽出メロディが元の
+        // 音色で鳴るための割り当てで、同じ原子的適用の一部。
+        let tone_id = apply(
+            &mut built,
+            &Command::AddTone {
+                name: format!("{base_name} / {}", stem.stem),
+                instrument: Instrument::Sampler {
+                    source: stem.source.clone(),
+                    root_note: root_note_for(&stem.notes),
+                },
+            },
+        )
+        .map_err(|e| SeparationError::Command(e.to_string()))?
+        .ok_or_else(|| SeparationError::Command("add_tone returned no id".to_string()))?;
+        apply(
+            &mut built,
+            &Command::SetTrackTone {
+                track_id,
+                tone_id: Some(tone_id),
+            },
+        )
+        .map_err(|e| SeparationError::Command(e.to_string()))?;
     }
     history.commit_replacement(built);
     Ok(SeparationSummary {
@@ -613,6 +662,84 @@ mod tests {
         assert!(matches!(err, SeparationError::Command(_)), "{err}");
         assert_eq!(history.project().dump_json(), before);
         assert!(!history.can_undo());
+    }
+
+    #[test]
+    fn root_note_for_empty_notes_is_default_60() {
+        assert_eq!(root_note_for(&[]), DEFAULT_ROOT_NOTE);
+        assert_eq!(DEFAULT_ROOT_NOTE, 60);
+    }
+
+    #[test]
+    fn root_note_for_picks_the_most_frequent_pitch() {
+        use crate::pitch::ExtractedNote;
+        let note = |pitch: u8| ExtractedNote {
+            pitch,
+            start_ms: 0,
+            duration_ms: 100,
+            velocity: 90,
+        };
+        assert_eq!(root_note_for(&[note(69), note(72), note(69)]), 69);
+        // 同数の場合は最初に現れた音高（決定的）。
+        assert_eq!(root_note_for(&[note(72), note(69)]), 72);
+        assert_eq!(root_note_for(&[note(69), note(72)]), 69);
+    }
+
+    #[test]
+    fn apply_stems_registers_a_sampler_tone_per_stem() {
+        use crate::pitch::ExtractedNote;
+        use studio_core::Instrument;
+        let mut history = History::new(Project::new("t"));
+        let mut pitched = stem("vocals", 2000);
+        pitched.notes = vec![
+            ExtractedNote {
+                pitch: 69,
+                start_ms: 0,
+                duration_ms: 500,
+                velocity: 90,
+            },
+            ExtractedNote {
+                pitch: 72,
+                start_ms: 500,
+                duration_ms: 500,
+                velocity: 80,
+            },
+            ExtractedNote {
+                pitch: 69,
+                start_ms: 1000,
+                duration_ms: 500,
+                velocity: 85,
+            },
+        ];
+        let stems = vec![pitched, stem("drums", 2000)];
+        apply_stems(&mut history, "song", &stems).expect("apply succeeds");
+        let project = history.project();
+        // ステムごとに Sampler 音色が登録され、トラックへ割り当たる。
+        assert_eq!(project.tones.len(), 2);
+        for (i, name) in ["vocals", "drums"].iter().enumerate() {
+            let tone = &project.tones[i];
+            assert_eq!(tone.name, format!("song / {name}"));
+            assert_eq!(project.tracks[i].tone_id, Some(tone.id));
+        }
+        // 音高ありステム: source はステム WAV、root_note は最頻音高。
+        match &project.tones[0].instrument {
+            Instrument::Sampler { source, root_note } => {
+                assert_eq!(source, "/stems/song/vocals.wav");
+                assert_eq!(*root_note, 69);
+            }
+            other => panic!("expected sampler tone, got {other:?}"),
+        }
+        // ノート空のステム: root_note は既定 60。
+        match &project.tones[1].instrument {
+            Instrument::Sampler { source, root_note } => {
+                assert_eq!(source, "/stems/song/drums.wav");
+                assert_eq!(*root_note, DEFAULT_ROOT_NOTE);
+            }
+            other => panic!("expected sampler tone, got {other:?}"),
+        }
+        // Undo 1回で音色ごと分離前に戻れる。
+        assert!(history.undo());
+        assert!(history.project().tones.is_empty());
     }
 
     #[test]
